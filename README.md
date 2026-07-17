@@ -1,15 +1,22 @@
 # GameGuide Guru
 
-Prototipe companion game mobile-first yang mencari walkthrough di web dengan
-Tavily, lalu merangkum langkah yang relevan menggunakan model AI di Replicate.
+Prototipe companion game mobile-first. Model AI di Replicate (default
+`google/gemini-2.5-flash`) menjawab dari pengetahuannya sendiri, dan hasil
+pencarian web Tavily dipakai sebagai bukti pendukung.
 
 ## Fitur
 
-- Field nama game dan selector platform (dari era NES sampai Switch 2, PS5, Xbox
-  Series, PC, dan lainnya) untuk mempertajam pencarian.
+- Field nama game dan selector platform yang bisa dicari (custom combobox
+  bertema, dari era NES sampai Switch 2, PS5, Xbox Series, PC, dan lainnya).
 - Chat lanjutan multi-turn: konteks hingga 5 percakapan terakhir dikirim ke
   model sehingga pertanyaan lanjutan seperti "lalu setelah bos itu ke mana?"
   tetap dipahami.
+- Pencarian berjenjang: GameFAQs sebagai sumber utama, lalu penyedia walkthrough
+  tepercaya, lalu forum, baru pencarian umum. Domain video/sosial (YouTube,
+  Twitch, dll.) dikecualikan karena model teks tidak bisa membacanya.
+- Pengetahuan model sebagai sumber utama, web sebagai pendukung untuk info yang
+  mungkin di luar knowledge cutoff. Jika pencarian kosong, model tetap menjawab
+  dari pengetahuannya.
 - Setiap jawaban menampilkan tautan sumber yang dipakai.
 
 ## Menjalankan aplikasi
@@ -27,11 +34,14 @@ Isi `.env.local` dengan kredensial asli:
 ```dotenv
 TAVILY_API_KEY=tvly-...
 REPLICATE_API_TOKEN=r8_...
-REPLICATE_MODEL=meta/meta-llama-3-8b-instruct
+REPLICATE_MODEL=google/gemini-2.5-flash
 ```
 
-`REPLICATE_MODEL` opsional dan dapat diganti dengan model publik Replicate lain
-dalam format `owner/name`.
+`REPLICATE_MODEL` opsional (default `google/gemini-2.5-flash`). Field input model
+(`system_instruction`, `max_output_tokens`, `thinking_budget`) disetel untuk
+Gemini di Replicate; ganti model hanya ke model dengan field serupa.
+`TAVILY_API_KEY` juga opsional — tanpa itu, model menjawab dari pengetahuannya
+sendiri tanpa sumber web.
 
 Buka [http://localhost:3000](http://localhost:3000), isi nama game dan platform,
 lalu ajukan pertanyaan dan tanyakan lanjutannya.
@@ -39,16 +49,16 @@ lalu ajukan pertanyaan dan tanyakan lanjutannya.
 ## Alur
 
 1. Browser mengirim `{ game, platform, question, history }` ke `POST /api/solve`.
-2. Route server merangkai kueri dari game + platform + pertanyaan, lalu mencari
-   hingga lima sumber melalui Tavily.
-3. Cuplikan hasil pencarian, konteks game/platform, dan riwayat percakapan
-   (maksimal 5 turn terakhir) dikirim ke Replicate.
-4. Browser menerima ringkasan dan tautan sumber terpisah, lalu menambahkannya ke
+2. Route server merangkai kueri, lalu menjalankan pencarian berjenjang Tavily
+   (best-effort) dan berhenti begitu sumber cukup.
+3. `system_instruction` (persona + aturan) dan `prompt` (game/platform, riwayat
+   percakapan, dan bukti web) dikirim terpisah ke model Gemini di Replicate.
+4. Browser menerima jawaban dan tautan sumber terpisah, lalu menambahkannya ke
    riwayat chat.
 
-API key hanya digunakan di server dan tidak dikirim ke browser. Teks sumber
-diperlakukan sebagai input tidak tepercaya; model diperintahkan untuk tidak
-mengikuti instruksi dari cuplikan web.
+API key hanya digunakan di server dan tidak dikirim ke browser. Teks sumber dan
+input game/platform diperlakukan sebagai data tidak tepercaya; model
+diperintahkan untuk tidak mengikuti instruksi di dalamnya.
 
 ## Perintah
 

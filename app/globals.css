@@ -165,7 +165,8 @@ h1 em {
   gap: 6px;
 }
 
-.field label {
+.field label,
+.field-label {
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.62rem;
   font-weight: 700;
@@ -174,8 +175,7 @@ h1 em {
   color: var(--muted);
 }
 
-.field input,
-.field select {
+.field input {
   width: 100%;
   min-height: 48px;
   border: 1.5px solid var(--ink);
@@ -186,23 +186,144 @@ h1 em {
   font-size: 0.95rem;
 }
 
-.field select {
-  appearance: none;
-  background-image: linear-gradient(45deg, transparent 50%, var(--ink) 50%),
-    linear-gradient(135deg, var(--ink) 50%, transparent 50%);
-  background-position:
-    calc(100% - 18px) center,
-    calc(100% - 13px) center;
-  background-size:
-    5px 5px,
-    5px 5px;
-  background-repeat: no-repeat;
-  padding-right: 34px;
+.field input::placeholder {
+  color: #909891;
+}
+
+/* Searchable platform combobox */
+.combo {
+  position: relative;
+}
+
+.combo-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  color: var(--ink);
+  padding: 0 12px;
+  font-size: 0.95rem;
+  text-align: left;
   cursor: pointer;
 }
 
-.field input::placeholder {
+.combo-trigger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.combo-trigger .placeholder {
   color: #909891;
+}
+
+.combo-caret {
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+
+.combo-clear {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.combo-clear:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.combo-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  box-shadow: 6px 6px 0 var(--ink);
+  animation: rise 160ms ease-out both;
+}
+
+.combo-search {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: #f8f7f1;
+  color: var(--ink);
+  padding: 12px 13px;
+  font-size: 0.9rem;
+}
+
+.combo-search:focus {
+  outline: none;
+  background: white;
+}
+
+.combo-search::placeholder {
+  color: #909891;
+}
+
+.combo-list {
+  max-height: 258px;
+  margin: 0;
+  padding: 6px 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.combo-list > li {
+  padding: 0;
+}
+
+.combo-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.combo-group-label {
+  margin: 0;
+  padding: 10px 13px 4px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.combo-option {
+  padding: 9px 13px;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+.combo-option.active {
+  background: var(--signal);
+}
+
+.combo-option[aria-selected="true"] {
+  font-weight: 700;
+}
+
+.combo-option[aria-selected="true"]::after {
+  content: " ✓";
+  color: var(--signal-dark);
+}
+
+.combo-empty {
+  padding: 14px 13px;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .examples-block {

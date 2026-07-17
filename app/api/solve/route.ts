@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { summarize, type Turn } from "@/lib/replicate";
-import { searchWeb } from "@/lib/tavily";
+import { searchGuides, type SearchResult } from "@/lib/tavily";
 
 export const runtime = "nodejs";
 
@@ -53,7 +53,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!process.env.TAVILY_API_KEY || !process.env.REPLICATE_API_TOKEN) {
+  if (!process.env.REPLICATE_API_TOKEN) {
     return NextResponse.json(
       { error: "Server belum memiliki API key yang diperlukan." },
       { status: 503 },
@@ -61,16 +61,18 @@ export async function POST(request: Request) {
   }
 
   try {
-    const searchQuery = [game, platform, question, "walkthrough guide strategy"]
-      .filter(Boolean)
-      .join(" ");
-    const sources = await searchWeb(searchQuery);
-
-    if (sources.length === 0) {
-      return NextResponse.json(
-        { error: "Belum ada panduan tepercaya yang ditemukan." },
-        { status: 404 },
-      );
+    // Search is best-effort supporting evidence; the model can still answer from
+    // its own knowledge if it returns nothing or fails.
+    let sources: SearchResult[] = [];
+    if (process.env.TAVILY_API_KEY) {
+      const searchQuery = [game, platform, question, "walkthrough guide"]
+        .filter(Boolean)
+        .join(" ");
+      try {
+        sources = await searchGuides(searchQuery);
+      } catch (searchError) {
+        console.error("Search failed, continuing without sources:", searchError);
+      }
     }
 
     const summary = await summarize({

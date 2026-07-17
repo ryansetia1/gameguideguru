@@ -1,9 +1,9 @@
 import Replicate from "replicate";
 
-import { buildPrompt } from "@/lib/prompt";
+import { SYSTEM_INSTRUCTION, buildPrompt } from "@/lib/prompt";
 import type { SearchResult } from "@/lib/tavily";
 
-const DEFAULT_MODEL = "meta/meta-llama-3-8b-instruct";
+const DEFAULT_MODEL = "google/gemini-2.5-flash";
 
 export type Turn = {
   role: "user" | "assistant";
@@ -35,9 +35,13 @@ export async function summarize(input: SummarizeInput): Promise<string> {
     {
       input: {
         prompt: buildPrompt(input),
-        prompt_template: "{prompt}",
-        max_tokens: 700,
-        temperature: 0.2,
+        // Gemini on Replicate: keep the persona/rules out of the prompt field.
+        system_instruction: SYSTEM_INSTRUCTION,
+        temperature: 0.35,
+        max_output_tokens: 1200,
+        // Flash is a reasoning model; disable thinking so the budget goes to the
+        // visible answer and short replies don't come back empty.
+        thinking_budget: 0,
       },
       signal: AbortSignal.timeout(50_000),
     },

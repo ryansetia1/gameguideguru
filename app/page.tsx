@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 
+import { PlatformSelect } from "./platform-select";
+
 type Source = {
   title: string;
   url: string;
@@ -12,51 +14,6 @@ type Message = {
   content: string;
   sources?: Source[];
 };
-
-const PLATFORMS: { group: string; items: string[] }[] = [
-  {
-    group: "Nintendo",
-    items: [
-      "NES",
-      "SNES",
-      "Nintendo 64",
-      "GameCube",
-      "Wii",
-      "Wii U",
-      "Nintendo Switch",
-      "Nintendo Switch 2",
-      "Game Boy",
-      "Game Boy Color",
-      "Game Boy Advance",
-      "Nintendo DS",
-      "Nintendo 3DS",
-    ],
-  },
-  {
-    group: "PlayStation",
-    items: [
-      "PlayStation (PS1)",
-      "PlayStation 2",
-      "PlayStation 3",
-      "PlayStation 4",
-      "PlayStation 5",
-      "PSP",
-      "PS Vita",
-    ],
-  },
-  {
-    group: "Xbox",
-    items: ["Xbox", "Xbox 360", "Xbox One", "Xbox Series X|S"],
-  },
-  {
-    group: "Sega",
-    items: ["Sega Genesis / Mega Drive", "Sega Saturn", "Dreamcast"],
-  },
-  {
-    group: "Lainnya",
-    items: ["PC", "Mobile (iOS/Android)", "Arcade"],
-  },
-];
 
 const examples = [
   { game: "The Legend of Zelda: Link's Awakening", platform: "Game Boy", q: "Bagaimana cara masuk ke dungeon pertama?" },
@@ -185,24 +142,10 @@ export default function Home() {
           />
         </div>
         <div className="field">
-          <label htmlFor="platform">Platform</label>
-          <select
-            id="platform"
-            name="platform"
-            value={platform}
-            onChange={(event) => setPlatform(event.target.value)}
-          >
-            <option value="">Pilih platform (opsional)</option>
-            {PLATFORMS.map((section) => (
-              <optgroup key={section.group} label={section.group}>
-                {section.items.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
+          <span className="field-label" id="platform-label">
+            Platform
+          </span>
+          <PlatformSelect value={platform} onChange={setPlatform} />
         </div>
       </section>
 

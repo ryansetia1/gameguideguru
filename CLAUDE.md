@@ -2,31 +2,40 @@
 
 ## Purpose
 
-Mobile-first Next.js prototype that turns a player's game question into a
-web-researched, AI-summarized walkthrough with visible source links. Supports a
-game name + platform selector and multi-turn follow-up chat.
+Mobile-first Next.js prototype that answers a player's game question. The model
+(Gemini 2.5 Flash on Replicate) answers from its own knowledge; tiered web search
+provides supporting evidence. Supports a searchable game/platform selector and
+multi-turn follow-up chat.
 
 ## Architecture
 
-- `app/page.tsx`: Indonesian client chat UI (game field, platform selector,
-  message feed, docked composer) and `/api/solve` consumer. Keeps `messages`
-  state and sends the last 10 messages (5 turns) as `history`.
+- `app/page.tsx`: Indonesian client chat UI (game field, message feed, docked
+  composer) and `/api/solve` consumer. Keeps `messages` state and sends the last
+  10 messages (5 turns) as `history`.
+- `app/platform-select.tsx`: custom themed, searchable, keyboard-accessible
+  platform combobox (owns the `PLATFORMS` list). Replaces the native `<select>`.
 - `app/api/solve/route.ts`: validates/sanitizes `{ game, platform, question,
-  history }` at the trust boundary (history capped to 10, content truncated),
-  builds the search query, then orchestrates search then summary.
-- `lib/tavily.ts`: Tavily Search API adapter and external-result validation.
-- `lib/replicate.ts`: Replicate model adapter (`summarize(input)` object) and
-  output normalization; exports the `Turn` type.
-- `lib/prompt.js`: shared prompt builder `buildPrompt({ game, platform,
-  question, sources, history })`, covered by `npm run check`.
+  history }` at the trust boundary (history capped to 10, content truncated).
+  Search is best-effort (skipped if no `TAVILY_API_KEY`, failures swallowed); the
+  model still answers. Only `REPLICATE_API_TOKEN` is mandatory.
+- `lib/tavily.ts`: `searchGuides(query)` runs tiered searches (GameFAQs ->
+  trusted walkthrough providers -> forums -> general), excludes video/social
+  domains, dedupes, and stops once enough results are collected.
+- `lib/replicate.ts`: Replicate adapter (`summarize(input)`); sends
+  `system_instruction` + `prompt` separately with Gemini fields
+  (`max_output_tokens`, `thinking_budget: 0`). Exports the `Turn` type.
+- `lib/prompt.js`: exports `SYSTEM_INSTRUCTION` (persona + rules: knowledge-first,
+  web-as-support, injection safety) and `buildPrompt({ game, platform, question,
+  sources, history })` (dynamic context). Covered by `npm run check`.
 
 ## Known limits (ponytail)
 
-- Chat history is sent as plain text inside a single prompt (not the Llama 3
-  native chat template) and trimmed by turn count, not token count. Upgrade to
-  the role-based template + token-aware trimming if longer sessions overflow the
-  8k context window.
-- Every turn re-runs a web search; there is no caching.
+- Model-call input fields are Gemini-specific; switching `REPLICATE_MODEL` to a
+  non-Gemini model would silently drop `system_instruction`/`thinking_budget`.
+- Chat history is sent as plain text inside the prompt and trimmed by turn count,
+  not token count.
+- Every turn re-runs the tiered search (up to 4 sequential Tavily calls, early
+  exit); there is no caching.
 
 ## Commands
 
@@ -38,13 +47,13 @@ npm run build
 
 ## Environment
 
-Required server-only variables:
+Server-only variables:
 
-- `TAVILY_API_KEY`
-- `REPLICATE_API_TOKEN`
+- `REPLICATE_API_TOKEN` (required to answer).
+- `TAVILY_API_KEY` (optional; enables supporting web search).
+- `REPLICATE_MODEL` (optional, default `google/gemini-2.5-flash`).
 
-Optional: `REPLICATE_MODEL` in `owner/name` format. Never expose these through a
-`NEXT_PUBLIC_` variable or commit `.env.local`.
+Never expose these through a `NEXT_PUBLIC_` variable or commit `.env.local`.
 
 ## Working conventions
 
