@@ -110,7 +110,7 @@ main {
 .hero {
   max-width: 650px;
   margin-top: 26px;
-  animation: rise 480ms ease-out both;
+  animation: rise 480ms ease-out backwards;
 }
 
 .eyebrow {
@@ -156,7 +156,7 @@ h1 em {
   grid-template-columns: 1fr;
   gap: 12px;
   margin-top: 30px;
-  animation: rise 480ms 60ms ease-out both;
+  animation: rise 480ms 60ms ease-out backwards;
 }
 
 .field {
@@ -250,7 +250,7 @@ h1 em {
   border: 1.5px solid var(--ink);
   background: var(--paper-strong);
   box-shadow: 6px 6px 0 var(--ink);
-  animation: rise 160ms ease-out both;
+  animation: rise 160ms ease-out backwards;
 }
 
 .combo-search {
@@ -326,9 +326,19 @@ h1 em {
   font-size: 0.85rem;
 }
 
+.combo-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.combo-year {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
 .examples-block {
   margin-top: 22px;
-  animation: rise 480ms 120ms ease-out both;
+  animation: rise 480ms 120ms ease-out backwards;
 }
 
 .examples-label {
@@ -397,7 +407,7 @@ h1 em {
 }
 
 .turn {
-  animation: rise 300ms ease-out both;
+  animation: rise 300ms ease-out backwards;
 }
 
 .turn.user {

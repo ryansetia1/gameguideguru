@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 
+import { GameAutocomplete } from "./game-autocomplete";
 import { PlatformSelect } from "./platform-select";
 
 type Source = {
@@ -131,15 +132,7 @@ export default function Home() {
       <section className="setup" aria-label="Konteks game">
         <div className="field">
           <label htmlFor="game">Nama game</label>
-          <input
-            id="game"
-            name="game"
-            value={game}
-            onChange={(event) => setGame(event.target.value)}
-            placeholder="mis. The Legend of Zelda: Link's Awakening"
-            maxLength={120}
-            autoComplete="off"
-          />
+          <GameAutocomplete value={game} onChange={setGame} disabled={loading} />
         </div>
         <div className="field">
           <span className="field-label" id="platform-label">

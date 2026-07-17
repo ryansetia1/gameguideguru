@@ -6,8 +6,9 @@ pencarian web Tavily dipakai sebagai bukti pendukung.
 
 ## Fitur
 
-- Field nama game dan selector platform yang bisa dicari (custom combobox
-  bertema, dari era NES sampai Switch 2, PS5, Xbox Series, PC, dan lainnya).
+- Field nama game dengan autocomplete dari database game IGDB, dan selector
+  platform yang bisa dicari (custom combobox bertema, dari era NES sampai
+  Switch 2, PS5, Xbox Series, PC, dan lainnya).
 - Chat lanjutan multi-turn: konteks hingga 5 percakapan terakhir dikirim ke
   model sehingga pertanyaan lanjutan seperti "lalu setelah bos itu ke mana?"
   tetap dipahami.
@@ -35,6 +36,8 @@ Isi `.env.local` dengan kredensial asli:
 TAVILY_API_KEY=tvly-...
 REPLICATE_API_TOKEN=r8_...
 REPLICATE_MODEL=google/gemini-2.5-flash
+TWITCH_CLIENT_ID=...
+TWITCH_CLIENT_SECRET=...
 ```
 
 `REPLICATE_MODEL` opsional (default `google/gemini-2.5-flash`). Field input model
@@ -42,6 +45,16 @@ REPLICATE_MODEL=google/gemini-2.5-flash
 Gemini di Replicate; ganti model hanya ke model dengan field serupa.
 `TAVILY_API_KEY` juga opsional — tanpa itu, model menjawab dari pengetahuannya
 sendiri tanpa sumber web.
+
+### Autocomplete nama game (IGDB)
+
+Autocomplete nama game memakai [IGDB](https://api-docs.igdb.com/), yang
+diautentikasi lewat Twitch OAuth. Buat aplikasi di
+[dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps) untuk mendapat
+`TWITCH_CLIENT_ID` dan `TWITCH_CLIENT_SECRET`. Kredensial ini **opsional**: tanpa
+keduanya, field nama game tetap berfungsi sebagai input teks bebas (autocomplete
+mati diam-diam). RAWG sempat dipertimbangkan tetapi kurang andal, jadi IGDB
+dipakai sebagai sumber database game yang lebih lengkap.
 
 Buka [http://localhost:3000](http://localhost:3000), isi nama game dan platform,
 lalu ajukan pertanyaan dan tanyakan lanjutannya.
