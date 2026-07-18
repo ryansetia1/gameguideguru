@@ -66,13 +66,18 @@ export async function GET(request: Request) {
 
   const response = NextResponse.redirect(`${origin}/?steam=linked`);
   clearOpenIdState(response, secure);
-  response.cookies.set(STEAM_SESSION_COOKIE, signSteamSession(steamId), {
-    httpOnly: true,
-    secure,
-    sameSite: "lax",
-    maxAge: STEAM_SESSION_MAX_AGE,
-    path: "/",
-  });
+  try {
+    response.cookies.set(STEAM_SESSION_COOKIE, signSteamSession(steamId), {
+      httpOnly: true,
+      secure,
+      sameSite: "lax",
+      maxAge: STEAM_SESSION_MAX_AGE,
+      path: "/",
+    });
+  } catch (caught) {
+    console.error("Steam session cookie failed:", caught);
+    return fail();
+  }
 
   return response;
 }
