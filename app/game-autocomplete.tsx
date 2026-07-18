@@ -90,15 +90,19 @@ export function GameAutocomplete({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const rootRef = useRef<HTMLDivElement>(null);
-  const justPicked = useRef(false);
+  // Only real keystrokes trigger a lookup. Programmatic value changes (a picked
+  // result, opening a saved chat, a Steam import) must not fetch or open the panel.
+  const userTyped = useRef(false);
 
   useEffect(() => {
     const query = value.trim();
-    // Skip the fetch triggered by our own selection.
-    if (justPicked.current) {
-      justPicked.current = false;
+    if (!userTyped.current) {
+      setResults([]);
+      setOpen(false);
+      setLoading(false);
       return;
     }
+    userTyped.current = false;
     if (query.length < 2) {
       setResults([]);
       setOpen(false);
@@ -166,7 +170,6 @@ export function GameAutocomplete({
   }, [open]);
 
   function pick(game: Game) {
-    justPicked.current = true;
     onChange(game.name);
     onPick?.({
       name: game.name,
@@ -207,7 +210,10 @@ export function GameAutocomplete({
         name="game"
         className={`combo-input${loading ? " loading" : ""}`}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => {
+          userTyped.current = true;
+          onChange(event.target.value);
+        }}
         onFocus={() => {
           if (results.length > 0) setOpen(true);
         }}

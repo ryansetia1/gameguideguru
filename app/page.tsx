@@ -356,6 +356,7 @@ export default function Home() {
   const [gameSpoilerMajor, setGameSpoilerMajor] = useState(false);
   const spoilerPrefs = effectiveSpoilerPrefs(globalSpoilerMajor, gameSpoilerMajor);
   const [attachOpen, setAttachOpen] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState("");
 
   const feedRef = useRef<HTMLDivElement>(null);
   const lastUserRef = useRef<HTMLDivElement>(null);
@@ -911,9 +912,9 @@ export default function Home() {
     setEditingIndex(null);
     setEditingText("");
     conversationGame.current = game.name;
-    requestAnimationFrame(() => {
-      document.getElementById("game")?.focus();
-    });
+    // Don't focus the game field: the game is already chosen, and focusing it
+    // highlights it + fires a needless autocomplete lookup. Let the user tap the
+    // question composer themselves.
   }
 
   // Message image attachments: compress + preview locally now, upload to Storage
@@ -1280,6 +1281,7 @@ export default function Home() {
                 onClick={() => {
                   setSidebarOpen(false);
                   setMenuOpenId(null);
+                  setLibrarySearch("");
                   setLibraryOpen(true);
                   pushOverlayHistory();
                 }}
@@ -1393,28 +1395,57 @@ export default function Home() {
                   {chats.length === 0 ? (
                     <p className="library-empty">No saved games yet.</p>
                   ) : (
-                    <div className="library-grid">
-                      {chats.map((chat) => (
-                        <button
-                          key={chat.id}
-                          type="button"
-                          className="library-card"
-                          onClick={() => openFromLibrary(chat)}
-                        >
-                          <CoverThumb
-                            cover={chat.cover_url ?? ""}
-                            name={chat.game}
-                            className="cover-tile"
+                    (() => {
+                      const term = librarySearch.trim().toLowerCase();
+                      const shown = term
+                        ? chats.filter((chat) =>
+                            (chat.game || "").toLowerCase().includes(term),
+                          )
+                        : chats;
+                      return (
+                        <>
+                          <input
+                            type="search"
+                            className="library-search"
+                            placeholder="Search saved games…"
+                            value={librarySearch}
+                            onChange={(event) => setLibrarySearch(event.target.value)}
+                            autoComplete="off"
+                            aria-label="Search saved games"
                           />
-                          <strong>{chat.game || "Untitled game"}</strong>
-                          {(chat.platform || chat.release_year) && (
-                            <small>
-                              {[chat.platform, chat.release_year].filter(Boolean).join(" · ")}
-                            </small>
+                          {shown.length === 0 ? (
+                            <p className="library-empty">
+                              No games match “{librarySearch.trim()}”.
+                            </p>
+                          ) : (
+                            <div className="library-grid">
+                              {shown.map((chat) => (
+                                <button
+                                  key={chat.id}
+                                  type="button"
+                                  className="library-card"
+                                  onClick={() => openFromLibrary(chat)}
+                                >
+                                  <CoverThumb
+                                    cover={chat.cover_url ?? ""}
+                                    name={chat.game}
+                                    className="cover-tile"
+                                  />
+                                  <strong>{chat.game || "Untitled game"}</strong>
+                                  {(chat.platform || chat.release_year) && (
+                                    <small>
+                                      {[chat.platform, chat.release_year]
+                                        .filter(Boolean)
+                                        .join(" · ")}
+                                    </small>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
                           )}
-                        </button>
-                      ))}
-                    </div>
+                        </>
+                      );
+                    })()
                   )}
                 </div>
               </div>

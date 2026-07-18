@@ -1364,6 +1364,25 @@ details.sources small {
   color: var(--muted);
 }
 
+.library-search {
+  flex: none;
+  width: 100%;
+  border: none;
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  color: var(--ink);
+  padding: 12px 16px;
+  font-size: 0.9rem;
+}
+
+.library-search::placeholder {
+  color: var(--placeholder);
+}
+
+.library-search:focus {
+  outline: none;
+}
+
 .library-grid {
   flex: 1;
   overflow-y: auto;

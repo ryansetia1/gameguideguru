@@ -27,6 +27,7 @@ export function SteamLibrary({ open, onClose, onPick }: Props) {
   const [games, setGames] = useState<SteamGame[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
 
   const loadLibrary = useCallback(async () => {
     const supabase = getSupabase();
@@ -88,6 +89,7 @@ export function SteamLibrary({ open, onClose, onPick }: Props) {
 
   useEffect(() => {
     if (!open) return;
+    setQuery("");
     void loadLibrary();
   }, [open, loadLibrary]);
 
@@ -101,6 +103,11 @@ export function SteamLibrary({ open, onClose, onPick }: Props) {
   }, [open, onClose]);
 
   if (!open) return null;
+
+  const term = query.trim().toLowerCase();
+  const filtered = term
+    ? games.filter((game) => game.name.toLowerCase().includes(term))
+    : games;
 
   return (
     <>
@@ -123,8 +130,23 @@ export function SteamLibrary({ open, onClose, onPick }: Props) {
           ) : error && games.length === 0 ? (
             <p className="library-empty">{error}</p>
           ) : (
-            <div className="library-grid">
-              {games.map((game) => (
+            <>
+              {games.length > 0 && (
+                <input
+                  type="search"
+                  className="library-search"
+                  placeholder="Search your games…"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  autoComplete="off"
+                  aria-label="Search Steam games"
+                />
+              )}
+              {filtered.length === 0 ? (
+                <p className="library-empty">No games match “{query.trim()}”.</p>
+              ) : (
+                <div className="library-grid">
+                  {filtered.map((game) => (
                 <button
                   key={game.appId}
                   type="button"
@@ -144,8 +166,10 @@ export function SteamLibrary({ open, onClose, onPick }: Props) {
                   <strong>{game.name}</strong>
                   {game.playtimeMinutes > 0 && <small>{formatPlaytime(game.playtimeMinutes)}</small>}
                 </button>
-              ))}
-            </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
