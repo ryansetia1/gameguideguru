@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import { cleanSnippet, focusSection } from "../lib/clean.js";
 import { mapGames } from "../lib/games.js";
-import { coerceHighlights, parseSummary } from "../lib/highlights.js";
+import { coerceHighlights, coerceSpoilers, parseSummary } from "../lib/highlights.js";
 import { PLATFORMS, matchPlatforms, tgdbPlatformToLabel } from "../lib/platforms.js";
 import {
   REWRITE_INSTRUCTION,
@@ -12,6 +12,7 @@ import {
 } from "../lib/prompt.js";
 import { selectSources } from "../lib/rank.js";
 import { parseBlocks, parseInline } from "../lib/markdown.js";
+import { buildSpoilerBlock, coerceSpoilerPrefs } from "../lib/spoiler-prefs.js";
 
 // System instruction carries the persona + safety rules.
 assert.match(SYSTEM_INSTRUCTION, /untrusted data/);
@@ -57,6 +58,20 @@ assert.match(prompt, /How do I open the gate\?/);
 assert.match(prompt, /Use the Omega Key\./);
 assert.match(prompt, /Player: Where is the first dungeon\?/);
 assert.match(prompt, /Guide: Head east from the beach\./);
+
+const spoilerPrompt = buildPrompt({
+  game: "Suikoden",
+  platform: "PlayStation (PS1)",
+  question: "What happens at Elf Village?",
+  sources: [],
+  spoilerPrefs: { story: false, recruits: false, bosses: false },
+});
+assert.match(spoilerPrompt, /Story & plot: BLOCKED/);
+assert.match(spoilerPrompt, /Characters: BLOCKED/);
+
+assert.equal(coerceSpoilerPrefs({ story: true, recruits: "nope" }).story, true);
+assert.equal(coerceSpoilerPrefs({ story: true, recruits: "nope" }).recruits, false);
+assert.match(buildSpoilerBlock({ story: true, recruits: true, bosses: true }), /all categories allowed/);
 
 // Empty search must not crash and must tell the model to fall back to knowledge.
 const noSources = buildPrompt({ question: "What now?", sources: [] });
@@ -178,6 +193,13 @@ assert.equal(parsed.answer, "Go east.");
 assert.equal(parsed.highlights.length, 1);
 assert.equal(parsed.highlights[0].kind, "item");
 
+const withSpoilers = parseSummary(
+  '{"answer":"Go east.","highlights":[],"spoilers":[{"category":"story","title":"Later","detail":"The village burns."}]}',
+);
+assert.equal(withSpoilers.spoilers.length, 1);
+assert.equal(withSpoilers.spoilers[0].category, "story");
+assert.deepEqual(coerceSpoilers([{ category: "nope", title: "x", detail: "y" }]), []);
+
 const fenced = parseSummary(
   '```json\n{"answer":"Done.","highlights":[{"kind":"tip","title":"Save first","detail":""}]}\n```',
 );
@@ -187,6 +209,7 @@ assert.equal(fenced.highlights[0].title, "Save first");
 const prose = parseSummary("Just walk north.");
 assert.equal(prose.answer, "Just walk north.");
 assert.deepEqual(prose.highlights, []);
+assert.deepEqual(prose.spoilers, []);
 
 // The model routinely emits pretty-printed JSON with RAW newlines inside the
 // answer string (invalid JSON); parseSummary must tolerate it, not fall back to
@@ -238,5 +261,12 @@ const longPage =
 const focused = focusSection(longPage, "emerald weapon underwater junon", 300);
 assert.ok(focused.length <= 300);
 assert.ok(focused.includes("emerald weapon"), "focusSection should center on the matching section");
+const elfPage =
+  "banquet assassin kaku recruits ".repeat(200) +
+  "great forest gauntlet escape talisman elf village armor shop jail sylvina valeria " +
+  "dwarves vault ".repeat(200);
+const elfFocused = focusSection(elfPage, "elf village events", 400);
+assert.ok(elfFocused.includes("gauntlet"), "focusSection should match short game terms like elf");
+assert.ok(!elfFocused.startsWith("banquet"), "focusSection should skip generic walkthrough boilerplate");
 
 console.log("Self-check passed.");

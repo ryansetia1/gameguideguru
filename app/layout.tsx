@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import { ServiceWorkerRegister } from "./sw-register";
 
+const themeInitScript = `(function(){try{var t=localStorage.getItem("gg:theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}})();`;
+
 export const metadata: Metadata = {
   title: "GameGuide Guru",
   description: "Find your way out when your adventure gets stuck.",
@@ -27,7 +29,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+      </head>
       <body suppressHydrationWarning>
         {children}
         <ServiceWorkerRegister />

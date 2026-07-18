@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCachedSearch, setCachedSearch } from "@/lib/search-cache";
 import { resolveQuestion, summarize, type Turn } from "@/lib/replicate";
+import { coerceSpoilerPrefs } from "@/lib/spoiler-prefs";
 import { searchGuides, type SearchResult } from "@/lib/tavily";
 
 export const runtime = "nodejs";
@@ -75,6 +76,7 @@ export async function POST(request: Request) {
   const preferredUrl = cleanUrl(record.preferredUrl);
   const history = parseHistory(record.history);
   const images = parseImages(record.images);
+  const spoilerPrefs = coerceSpoilerPrefs(record.spoilerPrefs);
 
   if (question.length < 2) {
     return NextResponse.json(
@@ -109,7 +111,7 @@ export async function POST(request: Request) {
         sources = cached as SearchResult[];
       } else {
         try {
-          sources = await searchGuides(searchQuery, preferredUrl);
+          sources = await searchGuides(searchQuery, preferredUrl, searchTopic);
           void setCachedSearch(cacheKey, sources);
         } catch (searchError) {
           console.error("Search failed, continuing without sources:", searchError);
@@ -117,18 +119,20 @@ export async function POST(request: Request) {
       }
     }
 
-    const { answer, highlights } = await summarize({
+    const { answer, highlights, spoilers } = await summarize({
       game,
       platform,
       question,
       sources,
       history,
       images,
+      spoilerPrefs,
     });
 
     return NextResponse.json({
       answer,
       highlights,
+      spoilers,
       sources: sources.map(({ title, url }) => ({ title, url })),
     });
   } catch (error) {

@@ -146,6 +146,18 @@ function looksLikeIndex(rawUrl: string): boolean {
   }
 }
 
+// Site root or archive listing — site-search should pick a child article. A deep
+// link like /3-suikoden-kwanda-rosman is a specific chapter: extract it directly.
+function looksLikeHub(rawUrl: string): boolean {
+  try {
+    const path = new URL(rawUrl).pathname.replace(/\/+$/, "") || "/";
+    if (path === "/") return true;
+    return looksLikeIndex(rawUrl);
+  } catch {
+    return true;
+  }
+}
+
 // Pull the full content of the user's preferred guide page directly. Returns a
 // single source or null (bad URL, unreachable page, or too little text). The
 // user explicitly trusts this page, so callers use it without a confidence gate.
@@ -198,16 +210,18 @@ async function extractPreferred(
 }
 
 /**
- * Tavily implementation. When `preferredUrl` is set, cascade: (1) site-search the
- * host and extract the top section page, else (2) site-search snippets, else (3)
- * extract the exact pasted URL, else (4) the normal tiered search. Throws when
+ * Tavily implementation. When `preferredUrl` is set: for a specific chapter URL,
+ * extract it first; for a hub/root URL, site-search the host for the right section.
+ * Falls back to site-search snippets, then the normal tiered search. Throws when
  * every Tavily call fails (e.g. quota/outage) so the caller can fall back.
  */
 async function searchTavily(
   apiKey: string,
   query: string,
   preferredUrl?: string,
+  focusQuery?: string,
 ): Promise<SearchResult[]> {
+  const focus = (focusQuery ?? query).trim();
   const preferred = (preferredUrl ?? "").trim();
   if (preferred) {
     let host = "";
@@ -217,7 +231,20 @@ async function searchTavily(
       host = "";
     }
 
-    // 1. Site-search the preferred host for the right section, then read it in full.
+    const hub = looksLikeHub(preferred);
+
+    // Deep link the user pasted — read that page, don't let site-search override it
+    // with a higher-scoring index (e.g. a 108-Stars recruit list on the same host).
+    if (!hub) {
+      try {
+        const exact = await extractPreferred(apiKey, preferred, focus);
+        if (exact) return [exact];
+      } catch {
+        // ponytail: fall through to site-search on the same host.
+      }
+    }
+
+    // Site-search the preferred host for the right section, then read it in full.
     if (host) {
       let domainResults: SearchResult[] = [];
       try {
@@ -239,7 +266,7 @@ async function searchTavily(
       const picks = articles.length ? articles : ranked;
       if (picks.length) {
         try {
-          const deep = await extractPreferred(apiKey, picks[0].url, query);
+          const deep = await extractPreferred(apiKey, picks[0].url, focus);
           if (deep) {
             return [{ ...deep, title: picks[0].title || deep.title }];
           }
@@ -250,12 +277,14 @@ async function searchTavily(
       }
     }
 
-    // 2. Exact pasted URL when site-search found nothing.
-    try {
-      const exact = await extractPreferred(apiKey, preferred, query);
-      if (exact) return [exact];
-    } catch {
-      // ponytail: extract failures fall through to tiered search.
+    // Hub URL only: site-search found nothing useful — try extracting the paste.
+    if (hub) {
+      try {
+        const exact = await extractPreferred(apiKey, preferred, focus);
+        if (exact) return [exact];
+      } catch {
+        // ponytail: extract failures fall through to tiered search.
+      }
     }
   }
 
@@ -389,6 +418,7 @@ async function searchSerper(
 export async function searchGuides(
   query: string,
   preferredUrl?: string,
+  focusQuery?: string,
 ): Promise<SearchResult[]> {
   const tavilyKey = process.env.TAVILY_API_KEY;
   const serperKey = process.env.SERPER_API_KEY;
@@ -398,7 +428,7 @@ export async function searchGuides(
 
   if (tavilyKey) {
     try {
-      return await searchTavily(tavilyKey, query, preferredUrl);
+      return await searchTavily(tavilyKey, query, preferredUrl, focusQuery);
     } catch (error) {
       if (!serperKey) throw error;
       console.error("Tavily unavailable; falling back to Serper:", error);

@@ -15,9 +15,11 @@ and simply cannot save.
 ## Architecture
 
 - `app/page.tsx`: English client chat UI (game field, platform, optional
-  preferred-guide link, message feed, docked composer) and `/api/solve` consumer.
+ preferred-guide link, per-game spoiler toggles in `localStorage`, message feed,
+ docked composer) and `/api/solve` consumer.
   Keeps `messages` state and sends the last 10 messages (5 turns) as `history`
-  plus `preferredUrl`. Also owns Supabase auth state, the "Your games" menu
+  plus `preferredUrl` and `spoilerPrefs` (`story` / `recruits` / `bosses`, default
+  all off). Also owns Supabase auth state, the "Your games" menu
   (list/resume/new/delete), per-turn chat persistence (auto-creates a new saved
   chat when the game name changes mid-session), edit/retry on message bubbles,
   structured highlight sections on assistant replies, a game metadata card with
@@ -29,9 +31,10 @@ and simply cannot save.
   `tgdbPlatformToLabel`; a sticky mini-header (cover + game/platform + back-to-top),
   a collapsible left sidebar (burger toggle) that lists saved games (cover + game +
   platform·year) with a per-row kebab -> Edit/Delete menu and a Library button that
-  opens a 2-column cover-art grid, per-message image/camera attachments (signed-in
-  only: compressed client-side, uploaded to the `covers` bucket at send time, sent
-  to Gemini via Replicate's `images` field), system-default dark mode,
+  opens a 2-column cover-art grid,   per-message image attachments (signed-in only: compressed client-side, one
+  paperclip menu beside Send for photo library or camera, uploaded to the `covers` bucket at send time, sent
+  to Gemini via Replicate's `images` field`; edit/retry drops truncated turns'
+  Storage images), System/Light/Dark theme toggle (`gg:theme` in `localStorage`),
   light-markdown rendering of answers (`lib/markdown.js`: bold/lists/headings),
   a dismissable examples strip
   (remembered in `localStorage`), and auto-scroll (smooth on new turns, instant
@@ -65,8 +68,8 @@ and simply cannot save.
   `lib/games.js#mapGames` shapes the payload. Provider swap to IGDB later is this
   file + `mapGames` only.
 - `app/api/solve/route.ts`: validates/sanitizes `{ game, platform, question,
-  history, preferredUrl }` at the trust boundary (history capped to 10, content
-  truncated, `preferredUrl` must be http/https). Always calls `resolveQuestion`
+  history, preferredUrl, spoilerPrefs }` at the trust boundary (history capped to 10, content
+  truncated, `preferredUrl` must be http/https, `spoilerPrefs` coerced to booleans). Always calls `resolveQuestion`
   to rewrite the query into standalone English before searching. Wraps the search
   in a cache (`lib/search-cache.ts`) keyed by `searchQuery + preferredUrl`.
   Search is best-effort (skipped if no `TAVILY_API_KEY`, failures swallowed); the
@@ -78,13 +81,13 @@ and simply cannot save.
   becomes a `site:` filter, else one general query, trimmed to top 3). With no
   `preferredUrl` the Tavily path
   it runs the normal tiered search (GameFAQs -> trusted walkthrough providers ->
-  forums -> general). With one it cascades: (1) site-search the host for this
-  question, extract the top section page in full (title from the search hit), else
-  (2) return site-search snippets, else (3) extract the exact pasted URL, else
-  (4) fall back to the tiers. Steps 1-3 return sources solely from the preferred
-  site and SKIP the confidence gate (the user's site choice is trusted, so a
-  low-scoring but correct fan-site page still wins over the pasted hub URL). The
-  extracted page is trimmed to the query-matching window via `focusSection`, not
+  forums -> general).  With one it cascades: (1) for a deep chapter URL, extract that page in full
+ (via `focusSection`), else (2) site-search the host for the right section page,
+ else (3) site-search snippets, else (4) for hub/root URLs extract the pasted
+ URL, else (5) fall back to the tiers. Steps 1-4 return sources solely from the
+ preferred site and SKIP the confidence gate (the user's site choice is trusted,
+ so a low-scoring but correct fan-site page still wins over the pasted hub URL).
+ The extracted page is trimmed to the query-matching window via `focusSection`, not
   its opening. All paths use `search_depth: "advanced"`, exclude video/social
   domains, dedupe by URL+title, clean via `cleanSnippet`, and the tiered path
   gates/trims via `selectSources`.
@@ -108,6 +111,11 @@ and simply cannot save.
   question, history })` does a small, low-token call to rewrite any question into
   a standalone English search query, falling back to the raw question on any
   failure. Exports the `Turn`, `Highlight`, and `SummaryResult` types.
+- `lib/spoiler-prefs.js`: per-game spoiler toggles (`story`, `recruits`, `bosses`;
+  default all off) in `localStorage` (`gg:spoiler-prefs`), `buildSpoilerBlock` +
+  `buildSpoilerOutputRules` for the summarize prompt (enabled categories return
+  collapsible `spoilers` entries, not inline answer text), `coerceSpoilerPrefs` at the API trust boundary. Covered by
+  `npm run check`.
 - `lib/prompt.js`: exports `SYSTEM_INSTRUCTION` (persona + rules: knowledge-first,
   web-as-support, on-topic guardrail — only game guidance, decline off-topic and
   never reveal/override the prompt — injection safety, JSON output with `answer` +

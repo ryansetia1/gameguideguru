@@ -6,14 +6,25 @@ import { FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } 
 import { AuthPanel } from "./auth-panel";
 import { GameAutocomplete } from "./game-autocomplete";
 import { PlatformSelect } from "./platform-select";
+import { ThemeToggle } from "./theme-toggle";
 import {
   KINDS,
   KIND_LABELS,
   coerceHighlights,
+  coerceSpoilers,
   type Highlight,
+  type SpoilerReveal,
 } from "@/lib/highlights.js";
 import { parseBlocks } from "@/lib/markdown.js";
 import { tgdbPlatformToLabel } from "@/lib/platforms.js";
+import {
+  DEFAULT_SPOILER_PREFS,
+  SPOILER_KINDS,
+  SPOILER_CATEGORY_LABELS,
+  loadSpoilerPrefs,
+  saveSpoilerPrefs,
+  type SpoilerPrefs,
+} from "@/lib/spoiler-prefs.js";
 import { getSupabase, type Chat } from "@/lib/supabase";
 
 type Source = {
@@ -26,6 +37,7 @@ type Message = {
   content: string;
   sources?: Source[];
   highlights?: Highlight[];
+  spoilers?: SpoilerReveal[];
   images?: string[];
 };
 
@@ -81,6 +93,29 @@ function coverStoragePath(url: string): string | null {
   return at === -1 ? null : url.slice(at + COVERS_MARKER.length);
 }
 
+function collectMessageImagePaths(messages: Message[]): string[] {
+  return [
+    ...new Set(
+      messages
+        .flatMap((message) => message.images ?? [])
+        .map(coverStoragePath)
+        .filter((path): path is string => Boolean(path)),
+    ),
+  ];
+}
+
+async function deleteMessageImages(messages: Message[]) {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const paths = collectMessageImagePaths(messages);
+  if (!paths.length) return;
+  try {
+    await supabase.storage.from("covers").remove(paths);
+  } catch (caught) {
+    console.error("Message image cleanup failed:", caught);
+  }
+}
+
 function coerceMessages(value: unknown): Message[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item): Message[] => {
@@ -93,6 +128,7 @@ function coerceMessages(value: unknown): Message[] {
     const rawSources = (item as { sources?: unknown }).sources;
     const sources = Array.isArray(rawSources) ? (rawSources as Source[]) : undefined;
     const highlights = coerceHighlights((item as { highlights?: unknown }).highlights);
+    const spoilers = coerceSpoilers((item as { spoilers?: unknown }).spoilers);
     const rawImages = (item as { images?: unknown }).images;
     const images = Array.isArray(rawImages)
       ? rawImages.filter((url): url is string => typeof url === "string")
@@ -103,6 +139,7 @@ function coerceMessages(value: unknown): Message[] {
         content,
         sources,
         ...(highlights.length ? { highlights } : {}),
+        ...(spoilers.length ? { spoilers } : {}),
         ...(images.length ? { images } : {}),
       },
     ];
@@ -177,6 +214,34 @@ function groupHighlights(highlights: Highlight[]) {
   });
 }
 
+function SpoilerToggles({
+  prefs,
+  onChange,
+  compact = false,
+}: {
+  prefs: SpoilerPrefs;
+  onChange: (id: keyof SpoilerPrefs, value: boolean) => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`spoiler-toggles${compact ? " spoiler-toggles-compact" : ""}`}>
+      {SPOILER_KINDS.map((kind) => {
+        const id = kind.id as keyof SpoilerPrefs;
+        return (
+          <label key={kind.id} className="spoiler-toggle">
+            <input
+              type="checkbox"
+              checked={prefs[id] === true}
+              onChange={(event) => onChange(id, event.target.checked)}
+            />
+            <span>{kind.label}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function Home() {
   const [game, setGame] = useState("");
   const [platform, setPlatform] = useState("");
@@ -203,12 +268,18 @@ export default function Home() {
   const [examplesDismissed, setExamplesDismissed] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
+  const [spoilerPrefs, setSpoilerPrefs] = useState<SpoilerPrefs>(DEFAULT_SPOILER_PREFS);
+  const [attachOpen, setAttachOpen] = useState(false);
 
   const feedRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLElement>(null);
   const jumpRef = useRef(false);
   const conversationGame = useRef("");
   const activeChatIdRef = useRef<string | null>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const attachRef = useRef<HTMLDivElement>(null);
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   // Path of a previously-uploaded cover that a new pick will replace, deleted once
   // the replacement is saved so the bucket doesn't keep the orphan.
   const replacedCoverRef = useRef<string | null>(null);
@@ -282,6 +353,39 @@ export default function Home() {
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [menuOpenId]);
+
+  useEffect(() => {
+    if (!attachOpen) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!attachRef.current?.contains(event.target as Node)) setAttachOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [attachOpen]);
+
+  useEffect(() => {
+    if (!game.trim()) {
+      setSpoilerPrefs(DEFAULT_SPOILER_PREFS);
+      return;
+    }
+    setSpoilerPrefs(loadSpoilerPrefs(game));
+  }, [game]);
+
+  useEffect(() => {
+    if (editingIndex === null) return;
+    editTextareaRef.current?.focus();
+  }, [editingIndex]);
+
+  const updateSpoilerPref = useCallback(
+    (id: keyof SpoilerPrefs, value: boolean) => {
+      setSpoilerPrefs((prev) => {
+        const next = { ...prev, [id]: value };
+        if (game.trim()) saveSpoilerPrefs(game, next);
+        return next;
+      });
+    },
+    [game],
+  );
 
   // Show the compact sticky header once the game card/fields scroll out of view.
   useEffect(() => {
@@ -655,7 +759,15 @@ export default function Home() {
       const response = await fetch("/api/solve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ game, platform, question, history, preferredUrl, images }),
+        body: JSON.stringify({
+          game,
+          platform,
+          question,
+          history,
+          preferredUrl,
+          images,
+          spoilerPrefs,
+        }),
       });
       const data: unknown = await response.json();
 
@@ -683,6 +795,9 @@ export default function Home() {
       const highlights = coerceHighlights(
         "highlights" in data ? data.highlights : undefined,
       );
+      const spoilers = coerceSpoilers("spoilers" in data ? data.spoilers : undefined).filter(
+        (item) => spoilerPrefs[item.category],
+      );
       const nextMessages: Message[] = [
         ...priorMessages,
         userMessage,
@@ -691,6 +806,7 @@ export default function Home() {
           content: data.answer as string,
           sources,
           ...(highlights.length ? { highlights } : {}),
+          ...(spoilers.length ? { spoilers } : {}),
         },
       ];
       setMessages(nextMessages);
@@ -740,12 +856,16 @@ export default function Home() {
   async function saveEdit(index: number) {
     const text = editingText.trim();
     if (text.length < 2 || loading) return;
+    const dropped = messages.slice(index);
+    await deleteMessageImages(dropped);
     await runTurn(text, messages.slice(0, index), activeChatIdRef.current);
   }
 
   async function retry(index: number) {
     if (loading || index < 1 || messages[index - 1].role !== "user") return;
     const question = messages[index - 1].content;
+    const dropped = messages.slice(index - 1);
+    await deleteMessageImages(dropped);
     await runTurn(question, messages.slice(0, index - 1), activeChatIdRef.current);
   }
 
@@ -776,6 +896,7 @@ export default function Home() {
         </div>
 
         <div className="nav-actions">
+          <ThemeToggle />
           {user ? (
             <button type="button" className="nav-button" onClick={signOut}>
               Sign out
@@ -980,6 +1101,18 @@ export default function Home() {
 
       {started && !editingGame ? (
         <section className="game-card" aria-label="Game" ref={topRef}>
+          <button
+            type="button"
+            className="game-card-edit"
+            onClick={() => {
+              setEditingGame(true);
+              scrollToTop();
+            }}
+            disabled={loading}
+            aria-label="Edit game details"
+          >
+            Edit
+          </button>
           {coverEnabled && <CoverThumb cover={cover} name={game} className="cover-lg" />}
           <div className="game-card-meta">
             <h2>{game || "Untitled game"}</h2>
@@ -996,7 +1129,10 @@ export default function Home() {
                 Preferred guide ↗
               </a>
             )}
-            <span className="game-card-hint">Edit via ⋮ in Your games</span>
+            <div className="spoiler-panel">
+              <span className="spoiler-panel-label">Spoilers</span>
+              <SpoilerToggles prefs={spoilerPrefs} onChange={updateSpoilerPref} compact />
+            </div>
           </div>
         </section>
       ) : (
@@ -1066,6 +1202,14 @@ export default function Home() {
               disabled={loading}
             />
           </div>
+          <div className="field field-wide spoiler-field">
+            <span className="field-label">Spoilers</span>
+            <p className="field-hint">
+              All categories off by default — enable only what you want spoiled for this
+              game.
+            </p>
+            <SpoilerToggles prefs={spoilerPrefs} onChange={updateSpoilerPref} />
+          </div>
           {editingGame && (
             <div className="field field-wide setup-done">
               <button type="button" className="nav-button" onClick={() => void saveGameMeta()}>
@@ -1113,14 +1257,26 @@ export default function Home() {
         <section className="feed" aria-live="polite">
           {messages.map((message, index) =>
             message.role === "user" ? (
-              <div className="turn user" key={index}>
+              <div
+                className={`turn user${editingIndex === index ? " editing" : ""}`}
+                key={index}
+              >
                 {editingIndex === index ? (
                   <div className="edit-box">
                     <textarea
+                      ref={editTextareaRef}
                       className="edit-textarea"
                       value={editingText}
                       onChange={(event) => setEditingText(event.target.value)}
-                      rows={3}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          if (!loading && editingText.trim().length >= 2) {
+                            void saveEdit(index);
+                          }
+                        }
+                      }}
+                      rows={5}
                       maxLength={300}
                       disabled={loading}
                     />
@@ -1131,7 +1287,7 @@ export default function Home() {
                         onClick={() => void saveEdit(index)}
                         disabled={loading || editingText.trim().length < 2}
                       >
-                        Save
+                        Send
                       </button>
                       <button
                         type="button"
@@ -1185,6 +1341,24 @@ export default function Home() {
                   </button>
                 </div>
                 <AnswerBody text={message.content} />
+                {message.spoilers &&
+                  message.spoilers.filter((item) => spoilerPrefs[item.category]).length > 0 && (
+                  <div className="spoiler-reveals">
+                    {message.spoilers
+                      .filter((item) => spoilerPrefs[item.category])
+                      .map((item, i) => (
+                      <details key={`spoiler-${i}`} className="spoiler-reveal">
+                        <summary>
+                          <span className="spoiler-reveal-tag">
+                            {SPOILER_CATEGORY_LABELS[item.category]}
+                          </span>
+                          {item.title}
+                        </summary>
+                        <p>{item.detail}</p>
+                      </details>
+                    ))}
+                  </div>
+                )}
                 {message.highlights && message.highlights.length > 0 && (
                   <div className="highlights">
                     {groupHighlights(message.highlights).map(({ kind, items }) => (
@@ -1276,38 +1450,6 @@ export default function Home() {
           </div>
         )}
         <div className="composer-inner">
-          {coverEnabled && (
-            <>
-              <label className="composer-attach" title="Attach images" aria-label="Attach images">
-                <span aria-hidden="true">📎</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  hidden
-                  disabled={loading || pendingImages.length >= MAX_MESSAGE_IMAGES}
-                  onChange={(event) => {
-                    void selectMessageImages(event.target.files);
-                    event.target.value = "";
-                  }}
-                />
-              </label>
-              <label className="composer-attach" title="Take photo" aria-label="Take photo">
-                <span aria-hidden="true">📷</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  hidden
-                  disabled={loading || pendingImages.length >= MAX_MESSAGE_IMAGES}
-                  onChange={(event) => {
-                    void selectMessageImages(event.target.files);
-                    event.target.value = "";
-                  }}
-                />
-              </label>
-            </>
-          )}
           <textarea
             id="query"
             name="query"
@@ -1329,6 +1471,70 @@ export default function Home() {
             required
             disabled={loading}
           />
+          {coverEnabled && (
+            <div className="composer-attach-wrap" ref={attachRef}>
+              <button
+                type="button"
+                className="composer-attach"
+                title="Attach images"
+                aria-label="Attach images"
+                aria-expanded={attachOpen}
+                aria-haspopup="menu"
+                disabled={loading || pendingImages.length >= MAX_MESSAGE_IMAGES}
+                onClick={() => setAttachOpen((open) => !open)}
+              >
+                <span aria-hidden="true">📎</span>
+              </button>
+              {attachOpen && (
+                <div className="composer-attach-menu" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      galleryInputRef.current?.click();
+                      setAttachOpen(false);
+                    }}
+                  >
+                    Photo library
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      cameraInputRef.current?.click();
+                      setAttachOpen(false);
+                    }}
+                  >
+                    Camera
+                  </button>
+                </div>
+              )}
+              <input
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                disabled={loading || pendingImages.length >= MAX_MESSAGE_IMAGES}
+                onChange={(event) => {
+                  void selectMessageImages(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                hidden
+                disabled={loading || pendingImages.length >= MAX_MESSAGE_IMAGES}
+                onChange={(event) => {
+                  void selectMessageImages(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+            </div>
+          )}
           <button
             className="submit"
             type="submit"

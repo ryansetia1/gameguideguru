@@ -10,6 +10,12 @@ import {
 } from "@/lib/prompt";
 import type { SearchResult } from "@/lib/tavily";
 
+type SpoilerPrefs = {
+  story: boolean;
+  recruits: boolean;
+  bosses: boolean;
+};
+
 const DEFAULT_MODEL = "google/gemini-2.5-flash";
 
 export type Turn = {
@@ -23,9 +29,16 @@ export type Highlight = {
   detail: string;
 };
 
+export type SpoilerReveal = {
+  category: "story" | "recruits" | "bosses";
+  title: string;
+  detail: string;
+};
+
 export type SummaryResult = {
   answer: string;
   highlights: Highlight[];
+  spoilers: SpoilerReveal[];
 };
 
 type ModelName = `${string}/${string}` | `${string}/${string}:${string}`;
@@ -100,6 +113,7 @@ export type SummarizeInput = {
   sources: SearchResult[];
   history?: Turn[];
   images?: string[];
+  spoilerPrefs?: SpoilerPrefs;
 };
 
 export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
