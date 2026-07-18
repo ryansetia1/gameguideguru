@@ -98,12 +98,12 @@ export function GuideLinkField({ value, onChange, game, platform, disabled }: Pr
   }
 
   return (
-    <details className="field field-wide guide-link-field guide-details" open={initialOpen}>
-      <summary className="guide-summary">
-        <span className="guide-summary-label" id={`${inputId}-label`}>
+    <details className="field guide-link-field opt-details" open={initialOpen}>
+      <summary className="opt-summary">
+        <span className="opt-summary-label" id={`${inputId}-label`}>
           Preferred guide (optional)
         </span>
-        {value && <span className="guide-summary-value">{hostLabel(value)}</span>}
+        {value && <span className="opt-summary-value">{hostLabel(value)}</span>}
       </summary>
       <div className="guide-link-modes" role="tablist" aria-labelledby={`${inputId}-label`}>
         <button

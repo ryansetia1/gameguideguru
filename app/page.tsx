@@ -231,6 +231,63 @@ function CoverThumb({
   );
 }
 
+// Fun rotating roles for the "Companion for ___" eyebrow. First stays the
+// original word so the initial paint matches the design (and SSR is stable).
+const FUN_ROLES = [
+  "adventurers", "button mashers", "cozy gamers", "loot goblins", "speedrunners",
+  "backseat gamers", "tryhards", "sweatlords", "keyboard warriors", "dungeon divers",
+  "boss slayers", "quest chasers", "completionists", "achievement hunters",
+  "trophy collectors", "lore nerds", "min-maxers", "theorycrafters", "grinders",
+  "campers", "snipers", "healers", "tanks", "DPS mains", "solo queuers", "guildmates",
+  "raid bosses", "PvP demons", "couch co-oppers", "retro heads", "pixel peepers",
+  "ragequitters", "save scummers", "potion hoarders", "fast travelers",
+  "easter-egg hunters", "glitch hunters", "sequence breakers", "100-percenters",
+  "permadeath survivors", "roguelike addicts", "gacha addicts", "wallet warriors",
+  "F2P heroes", "meta slaves", "wiki lurkers", "blind runners", "first-try legends",
+  "3am raiders", "snack-powered gamers", "controller throwers", "WASD wizards",
+  "quickscopers", "clutch masters", "comeback kings", "respawn regulars",
+  "lategame legends", "mod hoarders", "cheat-code kids", "konami-code knowers",
+  "puzzle ponderers", "low-HP gamblers", "last-stand heroes", "dodge-roll addicts",
+  "parry gods", "stealth sneakers", "chaos gremlins", "chest openers",
+  "NPC befrienders", "cutscene enjoyers", "fog-of-war clearers", "map completionists",
+  "side-quest addicts", "one-more-turners", "loot sorters", "hardcore heroes",
+  "casual legends", "pixel pilgrims", "boss-rush fiends", "no-hit runners",
+  "lucky crit-fishers", "rng sufferers", "patch-note readers", "hitbox scientists",
+  "frame-perfect freaks", "combo dreamers", "spawn campers", "map hackers (jk)",
+  "mini-map addicts", "fanfic writers", "headcanon holders", "ship captains",
+  "emote spammers", "GG sayers", "rage-quit royalty", "loot-box gamblers",
+  "endgame grinders", "secret finders", "speedrun timers", "forever-stuck heroes",
+];
+
+function RotatingWord() {
+  const [i, setI] = useState(0);
+  // Tap/click to freeze on a word (e.g. to screenshot), tap again to resume.
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    if (paused) return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const id = setInterval(() => setI((n) => (n + 1) % FUN_ROLES.length), 2200);
+    return () => clearInterval(id);
+  }, [paused]);
+  return (
+    <button
+      type="button"
+      className="rotating-word"
+      onClick={() => setPaused((p) => !p)}
+      title={paused ? "Resume" : "Tap to pause"}
+      aria-label={
+        paused
+          ? `Paused on "${FUN_ROLES[i]}". Activate to resume.`
+          : "Rotating word — activate to pause."
+      }
+    >
+      <span key={i} className="rotating-word-inner">
+        {FUN_ROLES[i]}
+      </span>
+    </button>
+  );
+}
+
 function SteamIcon() {
   return (
     <svg className="sidebar-steam-icon" viewBox="0 0 496 512" fill="currentColor" aria-hidden="true">
@@ -309,9 +366,19 @@ export default function Home() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const attachRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   // Path of a previously-uploaded cover that a new pick will replace, deleted once
   // the replacement is saved so the bucket doesn't keep the orphan.
   const replacedCoverRef = useRef<string | null>(null);
+
+  // Grow the composer to fit its text (down to one line when empty), capped by
+  // the CSS max-height which then scrolls. Runs on every input + after clearing.
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [input]);
 
   function pushOverlayHistory() {
     if (typeof window === "undefined") return;
@@ -1347,14 +1414,15 @@ export default function Home() {
 
       {!started && (
         <section className="hero">
-          <p className="eyebrow">COMPANION FOR ADVENTURERS</p>
+          <p className="eyebrow">
+            Companion for <RotatingWord />
+          </p>
           <h1>
             Stuck? <em>Keep playing.</em>
           </h1>
           <p className="intro">
-            Pick your game and platform, tell us where you are stuck, then ask as
-            many follow-ups as you like. We search the web for guides and
-            summarize them into steps you can act on.
+            Say the game and where you&apos;re stuck. We turn web guides into steps
+            you can act on.
           </p>
         </section>
       )}
@@ -1451,20 +1519,27 @@ export default function Home() {
             </span>
             <PlatformSelect value={platform} onChange={setPlatform} />
           </div>
-          <GuideLinkField
-            value={preferredUrl}
-            onChange={setPreferredUrl}
-            game={game}
-            platform={platform}
-            disabled={loading}
-          />
-          <div className="field field-wide spoiler-field">
-            <span className="field-label">Spoilers</span>
-            <p className="field-hint">{GAME_SPOILER_HINT}</p>
-            <SpoilerToggle
-              prefs={{ major: gameSpoilerMajor }}
-              onChange={updateGameSpoiler}
+          <div className="opt-row">
+            <GuideLinkField
+              value={preferredUrl}
+              onChange={setPreferredUrl}
+              game={game}
+              platform={platform}
+              disabled={loading}
             />
+            <details className="field spoiler-field opt-details">
+              <summary className="opt-summary">
+                <span className="opt-summary-label">Spoilers</span>
+                <span className={`opt-summary-value${gameSpoilerMajor ? " is-on" : ""}`}>
+                  {gameSpoilerMajor ? "On for this game" : "Off"}
+                </span>
+              </summary>
+              <p className="field-hint">{GAME_SPOILER_HINT}</p>
+              <SpoilerToggle
+                prefs={{ major: gameSpoilerMajor }}
+                onChange={updateGameSpoiler}
+              />
+            </details>
           </div>
           {editingGame && (
             <div className="field field-wide setup-done">
@@ -1702,6 +1777,7 @@ export default function Home() {
         )}
         <div className="composer-inner">
           <textarea
+            ref={composerRef}
             id="query"
             name="query"
             value={input}
@@ -1717,7 +1793,7 @@ export default function Home() {
                 ? "Ask a follow-up... (e.g. where to after that boss?)"
                 : "Where are you stuck?"
             }
-            rows={started ? 1 : 3}
+            rows={1}
             maxLength={300}
             required
             disabled={loading}

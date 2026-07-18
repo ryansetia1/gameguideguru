@@ -126,6 +126,39 @@ main {
   font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Rotating gamer word in the eyebrow — accent-coloured, rises + fades in on
+   each swap. The inner span is re-keyed per word so the animation replays. */
+.rotating-word {
+  display: inline-block;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--signal-dark);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.rotating-word-inner {
+  display: inline-block;
+  animation: word-rise 440ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+@keyframes word-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.6em);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
 }
 
 h1 {
@@ -136,6 +169,9 @@ h1 {
   font-weight: 400;
   letter-spacing: -0.072em;
   line-height: 0.84;
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 h1 em {
@@ -930,13 +966,14 @@ details.sources small {
 
 .composer textarea {
   flex: 1;
-  min-height: 46px;
+  min-height: 42px;
   max-height: 160px;
+  overflow-y: auto;
   resize: none;
   border: none;
   background: transparent;
   color: var(--ink);
-  padding: 12px;
+  padding: 9px 12px;
   font-size: 1rem;
   line-height: 1.5;
 }
@@ -952,8 +989,8 @@ details.sources small {
 .submit {
   display: grid;
   flex: none;
-  width: 50px;
-  height: 50px;
+  width: 42px;
+  height: 42px;
   place-items: center;
   border: 1.5px solid var(--ink);
   background: var(--signal);
@@ -1658,6 +1695,12 @@ details.sources small {
   cursor: pointer;
 }
 
+/* Setup toggle spans the field; the compact menu variant stays inline. */
+.spoiler-field .spoiler-toggle {
+  display: flex;
+  width: 100%;
+}
+
 /* Checked = spoilers ON: switch to the app's spoiler-red nuance (not the mint
    accent) so it reads as a warning that reveals will show. */
 .spoiler-toggle:has(input:checked) {
@@ -1887,8 +1930,26 @@ details.sources small {
   gap: 8px;
 }
 
-/* Collapsible preferred-guide section (native <details>) */
-.guide-summary {
+/* Two collapsibles share a row to save vertical space: side-by-side while both
+   are closed, then any open one (and its siblings) stacks full-width so the
+   expanded content gets the whole row — essential on mobile. Pure CSS via :has(). */
+.opt-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.opt-row > .opt-details {
+  flex: 1 1 calc(50% - 6px);
+  min-width: 0;
+}
+
+.opt-row:has(.opt-details[open]) > .opt-details {
+  flex-basis: 100%;
+}
+
+/* Collapsible section trigger (native <details>) */
+.opt-summary {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -1904,11 +1965,11 @@ details.sources small {
   color: var(--muted);
 }
 
-.guide-summary::-webkit-details-marker {
+.opt-summary::-webkit-details-marker {
   display: none;
 }
 
-.guide-summary::before {
+.opt-summary::before {
   content: "+";
   display: inline-grid;
   place-items: center;
@@ -1920,19 +1981,24 @@ details.sources small {
   line-height: 1;
 }
 
-.guide-details[open] .guide-summary::before {
+.opt-details[open] .opt-summary::before {
   content: "−";
 }
 
-.guide-summary:hover {
+.opt-summary:hover {
   color: var(--ink);
 }
 
-.guide-summary-value {
+.opt-summary-value {
   text-transform: none;
   letter-spacing: 0;
   font-weight: 600;
   color: var(--text-subtle);
+}
+
+/* Spoilers active: flag it in the app's spoiler-red even while collapsed. */
+.opt-summary-value.is-on {
+  color: var(--danger);
 }
 
 .guide-link-modes {
