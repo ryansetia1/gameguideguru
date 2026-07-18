@@ -73,6 +73,14 @@ function normGame(value: string) {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
+// The Storage object path inside our `covers` bucket for a public URL, or null
+// for anything that isn't ours to delete (e.g. TheGamesDB CDN covers).
+const COVERS_MARKER = "/storage/v1/object/public/covers/";
+function coverStoragePath(url: string): string | null {
+  const at = url.indexOf(COVERS_MARKER);
+  return at === -1 ? null : url.slice(at + COVERS_MARKER.length);
+}
+
 function coerceMessages(value: unknown): Message[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item): Message[] => {
@@ -201,6 +209,9 @@ export default function Home() {
   const jumpRef = useRef(false);
   const conversationGame = useRef("");
   const activeChatIdRef = useRef<string | null>(null);
+  // Path of a previously-uploaded cover that a new pick will replace, deleted once
+  // the replacement is saved so the bucket doesn't keep the orphan.
+  const replacedCoverRef = useRef<string | null>(null);
 
   const supabaseReady = Boolean(getSupabase());
   // Cover art (TheGamesDB display + device upload) is a signed-in-only feature:
@@ -301,6 +312,7 @@ export default function Home() {
     if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
     setCover("");
     setPendingCover(null);
+    replacedCoverRef.current = null;
     clearPendingImages();
     setReleaseYear("");
     setEditingGame(false);
@@ -325,6 +337,7 @@ export default function Home() {
     if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
     setCover(chat.cover_url ?? "");
     setPendingCover(null);
+    replacedCoverRef.current = null;
     clearPendingImages();
     setReleaseYear(chat.release_year ?? "");
     setEditingGame(false);
@@ -372,6 +385,10 @@ export default function Home() {
       setError("Cover must be under 5 MB.");
       return;
     }
+    // Remember the uploaded cover being replaced (keep the earliest across repeated
+    // picks; blob previews have no storage path).
+    const oldPath = coverStoragePath(cover);
+    if (oldPath) replacedCoverRef.current = oldPath;
     if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
     setPendingCover(file);
     setCover(URL.createObjectURL(file));
@@ -398,6 +415,15 @@ export default function Home() {
       if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
       setPendingCover(null);
       setCover(url);
+      // Delete the cover this one replaced, now that the new one is saved.
+      const replaced = replacedCoverRef.current;
+      replacedCoverRef.current = null;
+      if (replaced && replaced !== path) {
+        supabase.storage
+          .from("covers")
+          .remove([replaced])
+          .catch((caught) => console.error("Cover cleanup failed:", caught));
+      }
       return url;
     } catch (caught) {
       console.error("Cover upload failed:", caught);
@@ -409,6 +435,10 @@ export default function Home() {
   }
 
   async function clearCover() {
+    const toRemove = [coverStoragePath(cover), replacedCoverRef.current].filter(
+      (path): path is string => Boolean(path),
+    );
+    replacedCoverRef.current = null;
     if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
     setCover("");
     setPendingCover(null);
@@ -417,6 +447,14 @@ export default function Home() {
     if (supabase && id) {
       await supabase.from("chats").update({ cover_url: "" }).eq("id", id);
       void loadChats();
+    }
+    // Remove the old uploaded cover file(s) too (skips TheGamesDB CDN covers).
+    if (supabase && toRemove.length) {
+      try {
+        await supabase.storage.from("covers").remove(toRemove);
+      } catch (caught) {
+        console.error("Cover cleanup failed:", caught);
+      }
     }
   }
 
@@ -532,7 +570,23 @@ export default function Home() {
     }
     const supabase = getSupabase();
     if (!supabase) return;
+    // Collect this chat's own Storage files (cover + message images) so deleting
+    // the chat doesn't orphan them in the bucket.
+    const urls = [
+      chat.cover_url ?? "",
+      ...coerceMessages(chat.messages).flatMap((message) => message.images ?? []),
+    ];
+    const paths = urls
+      .map(coverStoragePath)
+      .filter((path): path is string => Boolean(path));
     await supabase.from("chats").delete().eq("id", chat.id);
+    if (paths.length) {
+      try {
+        await supabase.storage.from("covers").remove(paths);
+      } catch (caught) {
+        console.error("Storage cleanup failed:", caught);
+      }
+    }
     if (chat.id === activeChatId) newGame();
     void loadChats();
   }

@@ -188,7 +188,11 @@ and simply cannot save.
   TheGamesDB covers are hotlinked from its CDN (zero Storage). Device uploads are
   held as a local `blob:` preview and written to the public `covers` bucket only at
   save time (`resolveCoverUrl` in the persist path), so abandoned picks never land
-  in Storage. Bucket policy: owner-write under `<uid>/`, public read.
+  in Storage. Bucket policy: owner-write under `<uid>/`, public read. Storage is
+  cleaned to respect the free tier: deleting a chat removes its cover + all its
+  message images, clearing a cover deletes its file, and replacing a cover deletes
+  the one it replaced (`coverStoragePath` maps a public URL back to a bucket path;
+  TheGamesDB CDN covers are skipped). Message images upload to `<uid>/msg/` at send.
 - Autocomplete platform auto-fill depends on TheGamesDB returning
   `include=platform` and `tgdbPlatformToLabel` recognising the name; unknown names
   leave the selector untouched for manual choice.
