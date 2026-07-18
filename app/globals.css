@@ -56,7 +56,8 @@ button:focus-visible,
 a:focus-visible,
 textarea:focus-visible,
 input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+summary:focus-visible {
   outline: 3px solid var(--signal-dark);
   outline-offset: 3px;
 }
@@ -1170,6 +1171,9 @@ details.sources small {
 .sidebar-new,
 .sidebar-library-btn,
 .sidebar-steam-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   border: 1.5px solid var(--ink);
   background: var(--paper-strong);
@@ -1187,6 +1191,12 @@ details.sources small {
     transform 90ms ease,
     box-shadow 90ms ease,
     background 90ms ease;
+}
+
+.sidebar-steam-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
 }
 
 .sidebar-new {
@@ -1648,8 +1658,13 @@ details.sources small {
   cursor: pointer;
 }
 
+/* Checked = spoilers ON: switch to the app's spoiler-red nuance (not the mint
+   accent) so it reads as a warning that reveals will show. */
 .spoiler-toggle:has(input:checked) {
-  background: var(--signal);
+  background: var(--spoiler-surface);
+  border-color: var(--danger);
+  color: var(--danger);
+  font-weight: 700;
 }
 
 .spoiler-toggle input {
@@ -1657,7 +1672,7 @@ details.sources small {
   width: 15px;
   height: 15px;
   margin: 0;
-  accent-color: var(--signal-dark);
+  accent-color: var(--danger);
 }
 
 .spoiler-panel {
@@ -1870,6 +1885,54 @@ details.sources small {
 /* Preferred guide: paste link or search the web */
 .guide-link-field {
   gap: 8px;
+}
+
+/* Collapsible preferred-guide section (native <details>) */
+.guide-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 4px 0;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--font-sans);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.guide-summary::-webkit-details-marker {
+  display: none;
+}
+
+.guide-summary::before {
+  content: "+";
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: 1.5px solid currentColor;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.guide-details[open] .guide-summary::before {
+  content: "−";
+}
+
+.guide-summary:hover {
+  color: var(--ink);
+}
+
+.guide-summary-value {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  color: var(--text-subtle);
 }
 
 .guide-link-modes {
@@ -2151,9 +2214,31 @@ details.sources small {
   line-height: 1.5;
 }
 
-.auth-google,
+.auth-google {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1.5px solid var(--ink);
+  /* Google buttons stay white with dark text in both themes for recognisability
+     and guaranteed contrast. */
+  background: #ffffff;
+  color: #1f1f1f;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .auth-google:hover:not(:disabled) {
-  background: var(--signal);
+  background: #f2f2f2;
+}
+
+.auth-google-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
 }
 
 .auth-steam-hint {
@@ -2329,14 +2414,12 @@ details.sources small {
 .theme-toggle-menu button:hover,
 .composer-attach:hover:not(:disabled),
 .composer-attach-menu button:hover,
-.spoiler-toggle:has(input:checked),
 .cover-placeholder,
 .game-card-edit:hover:not(:disabled),
 .cover-upload:hover,
 .guide-link-modes button.active,
 .guide-search-use:hover:not(:disabled),
 .sticky-back:hover,
-.auth-google:hover:not(:disabled),
 .auth-submit {
   color: var(--on-signal);
 }

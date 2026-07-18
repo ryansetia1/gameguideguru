@@ -30,6 +30,9 @@ export function GuideLinkField({ value, onChange, game, platform, disabled }: Pr
   const inputId = useId();
   const searchInputId = useId();
   const autoRanRef = useRef(false);
+  // Collapsed by default to keep the setup clean; opens on mount only if a guide
+  // was already chosen. Stable across renders so the user's toggle sticks.
+  const [initialOpen] = useState(() => Boolean(value));
   const trimmedGame = game.trim();
   const canSearch = trimmedGame.length > 0;
 
@@ -95,10 +98,13 @@ export function GuideLinkField({ value, onChange, game, platform, disabled }: Pr
   }
 
   return (
-    <div className="field field-wide guide-link-field">
-      <span className="field-label" id={`${inputId}-label`}>
-        Preferred guide (optional)
-      </span>
+    <details className="field field-wide guide-link-field guide-details" open={initialOpen}>
+      <summary className="guide-summary">
+        <span className="guide-summary-label" id={`${inputId}-label`}>
+          Preferred guide (optional)
+        </span>
+        {value && <span className="guide-summary-value">{hostLabel(value)}</span>}
+      </summary>
       <div className="guide-link-modes" role="tablist" aria-labelledby={`${inputId}-label`}>
         <button
           type="button"
@@ -198,6 +204,6 @@ export function GuideLinkField({ value, onChange, game, platform, disabled }: Pr
           )}
         </div>
       )}
-    </div>
+    </details>
   );
 }
