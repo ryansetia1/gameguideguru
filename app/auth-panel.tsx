@@ -108,6 +108,17 @@ export function AuthPanel({ onClose }: Props) {
           Continue with Google
         </button>
 
+        <button
+          type="button"
+          className="auth-steam"
+          disabled={busy}
+          onClick={() => {
+            window.location.href = "/api/steam/login";
+          }}
+        >
+          Continue with Steam
+        </button>
+
         <div className="auth-divider">
           <span>or</span>
         </div>

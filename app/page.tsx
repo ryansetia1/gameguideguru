@@ -7,6 +7,7 @@ import { AuthPanel } from "./auth-panel";
 import { GameAutocomplete } from "./game-autocomplete";
 import { GuideLinkField } from "./guide-link-field";
 import { PlatformSelect } from "./platform-select";
+import { SteamLibrary, type SteamGame } from "./steam-library";
 import { ThemeToggle } from "./theme-toggle";
 import {
   KINDS,
@@ -26,6 +27,7 @@ import {
   type SpoilerPrefs,
 } from "@/lib/spoiler-prefs.js";
 import { getSupabase, type Chat } from "@/lib/supabase";
+import { steamIdFromMetadata } from "@/lib/steam.js";
 
 type Source = {
   title: string;
@@ -257,6 +259,7 @@ export default function Home() {
   const [authOpen, setAuthOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [steamLibraryOpen, setSteamLibraryOpen] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [examplesDismissed, setExamplesDismissed] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -281,6 +284,7 @@ export default function Home() {
   // Cover art (TheGamesDB display + device upload) is a signed-in-only feature:
   // keeps the signed-out flow simple and avoids any Storage use for anon users.
   const coverEnabled = Boolean(user);
+  const steamConnected = Boolean(user && steamIdFromMetadata(user.user_metadata));
 
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
@@ -337,6 +341,52 @@ export default function Home() {
       setActiveChatId(null);
     }
   }, [user, loadChats]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const steam = params.get("steam");
+    if (!steam) return;
+
+    params.delete("steam");
+    const rest = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${rest ? `?${rest}` : ""}`,
+    );
+
+    if (steam === "error") {
+      setError("Steam sign-in failed. Try again.");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    void (async () => {
+      if (steamIdFromMetadata(user.user_metadata)) return;
+
+      const response = await fetch("/api/steam/pending", { credentials: "include" });
+      const payload: { steamId?: string | null } = await response.json();
+      if (!payload.steamId) return;
+
+      const { error: linkError } = await supabase.auth.updateUser({
+        data: { steam_id: payload.steamId },
+      });
+      await fetch("/api/steam/pending", { method: "DELETE", credentials: "include" });
+
+      if (linkError) {
+        setError("Could not link Steam to your account.");
+        return;
+      }
+      const { data } = await supabase.auth.getUser();
+      if (data.user) setUser(data.user);
+    })();
+  }, [user]);
 
   useEffect(() => {
     if (!menuOpenId) return;
@@ -593,6 +643,48 @@ export default function Home() {
   function openFromLibrary(chat: Chat) {
     openChat(chat);
     setLibraryOpen(false);
+  }
+
+  function connectSteam() {
+    window.location.href = "/api/steam/login";
+  }
+
+  function startFromSteamGame(game: SteamGame) {
+    setSteamLibraryOpen(false);
+    setSidebarOpen(false);
+    setLibraryOpen(false);
+
+    const existing = chats.find(
+      (chat) =>
+        chat.game.toLowerCase() === game.name.toLowerCase() &&
+        (chat.platform === "PC" || !chat.platform),
+    );
+    if (existing) {
+      openChat(existing);
+      return;
+    }
+
+    jumpRef.current = true;
+    setActiveChatId(null);
+    setMessages([]);
+    setGame(game.name);
+    setPlatform("PC");
+    setPreferredUrl("");
+    if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
+    setCover(coverEnabled ? game.cover : "");
+    setPendingCover(null);
+    replacedCoverRef.current = null;
+    clearPendingImages();
+    setReleaseYear("");
+    setEditingGame(false);
+    setInput("");
+    setError("");
+    setEditingIndex(null);
+    setEditingText("");
+    conversationGame.current = game.name;
+    requestAnimationFrame(() => {
+      document.getElementById("game")?.focus();
+    });
   }
 
   // Message image attachments: compress + preview locally now, upload to Storage
@@ -948,8 +1040,26 @@ export default function Home() {
                   setLibraryOpen(true);
                 }}
               >
-                ▦ Library
+                ▦ Saved library
               </button>
+              {user && !steamConnected && (
+                <button type="button" className="sidebar-steam-btn" onClick={connectSteam}>
+                  ⎆ Connect Steam
+                </button>
+              )}
+              {steamConnected && (
+                <button
+                  type="button"
+                  className="sidebar-steam-btn"
+                  onClick={() => {
+                    setSidebarOpen(false);
+                    setMenuOpenId(null);
+                    setSteamLibraryOpen(true);
+                  }}
+                >
+                  ⎆ Steam library
+                </button>
+              )}
             </div>
             {chats.length === 0 ? (
               <p className="sidebar-empty">No saved games yet.</p>
@@ -1015,9 +1125,9 @@ export default function Home() {
           </aside>
 
           {libraryOpen && (
-            <div className="library" role="dialog" aria-label="Library">
+            <div className="library" role="dialog" aria-label="Saved library">
               <div className="library-head">
-                <span>Library</span>
+                <span>Saved library</span>
                 <button
                   type="button"
                   className="sidebar-close"
@@ -1055,6 +1165,12 @@ export default function Home() {
               )}
             </div>
           )}
+
+          <SteamLibrary
+            open={steamLibraryOpen}
+            onClose={() => setSteamLibraryOpen(false)}
+            onPick={startFromSteamGame}
+          />
         </>
       )}
 

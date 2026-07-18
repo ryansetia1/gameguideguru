@@ -69,6 +69,13 @@ and simply cannot save.
   `discoverGuideLinks` (tiered Tavily/Serper, no answer-time confidence gate).
   Returns `{ results: [{ title, url, snippet }], available }`; `available: false`
   when neither `TAVILY_API_KEY` nor `SERPER_API_KEY` is set.
+- `lib/steam.js`: Steam OpenID login URL + verification, `steam_id` in Supabase
+  `user_metadata`, owned-games fetch (`IPlayerService/GetOwnedGames`), and Steam CDN
+  library cover URLs. `app/api/steam/login` + `callback` handle OpenID; `pending`
+  cookie links Steam to the signed-in user; `GET /api/steam/library` (Bearer token)
+  returns the user's games sorted by playtime. `app/steam-library.tsx` grid UI;
+  picking a game opens/resumes a PC chat with Steam cover art. Requires
+  `STEAM_API_KEY`; user's Steam **Game details** must be Public.
 - `app/api/games/route.ts`: TheGamesDB proxy. Runs
   `Games/ByGameName?include=boxart,platform` with `THEGAMESDB_API_KEY` and returns
   `{ games, available }` (each game has `cover` + raw `platform` name). Missing key
@@ -238,6 +245,9 @@ Server-only secrets (never expose via `NEXT_PUBLIC_`, never commit `.env.local`)
 - `THEGAMESDB_API_KEY` (optional; enables game-name autocomplete + box art via
   TheGamesDB). Missing key => the field degrades to free text. IGDB (Twitch
   `TWITCH_CLIENT_ID`/`SECRET`) is the intended eventual upgrade but not wired now.
+- `STEAM_API_KEY` (optional; Steam Web API key for owned-games library import after
+  OpenID login). Missing key => Connect Steam / Steam library stay hidden or no-op.
+  User's Steam profile Game details must be Public.
 
 Public client vars (safe to expose; protected by RLS), optional — enable
 accounts, saved chats, and the search cache:

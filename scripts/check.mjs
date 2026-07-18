@@ -15,6 +15,11 @@ import { parseBlocks, parseInline } from "../lib/markdown.js";
 import { buildSpoilerBlock, coerceSpoilerPrefs } from "../lib/spoiler-prefs.js";
 import { coerceThemeMode, themeFromUserMetadata } from "../lib/theme.js";
 import { buildGuideDiscoveryQuery } from "../lib/guide-search.js";
+import {
+  steamIdFromClaimedId,
+  steamIdFromMetadata,
+  steamLibraryCoverUrl,
+} from "../lib/steam.js";
 
 // System instruction carries the persona + safety rules.
 assert.match(SYSTEM_INSTRUCTION, /untrusted data/);
@@ -88,6 +93,13 @@ assert.equal(
   "Suikoden PlayStation walkthrough guide",
 );
 assert.equal(buildGuideDiscoveryQuery("", "", "boss guide"), "boss guide");
+
+assert.equal(
+  steamIdFromClaimedId("https://steamcommunity.com/openid/id/76561198000000000"),
+  "76561198000000000",
+);
+assert.equal(steamIdFromMetadata({ steam_id: "76561198000000000" }), "76561198000000000");
+assert.match(steamLibraryCoverUrl(570), /\/570\/library_600x900\.jpg$/);
 
 // Empty search must not crash and must tell the model to fall back to knowledge.
 const noSources = buildPrompt({ question: "What now?", sources: [] });

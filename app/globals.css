@@ -1131,7 +1131,8 @@ details.sources small {
 }
 
 .sidebar-new,
-.sidebar-library-btn {
+.sidebar-library-btn,
+.sidebar-steam-btn {
   width: 100%;
   border: 1.5px solid var(--ink);
   background: var(--paper-strong);
@@ -1157,19 +1158,22 @@ details.sources small {
 }
 
 .sidebar-new:hover,
-.sidebar-library-btn:hover {
+.sidebar-library-btn:hover,
+.sidebar-steam-btn:hover {
   background: var(--signal);
   color: var(--on-signal);
 }
 
 .sidebar-new:active,
-.sidebar-library-btn:active {
+.sidebar-library-btn:active,
+.sidebar-steam-btn:active {
   transform: translate(2px, 2px);
   box-shadow: 1px 1px 0 var(--ink);
 }
 
 .sidebar-new:focus-visible,
-.sidebar-library-btn:focus-visible {
+.sidebar-library-btn:focus-visible,
+.sidebar-steam-btn:focus-visible {
   outline: 3px solid var(--signal-dark);
   outline-offset: 2px;
 }
@@ -2054,7 +2058,8 @@ details.sources small {
   line-height: 1.5;
 }
 
-.auth-google {
+.auth-google,
+.auth-steam {
   width: 100%;
   min-height: 46px;
   border: 1.5px solid var(--ink);
@@ -2065,7 +2070,8 @@ details.sources small {
   cursor: pointer;
 }
 
-.auth-google:hover:not(:disabled) {
+.auth-google:hover:not(:disabled),
+.auth-steam:hover:not(:disabled) {
   background: var(--signal);
 }
 
@@ -2143,7 +2149,8 @@ details.sources small {
 }
 
 .auth-submit:disabled,
-.auth-google:disabled {
+.auth-google:disabled,
+.auth-steam:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -2229,6 +2236,7 @@ details.sources small {
 .sidebar-new,
 .sidebar-new:hover,
 .sidebar-library-btn:hover,
+.sidebar-steam-btn:hover,
 .theme-toggle-menu button:hover,
 .composer-attach:hover:not(:disabled),
 .composer-attach-menu button:hover,
