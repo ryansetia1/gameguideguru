@@ -1,5 +1,6 @@
 import Replicate from "replicate";
 
+import { parseSummary } from "@/lib/highlights.js";
 import {
   REWRITE_INSTRUCTION,
   SYSTEM_INSTRUCTION,
@@ -13,6 +14,17 @@ const DEFAULT_MODEL = "google/gemini-2.5-flash";
 export type Turn = {
   role: "user" | "assistant";
   content: string;
+};
+
+export type Highlight = {
+  kind: "item" | "recruit" | "sidequest" | "tip" | "warning";
+  title: string;
+  detail: string;
+};
+
+export type SummaryResult = {
+  answer: string;
+  highlights: Highlight[];
 };
 
 type ModelName = `${string}/${string}` | `${string}/${string}:${string}`;
@@ -32,9 +44,9 @@ function readText(output: unknown): string {
 }
 
 /**
- * Condense a (possibly context-dependent) follow-up into a standalone English
+ * Condense a (possibly context-dependent) question into a standalone English
  * search query. Best-effort: on any failure it falls back to the raw question,
- * so search still runs. Only worth calling when there is conversation history.
+ * so search still runs.
  */
 export async function resolveQuestion(input: {
   question: string;
@@ -79,7 +91,7 @@ export type SummarizeInput = {
   history?: Turn[];
 };
 
-export async function summarize(input: SummarizeInput): Promise<string> {
+export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
   const token = process.env.REPLICATE_API_TOKEN;
   if (!token) {
     throw new Error("REPLICATE_API_TOKEN is not configured");
@@ -109,10 +121,10 @@ export async function summarize(input: SummarizeInput): Promise<string> {
     signal: AbortSignal.timeout(50_000),
   });
 
-  const summary = readText(output).trim();
-  if (!summary) {
+  const parsed = parseSummary(readText(output).trim());
+  if (!parsed.answer) {
     throw new Error("Replicate returned an empty response");
   }
 
-  return summary;
+  return parsed;
 }

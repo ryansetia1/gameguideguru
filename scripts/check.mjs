@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { cleanSnippet } from "../lib/clean.js";
 import { mapGames } from "../lib/games.js";
+import { coerceHighlights, parseSummary } from "../lib/highlights.js";
 import { PLATFORMS, matchPlatforms } from "../lib/platforms.js";
 import {
   REWRITE_INSTRUCTION,
@@ -17,6 +18,8 @@ assert.match(SYSTEM_INSTRUCTION, /SUPPORTING evidence/);
 // ...and steers the model toward concrete, noise-tolerant answers.
 assert.match(SYSTEM_INSTRUCTION, /ignore anything that is not about/i);
 assert.match(SYSTEM_INSTRUCTION, /Be concrete/);
+assert.match(SYSTEM_INSTRUCTION, /"highlights"/);
+assert.match(SYSTEM_INSTRUCTION, /"answer"/);
 
 // Snippet cleaning strips link soup, CTAs, and Q&A vote/user noise while
 // keeping the real prose.
@@ -73,6 +76,7 @@ assert.deepEqual(mapGames("not-an-array"), []);
 // Follow-up query rewrite: instruction stays English/standalone, and the
 // prompt carries the conversation so references can be resolved.
 assert.match(REWRITE_INSTRUCTION, /standalone web-search query in English/);
+assert.match(REWRITE_INSTRUCTION, /Expand vague phrasing/);
 const rewritePrompt = buildRewritePrompt({
   question: "Setelah poin 3 ngapain",
   history: [
@@ -129,5 +133,36 @@ assert.ok(items("xsx").includes("Xbox Series X|S"));
 assert.ok(items("Switch").includes("Nintendo Switch"));
 assert.equal(matchPlatforms("").length, PLATFORMS.length);
 assert.deepEqual(matchPlatforms("zzzznope"), []);
+
+// Structured highlights: parse JSON answers and coerce highlight rows.
+const parsed = parseSummary(
+  '{"answer":"Go east.","highlights":[{"kind":"item","title":"Key","detail":"In the chest."}]}',
+);
+assert.equal(parsed.answer, "Go east.");
+assert.equal(parsed.highlights.length, 1);
+assert.equal(parsed.highlights[0].kind, "item");
+
+const fenced = parseSummary(
+  '```json\n{"answer":"Done.","highlights":[{"kind":"tip","title":"Save first","detail":""}]}\n```',
+);
+assert.equal(fenced.answer, "Done.");
+assert.equal(fenced.highlights[0].title, "Save first");
+
+const prose = parseSummary("Just walk north.");
+assert.equal(prose.answer, "Just walk north.");
+assert.deepEqual(prose.highlights, []);
+
+assert.deepEqual(
+  coerceHighlights([
+    { kind: "item", title: "Potion", detail: "Shop" },
+    { kind: "bogus", title: "X" },
+    { kind: "tip", title: "  " },
+    { kind: "warning", title: "Missable", detail: 42 },
+  ]),
+  [
+    { kind: "item", title: "Potion", detail: "Shop" },
+    { kind: "warning", title: "Missable", detail: "" },
+  ],
+);
 
 console.log("Self-check passed.");

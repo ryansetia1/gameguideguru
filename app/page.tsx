@@ -1,11 +1,17 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { AuthPanel } from "./auth-panel";
 import { GameAutocomplete } from "./game-autocomplete";
 import { PlatformSelect } from "./platform-select";
+import {
+  KINDS,
+  KIND_LABELS,
+  coerceHighlights,
+  type Highlight,
+} from "@/lib/highlights.js";
 import { getSupabase, type Chat } from "@/lib/supabase";
 
 type Source = {
@@ -17,6 +23,7 @@ type Message = {
   role: "user" | "assistant";
   content: string;
   sources?: Source[];
+  highlights?: Highlight[];
 };
 
 const EXAMPLES_DISMISSED_KEY = "gg:examples-dismissed";
@@ -35,6 +42,10 @@ function hostname(url: string) {
   }
 }
 
+function normGame(value: string) {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 function coerceMessages(value: unknown): Message[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item): Message[] => {
@@ -46,7 +57,22 @@ function coerceMessages(value: unknown): Message[] {
     }
     const rawSources = (item as { sources?: unknown }).sources;
     const sources = Array.isArray(rawSources) ? (rawSources as Source[]) : undefined;
-    return [{ role, content, sources }];
+    const highlights = coerceHighlights((item as { highlights?: unknown }).highlights);
+    return [
+      {
+        role,
+        content,
+        sources,
+        ...(highlights.length ? { highlights } : {}),
+      },
+    ];
+  });
+}
+
+function groupHighlights(highlights: Highlight[]) {
+  return KINDS.flatMap((kind) => {
+    const items = highlights.filter((h) => h.kind === kind);
+    return items.length ? [{ kind, items }] : [];
   });
 }
 
@@ -65,12 +91,20 @@ export default function Home() {
   const [authOpen, setAuthOpen] = useState(false);
   const [gamesOpen, setGamesOpen] = useState(false);
   const [examplesDismissed, setExamplesDismissed] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingText, setEditingText] = useState("");
 
   const feedRef = useRef<HTMLDivElement>(null);
   const gamesRef = useRef<HTMLDivElement>(null);
   const jumpRef = useRef(false);
+  const conversationGame = useRef("");
+  const activeChatIdRef = useRef<string | null>(null);
 
   const supabaseReady = Boolean(getSupabase());
+
+  useEffect(() => {
+    activeChatIdRef.current = activeChatId;
+  }, [activeChatId]);
 
   useEffect(() => {
     feedRef.current?.scrollIntoView({
@@ -144,7 +178,13 @@ export default function Home() {
     setPreferredUrl("");
     setInput("");
     setError("");
+    setEditingIndex(null);
+    setEditingText("");
+    conversationGame.current = "";
     setGamesOpen(false);
+    requestAnimationFrame(() => {
+      document.getElementById("game")?.focus();
+    });
   }
 
   function openChat(chat: Chat) {
@@ -154,8 +194,11 @@ export default function Home() {
     setPlatform(chat.platform);
     setPreferredUrl(chat.preferred_guide_url);
     setMessages(coerceMessages(chat.messages));
+    conversationGame.current = chat.game;
     setInput("");
     setError("");
+    setEditingIndex(null);
+    setEditingText("");
     setGamesOpen(false);
   }
 
@@ -164,9 +207,21 @@ export default function Home() {
     setGamesOpen(false);
   }
 
-  async function saveChat(nextMessages: Message[]) {
+  async function deleteChat(chat: Chat, event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    if (!window.confirm(`Delete "${chat.game || "Untitled game"}"? This cannot be undone.`)) {
+      return;
+    }
     const supabase = getSupabase();
-    if (!supabase || !user) return;
+    if (!supabase) return;
+    await supabase.from("chats").delete().eq("id", chat.id);
+    if (chat.id === activeChatId) newGame();
+    void loadChats();
+  }
+
+  async function persistChat(nextMessages: Message[], targetChatId: string | null) {
+    const supabase = getSupabase();
+    if (!supabase || !user) return null;
     const payload = {
       game,
       platform,
@@ -175,33 +230,46 @@ export default function Home() {
       updated_at: new Date().toISOString(),
     };
     try {
-      if (activeChatId) {
-        await supabase.from("chats").update(payload).eq("id", activeChatId);
-      } else {
-        const { data } = await supabase
-          .from("chats")
-          .insert({ ...payload, user_id: user.id })
-          .select("id")
-          .single();
-        if (data) setActiveChatId((data as { id: string }).id);
+      if (targetChatId) {
+        await supabase.from("chats").update(payload).eq("id", targetChatId);
+        void loadChats();
+        return targetChatId;
       }
-      void loadChats();
+      const { data } = await supabase
+        .from("chats")
+        .insert({ ...payload, user_id: user.id })
+        .select("id")
+        .single();
+      const newId = data ? (data as { id: string }).id : null;
+      if (newId) {
+        setActiveChatId(newId);
+        void loadChats();
+      }
+      return newId;
     } catch (caught) {
       console.error("Failed to save chat:", caught);
+      return targetChatId;
     }
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const question = input.trim();
-    if (question.length < 2 || loading) return;
-
+  async function runTurn(
+    question: string,
+    priorMessages: Message[],
+    targetChatId: string | null,
+  ) {
     setError("");
     setLoading(true);
-    const priorMessages = messages;
-    const history = priorMessages.slice(-10).map(({ role, content }) => ({ role, content }));
-    setMessages([...priorMessages, { role: "user", content: question }]);
-    setInput("");
+    setEditingIndex(null);
+    setEditingText("");
+
+    const history = priorMessages
+      .slice(-10)
+      .map(({ role, content }) => ({ role, content }));
+    const optimistic: Message[] = [
+      ...priorMessages,
+      { role: "user", content: question },
+    ];
+    setMessages(optimistic);
 
     try {
       const response = await fetch("/api/solve", {
@@ -215,8 +283,8 @@ export default function Home() {
         !response.ok ||
         !data ||
         typeof data !== "object" ||
-        !("summary" in data) ||
-        typeof data.summary !== "string"
+        !("answer" in data) ||
+        typeof data.answer !== "string"
       ) {
         const message =
           data &&
@@ -232,20 +300,70 @@ export default function Home() {
         "sources" in data && Array.isArray(data.sources)
           ? (data.sources as Source[])
           : [];
+      const highlights = coerceHighlights(
+        "highlights" in data ? data.highlights : undefined,
+      );
       const nextMessages: Message[] = [
         ...priorMessages,
         { role: "user", content: question },
-        { role: "assistant", content: data.summary as string, sources },
+        {
+          role: "assistant",
+          content: data.answer as string,
+          sources,
+          ...(highlights.length ? { highlights } : {}),
+        },
       ];
       setMessages(nextMessages);
-      void saveChat(nextMessages);
+      conversationGame.current = game;
+      const savedId = await persistChat(nextMessages, targetChatId);
+      if (savedId) activeChatIdRef.current = savedId;
     } catch (caught) {
+      setMessages(priorMessages);
       setError(
         caught instanceof Error ? caught.message : "An unknown error occurred.",
       );
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const question = input.trim();
+    if (question.length < 2 || loading) return;
+
+    const switching =
+      messages.length > 0 &&
+      normGame(game) !== normGame(conversationGame.current);
+    const priorMessages = switching ? [] : messages;
+    const targetChatId = switching ? null : activeChatIdRef.current;
+    if (switching) setActiveChatId(null);
+
+    setInput("");
+    await runTurn(question, priorMessages, targetChatId);
+  }
+
+  function startEdit(index: number) {
+    if (loading) return;
+    setEditingIndex(index);
+    setEditingText(messages[index].content);
+  }
+
+  function cancelEdit() {
+    setEditingIndex(null);
+    setEditingText("");
+  }
+
+  async function saveEdit(index: number) {
+    const text = editingText.trim();
+    if (text.length < 2 || loading) return;
+    await runTurn(text, messages.slice(0, index), activeChatIdRef.current);
+  }
+
+  async function retry(index: number) {
+    if (loading || index < 1 || messages[index - 1].role !== "user") return;
+    const question = messages[index - 1].content;
+    await runTurn(question, messages.slice(0, index - 1), activeChatIdRef.current);
   }
 
   const started = messages.length > 0;
@@ -283,7 +401,7 @@ export default function Home() {
                     ) : (
                       <ul>
                         {chats.map((chat) => (
-                          <li key={chat.id}>
+                          <li key={chat.id} className="games-row">
                             <button
                               type="button"
                               className={chat.id === activeChatId ? "active" : ""}
@@ -291,6 +409,14 @@ export default function Home() {
                             >
                               <strong>{chat.game || "Untitled game"}</strong>
                               {chat.platform && <small>{chat.platform}</small>}
+                            </button>
+                            <button
+                              type="button"
+                              className="games-delete"
+                              aria-label={`Delete ${chat.game || "Untitled game"}`}
+                              onClick={(event) => void deleteChat(chat, event)}
+                            >
+                              ×
                             </button>
                           </li>
                         ))}
@@ -399,14 +525,94 @@ export default function Home() {
           {messages.map((message, index) =>
             message.role === "user" ? (
               <div className="turn user" key={index}>
-                <p>{message.content}</p>
+                {editingIndex === index ? (
+                  <div className="edit-box">
+                    <textarea
+                      className="edit-textarea"
+                      value={editingText}
+                      onChange={(event) => setEditingText(event.target.value)}
+                      rows={3}
+                      maxLength={300}
+                      disabled={loading}
+                    />
+                    <div className="edit-actions">
+                      <button
+                        type="button"
+                        className="turn-action"
+                        onClick={() => void saveEdit(index)}
+                        disabled={loading || editingText.trim().length < 2}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        className="turn-action turn-action-muted"
+                        onClick={cancelEdit}
+                        disabled={loading}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p>{message.content}</p>
+                    <button
+                      type="button"
+                      className="turn-action turn-action-icon"
+                      aria-label="Edit message"
+                      onClick={() => startEdit(index)}
+                      disabled={loading}
+                    >
+                      ✎
+                    </button>
+                  </>
+                )}
               </div>
             ) : (
               <article className="turn guide" key={index}>
-                <div className="guide-tag">
-                  <span aria-hidden="true">◆</span> ROUTE FOUND
+                <div className="guide-head">
+                  <div className="guide-tag">
+                    <span aria-hidden="true">◆</span> ROUTE FOUND
+                  </div>
+                  <button
+                    type="button"
+                    className="turn-action turn-action-icon"
+                    aria-label="Regenerate answer"
+                    onClick={() => void retry(index)}
+                    disabled={loading}
+                  >
+                    ↻
+                  </button>
                 </div>
                 <div className="answer">{message.content}</div>
+                {message.highlights && message.highlights.length > 0 && (
+                  <div className="highlights">
+                    {groupHighlights(message.highlights).map(({ kind, items }) => (
+                      <section key={kind} className="highlight-group">
+                        <h3 className="highlight-label">{KIND_LABELS[kind]}</h3>
+                        <ul className="highlight-list">
+                          {items.map((item, i) =>
+                            item.detail ? (
+                              <li key={`${kind}-${i}`}>
+                                <details className={`highlight highlight-${kind}`}>
+                                  <summary>{item.title}</summary>
+                                  <p>{item.detail}</p>
+                                </details>
+                              </li>
+                            ) : (
+                              <li key={`${kind}-${i}`}>
+                                <div className={`highlight highlight-${kind} highlight-note`}>
+                                  {item.title}
+                                </div>
+                              </li>
+                            ),
+                          )}
+                        </ul>
+                      </section>
+                    ))}
+                  </div>
+                )}
                 {message.sources && message.sources.length > 0 && (
                   <details className="sources">
                     <summary>Sources ({message.sources.length})</summary>

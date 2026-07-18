@@ -12,12 +12,19 @@ answers in whatever language you ask your question in.
   `n64`, `nds`, `psx`, `ps1`, `ps2`, `gba`, `xsx`, ... and it resolves the
   right console). Covers NES through Switch 2, PS5, Xbox Series, PC, and more.
 - Optional **preferred guide link**: paste the guide you trust and search sources
-  from it first. The cascade is: (1) pull that exact page, else (2) search only
-  that page's domain, else (3) fall back to the normal tiered search. When a
-  preferred source works, the Sources list shows only that site.
+  from it first. The cascade is: (1) site-search the host for your question and
+  extract the best-matching section page, else (2) use site-search snippets, else
+  (3) pull the exact pasted URL, else (4) fall back to the normal tiered search.
+  When a preferred source works, the Sources list shows only that site.
 - **Accounts (optional, no login wall)**: sign in with email/password or Google
-  (via Supabase) to save a separate chat per game and resume it later. Signed-out
-  visitors keep full access; they just cannot save.
+  (via Supabase) to save a separate chat per game and resume it later. Changing
+  the game name mid-session auto-starts a new saved chat; you can also use
+  **+ New game**, open past games from **Your games**, or delete finished ones.
+  Signed-out visitors keep full access; they just cannot save.
+- **Edit & retry**: edit a user message (truncates later turns and regenerates)
+  or retry an assistant reply with the same question.
+- **Highlights**: assistant replies can include grouped, expandable callouts for
+  key items, recruits, side quests, tips, and warnings alongside the main answer.
 - Multi-turn follow-up chat: up to the last 5 exchanges are sent as context, so
   follow-ups like "and after that boss?" are understood.
 - Tiered search: GameFAQs first, then trusted walkthrough providers, then forums,
@@ -87,6 +94,11 @@ Two manual dashboard steps in Supabase:
 - **Google sign-in**: enable the Google provider under Authentication ->
   Providers, add your Google OAuth client ID/secret, and add your app origin(s)
   to the allowed redirect URLs.
+- **URL configuration (required for Vercel)**: under Authentication -> URL
+  Configuration, set **Site URL** to your production `*.vercel.app` URL and add
+  that URL, `https://*.vercel.app` (previews), and `http://localhost:3000` to
+  **Redirect URLs**. Without this, OAuth can bounce to `localhost` after sign-in
+  on a deployed preview.
 - **Email sign-in**: for a frictionless flow, disable "Confirm email" under
   Authentication -> Providers -> Email. If left on, new sign-ups see a
   "check your email to confirm" message before they can sign in.
@@ -98,16 +110,17 @@ then ask your question and follow up.
 
 1. The browser sends `{ game, platform, question, history, preferredUrl }` to
    `POST /api/solve`.
-2. For follow-ups, the route rewrites the question into a standalone English
-   query (via the LLM) so conversation context ("point 3") is carried; first
-   questions are used as-is.
+2. The route rewrites the question into a standalone English search query (via
+   the LLM) so first messages are normalised/translated and follow-ups resolve
+   context ("point 3").
 3. It checks the Supabase search cache; on a miss it runs the search (preferred
    cascade or normal tiers), cleans snippets, filters by relevance score, keeps
    the 3 strongest sources, and caches the result.
-4. `system_instruction` (persona + rules) and `prompt` (game/platform, history,
-   web evidence) are sent separately to the Gemini model on Replicate.
-5. The browser renders the answer and its sources, and (when signed in) saves the
-   whole chat to Supabase so it can be resumed later.
+4. `system_instruction` (persona + rules + JSON output contract) and `prompt`
+   (game/platform, history, web evidence) are sent separately to the Gemini model
+   on Replicate. The response is parsed into `{ answer, highlights }`.
+5. The browser renders the answer, optional highlight callouts, and sources; when
+   signed in it saves the whole chat to Supabase so it can be resumed later.
 
 Provider secrets stay on the server and are never sent to the browser. Source
 text and game/platform input are treated as untrusted; the model is instructed
@@ -119,4 +132,4 @@ not to follow instructions embedded in them.
 - `npm run build` — production build
 - `npm start` — run the production build
 - `npm run check` — small self-check for the prompt builder, snippet cleaner,
-  source selection, IGDB mapping, and platform matching
+  source selection, IGDB mapping, platform matching, and highlight parsing

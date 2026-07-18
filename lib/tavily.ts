@@ -185,9 +185,10 @@ async function extractPreferred(
 
 /**
  * Find supporting web sources for a query. When `preferredUrl` is set, cascade:
- * (1) pull that exact page, else (2) search only that page's domain, else
- * (3) fall back to the normal tiered search. Steps 1-2 return sources solely
- * from the preferred site; step 3 uses the usual mix.
+ * (1) site-search the host for this question and extract the top section page,
+ * else (2) return site-search snippets, else (3) extract the exact pasted URL,
+ * else (4) fall back to the normal tiered search. Steps 1-3 return sources
+ * solely from the preferred site; step 4 uses the usual mix.
  */
 export async function searchGuides(
   query: string,
@@ -198,22 +199,14 @@ export async function searchGuides(
 
   const preferred = (preferredUrl ?? "").trim();
   if (preferred) {
-    // 1. Exact page — trusted, so skip the confidence gate.
-    let exact: SearchResult | null = null;
-    try {
-      exact = await extractPreferred(apiKey, preferred);
-    } catch {
-      // ponytail: extract failures fall through to the domain step.
-    }
-    if (exact) return [exact];
-
-    // 2. Whole preferred site — keep only that domain's results when relevant.
     let host = "";
     try {
-      host = new URL(preferred).hostname;
+      host = new URL(preferred).hostname.replace(/^www\./, "");
     } catch {
       host = "";
     }
+
+    // 1. Site-search the preferred host for the right section, then read it in full.
     if (host) {
       let domainResults: SearchResult[] = [];
       try {
@@ -221,8 +214,26 @@ export async function searchGuides(
       } catch {
         domainResults = [];
       }
-      const selected = selectSources(domainResults);
-      if (selected.length) return selected;
+      const picked = selectSources(domainResults);
+      if (picked.length) {
+        try {
+          const deep = await extractPreferred(apiKey, picked[0].url);
+          if (deep) {
+            return [{ ...deep, title: picked[0].title || deep.title }];
+          }
+        } catch {
+          // ponytail: extract failures fall back to site-search snippets.
+        }
+        return picked;
+      }
+    }
+
+    // 2. Exact pasted URL when site-search found nothing.
+    try {
+      const exact = await extractPreferred(apiKey, preferred);
+      if (exact) return [exact];
+    } catch {
+      // ponytail: extract failures fall through to tiered search.
     }
   }
 

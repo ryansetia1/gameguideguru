@@ -411,17 +411,92 @@ h1 em {
 }
 
 .turn.user {
+  position: relative;
   align-self: flex-end;
   max-width: 85%;
   border: 1.5px solid var(--ink);
   background: var(--signal);
-  padding: 11px 15px;
+  padding: 11px 15px 11px 15px;
 }
 
 .turn.user p {
   margin: 0;
+  padding-right: 28px;
   font-size: 0.95rem;
   line-height: 1.45;
+}
+
+.turn-action {
+  border: 1px solid var(--ink);
+  background: var(--paper-strong);
+  color: var(--ink);
+  padding: 4px 8px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.turn-action:hover:not(:disabled) {
+  background: var(--signal);
+}
+
+.turn-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.turn-action-muted {
+  background: transparent;
+}
+
+.turn-action-icon {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 0.82rem;
+  line-height: 1;
+}
+
+.turn.guide .turn-action-icon {
+  position: static;
+}
+
+.guide-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 12px 8px 16px;
+}
+
+.edit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.edit-textarea {
+  width: 100%;
+  min-height: 72px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  color: var(--ink);
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .turn.guide {
@@ -435,8 +510,7 @@ h1 em {
   display: flex;
   gap: 7px;
   align-items: center;
-  border-bottom: 1px solid var(--line);
-  padding: 12px 16px;
+  padding: 4px 0;
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.6rem;
   font-weight: 700;
@@ -448,11 +522,111 @@ h1 em {
 }
 
 .answer {
-  padding: 20px 18px 24px;
+  padding: 20px 18px 16px;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 1.02rem;
   line-height: 1.72;
   white-space: pre-wrap;
+}
+
+.highlights {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-top: 1px solid var(--line);
+  padding: 16px 18px 6px;
+  background: #f7f6f0;
+}
+
+.highlight-group {
+  margin: 0;
+}
+
+.highlight-label {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.highlight-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.highlight-list li + li {
+  margin-top: 6px;
+}
+
+.highlight {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  background: var(--paper-strong);
+}
+
+.highlight-item {
+  border-left-color: #7fac18;
+}
+
+.highlight-recruit {
+  border-left-color: #4a8fd4;
+}
+
+.highlight-sidequest {
+  border-left-color: #9b6fd4;
+}
+
+.highlight-tip {
+  border-left-color: var(--ink);
+}
+
+.highlight-warning {
+  border-left-color: var(--danger);
+}
+
+.highlight > summary {
+  padding: 10px 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.35;
+  cursor: pointer;
+  list-style: none;
+}
+
+.highlight > summary::-webkit-details-marker {
+  display: none;
+}
+
+.highlight > summary::after {
+  content: "+";
+  float: right;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.72rem;
+}
+
+.highlight[open] > summary::after {
+  content: "–";
+}
+
+.highlight > p {
+  margin: 0;
+  border-top: 1px solid var(--line);
+  padding: 10px 12px 12px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.highlight-note {
+  padding: 10px 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 details.sources {
@@ -749,6 +923,33 @@ details.sources small {
 
 .games-panel li + li {
   border-top: 1px solid var(--line);
+}
+
+.games-row {
+  display: flex;
+  align-items: stretch;
+}
+
+.games-row > button:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.games-delete {
+  flex-shrink: 0;
+  width: 36px;
+  border: none;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.games-delete:hover {
+  background: #fdecea;
+  color: var(--danger);
 }
 
 .games-panel li button {

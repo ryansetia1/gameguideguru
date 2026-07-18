@@ -17,9 +17,12 @@ and simply cannot save.
   preferred-guide link, message feed, docked composer) and `/api/solve` consumer.
   Keeps `messages` state and sends the last 10 messages (5 turns) as `history`
   plus `preferredUrl`. Also owns Supabase auth state, the "Your games" menu
-  (list/resume/new), per-turn chat persistence, a dismissable examples strip
+  (list/resume/new/delete), per-turn chat persistence (auto-creates a new saved
+  chat when the game name changes mid-session), edit/retry on message bubbles,
+  structured highlight sections on assistant replies, a dismissable examples strip
   (remembered in `localStorage`), and auto-scroll (smooth on new turns, instant
-  jump when opening a saved game).
+  jump when opening a saved game). `runTurn`/`persistChat` centralise ask +
+  save; `conversationGame` tracks which game the visible thread belongs to.
 - `app/auth-panel.tsx`: themed sign-in/sign-up modal (email+password and Google
   OAuth via `getSupabase().auth`). Surfaces the "check your email" state when the
   project has email confirmation enabled.
@@ -40,20 +43,21 @@ and simply cannot save.
   the field degrades to free text. `lib/games.js#mapGames` shapes IGDB rows.
 - `app/api/solve/route.ts`: validates/sanitizes `{ game, platform, question,
   history, preferredUrl }` at the trust boundary (history capped to 10, content
-  truncated, `preferredUrl` must be http/https). For follow-ups (history present)
-  it calls `resolveQuestion` to rewrite the query into a standalone form before
-  searching; first questions skip that call. Wraps the search in a cache
-  (`lib/search-cache.ts`) keyed by `searchQuery + preferredUrl`. Search is
-  best-effort (skipped if no `TAVILY_API_KEY`, failures swallowed); the model
-  still answers. Only `REPLICATE_API_TOKEN` is mandatory.
+  truncated, `preferredUrl` must be http/https). Always calls `resolveQuestion`
+  to rewrite the query into standalone English before searching. Wraps the search
+  in a cache (`lib/search-cache.ts`) keyed by `searchQuery + preferredUrl`.
+  Search is best-effort (skipped if no `TAVILY_API_KEY`, failures swallowed); the
+  model still answers. Returns `{ answer, highlights, sources }`. Only
+  `REPLICATE_API_TOKEN` is mandatory.
 - `lib/tavily.ts`: `searchGuides(query, preferredUrl?)`. With no `preferredUrl`
   it runs the normal tiered search (GameFAQs -> trusted walkthrough providers ->
-  forums -> general). With one it cascades: (1) `/extract` the exact page (trusted,
-  so no confidence gate; content capped at `EXTRACT_CONTENT_CAP`), else (2) search
-  only that page's domain, else (3) fall back to the tiers. Steps 1-2 return
-  sources solely from the preferred site. All paths use `search_depth: "advanced"`,
-  exclude video/social domains, dedupe by URL+title, clean via `cleanSnippet`, and
-  gate/trim via `selectSources`.
+  forums -> general). With one it cascades: (1) site-search the host for this
+  question, extract the top section page in full (title from the search hit), else
+  (2) return site-search snippets, else (3) extract the exact pasted URL, else
+  (4) fall back to the tiers. Steps 1-3 return sources solely from the preferred
+  site. All paths use `search_depth: "advanced"`, exclude video/social domains,
+  dedupe by URL+title, clean via `cleanSnippet`, and gate/trim via
+  `selectSources`.
 - `lib/search-cache.ts`: best-effort Supabase-backed cache of `searchGuides`
   output (`getCachedSearch`/`setCachedSearch`, 7-day TTL). Uses a server client
   built from the `NEXT_PUBLIC_SUPABASE_*` vars (no session); no-ops when unset or
@@ -66,14 +70,19 @@ and simply cannot save.
   GameFAQs CTAs, and Q&A vote/user lines. Covered by `npm run check`.
 - `lib/replicate.ts`: Replicate adapter. `summarize(input)` sends
   `system_instruction` + `prompt` separately with Gemini fields
-  (`max_output_tokens`, `thinking_budget: 0`). `resolveQuestion({ question,
-  history })` does a small, low-token call to rewrite a follow-up into a
-  standalone English search query, falling back to the raw question on any
-  failure. Exports the `Turn` type.
+  (`max_output_tokens`, `thinking_budget: 0`) and parses the JSON
+  `{ answer, highlights }` via `lib/highlights.js#parseSummary`. `resolveQuestion({
+  question, history })` does a small, low-token call to rewrite any question into
+  a standalone English search query, falling back to the raw question on any
+  failure. Exports the `Turn`, `Highlight`, and `SummaryResult` types.
 - `lib/prompt.js`: exports `SYSTEM_INSTRUCTION` (persona + rules: knowledge-first,
-  web-as-support, injection safety), `buildPrompt({ game, platform, question,
-  sources, history })`, plus `REWRITE_INSTRUCTION` + `buildRewritePrompt({
-  question, history })` for query rewriting. Covered by `npm run check`.
+  web-as-support, injection safety, JSON output with `answer` + optional
+  `highlights`), `buildPrompt({ game, platform, question, sources, history })`,
+  plus `REWRITE_INSTRUCTION` + `buildRewritePrompt({ question, history })` for
+  query rewriting. Covered by `npm run check`.
+- `lib/highlights.js`: `KINDS`/`KIND_LABELS`, `coerceHighlights(value)`, and
+  `parseSummary(text)` — tolerant JSON parse with prose fallback. Shared by the
+  server (`summarize`), client (`coerceMessages`/render), and `npm run check`.
 - `lib/games.js`: `mapGames(results)` maps raw IGDB rows to `{ id, name, year }`
   (year derived from unix `first_release_date`), dropping malformed entries.
   Covered by `npm run check`.
@@ -94,8 +103,8 @@ and simply cannot save.
 - Chat history is sent as plain text inside the prompt and trimmed by turn count,
   not token count.
 - Searches are cached in `public.search_cache` (7-day TTL) keyed by rewritten
-  query + preferred URL, so repeat/popular queries skip Tavily. Follow-ups still
-  pay the `resolveQuestion` rewrite call (needed to build the key) even on a hit.
+  query + preferred URL, so repeat/popular queries skip Tavily. Every turn pays
+  the `resolveQuestion` rewrite call (needed to build the key) even on a hit.
   Without Supabase env vars the cache no-ops and every turn re-runs the tiered
   search (up to 4 sequential `advanced` Tavily calls, ~2x credits vs `basic`).
 - `search_cache` has permissive RLS (public select/insert/update via the anon
@@ -103,12 +112,15 @@ and simply cannot save.
   non-sensitive public web results the model already treats as untrusted, and the
   TTL self-heals; the ceiling is cache pollution, not a data leak. Upgrade path:
   move writes behind the service-role key or a `security definer` RPC.
-- Preferred-guide step 1 feeds the model the whole extracted page (capped at
-  `EXTRACT_CONTENT_CAP`), not the section that answers the question; it trusts the
-  user's choice and skips the confidence gate.
-- Follow-ups add one extra Gemini call (`resolveQuestion`) before search, so
-  they run two sequential model calls. `max_output_tokens` there must stay
-  generous (~200); too tight a cap returns empty even with thinking off.
+- Preferred-guide site-search + extract feeds the model a whole section page
+  (capped at `EXTRACT_CONTENT_CAP`), not necessarily the paragraph that answers
+  the question; it trusts the user's site choice and skips the confidence gate.
+- Every turn runs two sequential Gemini calls (`resolveQuestion` then
+  `summarize`). `max_output_tokens` on the rewrite must stay generous (~200);
+  too tight a cap returns empty even with thinking off.
+- `summarize` asks for JSON (`answer` + `highlights`); `parseSummary` tolerates
+  prose/markdown fences when the model drifts. ponytail: prompt-instructed JSON
+  rather than `response_mime_type` (not exposed on Replicate's Gemini input).
 - Flash on Replicate consumes ~1k tokens of reasoning overhead against
   `max_output_tokens` even with `thinking_budget: 0`, so `summarize` uses 4096
   to avoid truncated answers (1200 cut answers off after ~100 visible tokens).

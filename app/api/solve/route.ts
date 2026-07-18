@@ -81,13 +81,9 @@ export async function POST(request: Request) {
     // its own knowledge if it returns nothing or fails.
     let sources: SearchResult[] = [];
     if (process.env.TAVILY_API_KEY) {
-      // Follow-ups reference earlier turns ("after that", "point 3"), which make
-      // a poor search query. Rewrite them into a standalone query first; first
-      // questions are already standalone, so skip the extra model call.
-      const searchTopic =
-        history.length > 0
-          ? await resolveQuestion({ question, history })
-          : question;
+      // Rewrite into a standalone English search query first (first messages
+      // benefit from translation/normalisation; follow-ups need context resolved).
+      const searchTopic = await resolveQuestion({ question, history });
       const searchQuery = [game, platform, searchTopic, "walkthrough guide"]
         .filter(Boolean)
         .join(" ");
@@ -107,7 +103,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const summary = await summarize({
+    const { answer, highlights } = await summarize({
       game,
       platform,
       question,
@@ -116,7 +112,8 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({
-      summary,
+      answer,
+      highlights,
       sources: sources.map(({ title, url }) => ({ title, url })),
     });
   } catch (error) {
