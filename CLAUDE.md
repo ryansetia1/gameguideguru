@@ -19,7 +19,10 @@ and simply cannot save.
   plus `preferredUrl`. Also owns Supabase auth state, the "Your games" menu
   (list/resume/new/delete), per-turn chat persistence (auto-creates a new saved
   chat when the game name changes mid-session), edit/retry on message bubbles,
-  structured highlight sections on assistant replies, a dismissable examples strip
+  structured highlight sections on assistant replies, a collapsible left sidebar
+  (burger toggle) that lists saved games with a per-row kebab -> Delete menu,
+  light-markdown rendering of answers (`lib/markdown.js`: bold/lists/headings),
+  a dismissable examples strip
   (remembered in `localStorage`), and auto-scroll (smooth on new turns, instant
   jump when opening a saved game). `runTurn`/`persistChat` centralise ask +
   save; `conversationGame` tracks which game the visible thread belongs to.
@@ -55,9 +58,12 @@ and simply cannot save.
   question, extract the top section page in full (title from the search hit), else
   (2) return site-search snippets, else (3) extract the exact pasted URL, else
   (4) fall back to the tiers. Steps 1-3 return sources solely from the preferred
-  site. All paths use `search_depth: "advanced"`, exclude video/social domains,
-  dedupe by URL+title, clean via `cleanSnippet`, and gate/trim via
-  `selectSources`.
+  site and SKIP the confidence gate (the user's site choice is trusted, so a
+  low-scoring but correct fan-site page still wins over the pasted hub URL). The
+  extracted page is trimmed to the query-matching window via `focusSection`, not
+  its opening. All paths use `search_depth: "advanced"`, exclude video/social
+  domains, dedupe by URL+title, clean via `cleanSnippet`, and the tiered path
+  gates/trims via `selectSources`.
 - `lib/search-cache.ts`: best-effort Supabase-backed cache of `searchGuides`
   output (`getCachedSearch`/`setCachedSearch`, 7-day TTL). Uses a server client
   built from the `NEXT_PUBLIC_SUPABASE_*` vars (no session); no-ops when unset or
@@ -67,7 +73,10 @@ and simply cannot save.
   from knowledge alone), keeps results within `SCORE_WINDOW` of the top score,
   and caps at 3. Covered by `npm run check`.
 - `lib/clean.js`: `cleanSnippet(text)` strips markdown link soup, bare URLs,
-  GameFAQs CTAs, and Q&A vote/user lines. Covered by `npm run check`.
+  GameFAQs CTAs, and Q&A vote/user lines. `focusSection(text, query, cap)` trims
+  a long extracted page to the `cap`-sized window with the most query-term hits,
+  so a huge single-page guide is cut to the relevant section. Both covered by
+  `npm run check`.
 - `lib/replicate.ts`: Replicate adapter. `summarize(input)` sends
   `system_instruction` + `prompt` separately with Gemini fields
   (`max_output_tokens`, `thinking_budget: 0`) and parses the JSON
@@ -112,9 +121,11 @@ and simply cannot save.
   non-sensitive public web results the model already treats as untrusted, and the
   TTL self-heals; the ceiling is cache pollution, not a data leak. Upgrade path:
   move writes behind the service-role key or a `security definer` RPC.
-- Preferred-guide site-search + extract feeds the model a whole section page
-  (capped at `EXTRACT_CONTENT_CAP`), not necessarily the paragraph that answers
-  the question; it trusts the user's site choice and skips the confidence gate.
+- Preferred-guide site-search + extract feeds the model the `focusSection` window
+  (capped at `EXTRACT_CONTENT_CAP`) of the picked page, targeted by query-term
+  density — better than a fixed head slice for huge single-page guides, but still
+  keyword density, not semantics; upgrade path is embeddings/chunk re-ranking. It
+  trusts the user's site choice and skips the confidence gate.
 - Every turn runs two sequential Gemini calls (`resolveQuestion` then
   `summarize`). `max_output_tokens` on the rewrite must stay generous (~200);
   too tight a cap returns empty even with thinking off.

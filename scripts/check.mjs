@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { cleanSnippet } from "../lib/clean.js";
+import { cleanSnippet, focusSection } from "../lib/clean.js";
 import { mapGames } from "../lib/games.js";
 import { coerceHighlights, parseSummary } from "../lib/highlights.js";
 import { PLATFORMS, matchPlatforms } from "../lib/platforms.js";
@@ -11,6 +11,7 @@ import {
   buildRewritePrompt,
 } from "../lib/prompt.js";
 import { selectSources } from "../lib/rank.js";
+import { parseBlocks, parseInline } from "../lib/markdown.js";
 
 // System instruction carries the persona + safety rules.
 assert.match(SYSTEM_INSTRUCTION, /untrusted data/);
@@ -164,5 +165,33 @@ assert.deepEqual(
     { kind: "warning", title: "Missable", detail: "" },
   ],
 );
+
+// Markdown: bold segments, numbered lists, and paragraphs render as blocks.
+assert.deepEqual(parseInline("go **north** now"), [
+  { text: "go ", bold: false },
+  { text: "north", bold: true },
+  { text: " now", bold: false },
+]);
+
+const blocks = parseBlocks(
+  "Intro line.\n\n1. **Enter** the village\n2. Talk to Kirkis\n\n- a bullet",
+);
+assert.equal(blocks.length, 3);
+assert.equal(blocks[0].type, "p");
+assert.equal(blocks[1].type, "ol");
+assert.equal(blocks[1].items.length, 2);
+assert.equal(blocks[1].items[0][0].text, "Enter");
+assert.equal(blocks[1].items[0][0].bold, true);
+assert.equal(blocks[2].type, "ul");
+
+// focusSection: trim a long page to the window matching the query terms.
+assert.equal(focusSection("short guide text", "anything here", 100), "short guide text");
+const longPage =
+  "intro ".repeat(400) +
+  "the emerald weapon is found underwater near junon harbor " +
+  "outro ".repeat(400);
+const focused = focusSection(longPage, "emerald weapon underwater junon", 300);
+assert.ok(focused.length <= 300);
+assert.ok(focused.includes("emerald weapon"), "focusSection should center on the matching section");
 
 console.log("Self-check passed.");

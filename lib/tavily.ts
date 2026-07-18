@@ -1,4 +1,4 @@
-import { cleanSnippet } from "@/lib/clean";
+import { cleanSnippet, focusSection } from "@/lib/clean";
 import { selectSources } from "@/lib/rank";
 
 const TAVILY_URL = "https://api.tavily.com/search";
@@ -51,9 +51,10 @@ const TIERS: string[][] = [
 const MIN_RESULTS = 3;
 const CONTENT_CAP = 800;
 // The user's preferred page is a whole trusted walkthrough, so give it far more
-// room than a search snippet. ponytail: whole-page chunk, not the section that
-// answers the question; upgrade path is section-targeting/chunk re-ranking.
-const EXTRACT_CONTENT_CAP = 6000;
+// room than a search snippet. focusSection trims a long page to the window that
+// matches the question, so this cap is the size of that relevant slice, not the
+// whole guide — generous enough for a full section without dumping a 100k-char FAQ.
+const EXTRACT_CONTENT_CAP = 9000;
 // Snippets shorter than this after cleaning are almost always pure navigation.
 const MIN_CONTENT = 60;
 
@@ -139,6 +140,7 @@ async function runSearch(
 async function extractPreferred(
   apiKey: string,
   rawUrl: string,
+  query: string,
 ): Promise<SearchResult | null> {
   let parsed: URL;
   try {
@@ -172,7 +174,7 @@ async function extractPreferred(
   const raw = (first as { raw_content: unknown }).raw_content;
   if (typeof raw !== "string") return null;
 
-  const content = cleanSnippet(raw).slice(0, EXTRACT_CONTENT_CAP);
+  const content = focusSection(cleanSnippet(raw), query, EXTRACT_CONTENT_CAP);
   if (content.length < MIN_CONTENT) return null;
 
   return {
@@ -214,23 +216,29 @@ export async function searchGuides(
       } catch {
         domainResults = [];
       }
-      const picked = selectSources(domainResults);
-      if (picked.length) {
+      // The user explicitly trusts this site, so rank by score but SKIP the
+      // confidence gate: a niche fan-site's top hit often scores below
+      // CONFIDENCE_MIN yet is exactly the right section page. Gating here made us
+      // fall through to extracting the pasted hub/category URL (shallow index).
+      const ranked = domainResults
+        .slice()
+        .sort((a, b) => b.score - a.score);
+      if (ranked.length) {
         try {
-          const deep = await extractPreferred(apiKey, picked[0].url);
+          const deep = await extractPreferred(apiKey, ranked[0].url, query);
           if (deep) {
-            return [{ ...deep, title: picked[0].title || deep.title }];
+            return [{ ...deep, title: ranked[0].title || deep.title }];
           }
         } catch {
           // ponytail: extract failures fall back to site-search snippets.
         }
-        return picked;
+        return ranked.slice(0, 3);
       }
     }
 
     // 2. Exact pasted URL when site-search found nothing.
     try {
-      const exact = await extractPreferred(apiKey, preferred);
+      const exact = await extractPreferred(apiKey, preferred, query);
       if (exact) return [exact];
     } catch {
       // ponytail: extract failures fall through to tiered search.

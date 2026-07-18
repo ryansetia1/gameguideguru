@@ -12,6 +12,7 @@ import {
   coerceHighlights,
   type Highlight,
 } from "@/lib/highlights.js";
+import { parseBlocks } from "@/lib/markdown.js";
 import { getSupabase, type Chat } from "@/lib/supabase";
 
 type Source = {
@@ -69,6 +70,45 @@ function coerceMessages(value: unknown): Message[] {
   });
 }
 
+function renderInline(segments: { text: string; bold: boolean }[]) {
+  return segments.map((seg, i) =>
+    seg.bold ? <strong key={i}>{seg.text}</strong> : <span key={i}>{seg.text}</span>,
+  );
+}
+
+// Render the model's light markdown (paragraphs, numbered/bulleted lists, bold)
+// as real elements so **bold** and "1." aren't shown literally and text wraps.
+function AnswerBody({ text }: { text: string }) {
+  return (
+    <div className="answer">
+      {parseBlocks(text).map((block, i) => {
+        if (block.type === "ol") {
+          return (
+            <ol key={i}>
+              {block.items.map((item, j) => (
+                <li key={j}>{renderInline(item)}</li>
+              ))}
+            </ol>
+          );
+        }
+        if (block.type === "ul") {
+          return (
+            <ul key={i}>
+              {block.items.map((item, j) => (
+                <li key={j}>{renderInline(item)}</li>
+              ))}
+            </ul>
+          );
+        }
+        if (block.type === "h") {
+          return <h4 key={i}>{renderInline(block.segments)}</h4>;
+        }
+        return <p key={i}>{renderInline(block.segments)}</p>;
+      })}
+    </div>
+  );
+}
+
 function groupHighlights(highlights: Highlight[]) {
   return KINDS.flatMap((kind) => {
     const items = highlights.filter((h) => h.kind === kind);
@@ -89,13 +129,13 @@ export default function Home() {
   const [chats, setChats] = useState<Chat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
-  const [gamesOpen, setGamesOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [examplesDismissed, setExamplesDismissed] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
 
   const feedRef = useRef<HTMLDivElement>(null);
-  const gamesRef = useRef<HTMLDivElement>(null);
   const jumpRef = useRef(false);
   const conversationGame = useRef("");
   const activeChatIdRef = useRef<string | null>(null);
@@ -157,13 +197,13 @@ export default function Home() {
   }, [user, loadChats]);
 
   useEffect(() => {
-    if (!gamesOpen) return;
+    if (!menuOpenId) return;
     function onPointerDown(event: PointerEvent) {
-      if (!gamesRef.current?.contains(event.target as Node)) setGamesOpen(false);
+      if (!(event.target as HTMLElement).closest(".row-menu")) setMenuOpenId(null);
     }
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [gamesOpen]);
+  }, [menuOpenId]);
 
   function dismissExamples() {
     window.localStorage.setItem(EXAMPLES_DISMISSED_KEY, "1");
@@ -181,7 +221,8 @@ export default function Home() {
     setEditingIndex(null);
     setEditingText("");
     conversationGame.current = "";
-    setGamesOpen(false);
+    setSidebarOpen(false);
+    setMenuOpenId(null);
     requestAnimationFrame(() => {
       document.getElementById("game")?.focus();
     });
@@ -199,16 +240,24 @@ export default function Home() {
     setError("");
     setEditingIndex(null);
     setEditingText("");
-    setGamesOpen(false);
+    setSidebarOpen(false);
+    setMenuOpenId(null);
   }
 
   async function signOut() {
     await getSupabase()?.auth.signOut();
-    setGamesOpen(false);
+    setSidebarOpen(false);
+    setMenuOpenId(null);
+  }
+
+  function toggleRowMenu(id: string, event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    setMenuOpenId((prev) => (prev === id ? null : id));
   }
 
   async function deleteChat(chat: Chat, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
+    setMenuOpenId(null);
     if (!window.confirm(`Delete "${chat.game || "Untitled game"}"? This cannot be undone.`)) {
       return;
     }
@@ -371,64 +420,33 @@ export default function Home() {
   return (
     <main>
       <nav className="nav" aria-label="Brand">
-        <a className="brand" href="#" aria-label="GameGuide Guru, home">
-          <span className="brand-mark" aria-hidden="true">
-            G
-          </span>
-          <span>GAMEGUIDE GURU</span>
-        </a>
+        <div className="nav-left">
+          {user && (
+            <button
+              type="button"
+              className="burger"
+              aria-label="Open your games"
+              aria-expanded={sidebarOpen}
+              onClick={() => setSidebarOpen(true)}
+            >
+              <span aria-hidden="true" />
+              <span aria-hidden="true" />
+              <span aria-hidden="true" />
+            </button>
+          )}
+          <a className="brand" href="#" aria-label="GameGuide Guru, home">
+            <span className="brand-mark" aria-hidden="true">
+              G
+            </span>
+            <span>GAMEGUIDE GURU</span>
+          </a>
+        </div>
 
         <div className="nav-actions">
           {user ? (
-            <>
-              <div className="games-menu" ref={gamesRef}>
-                <button
-                  type="button"
-                  className="nav-button"
-                  aria-haspopup="menu"
-                  aria-expanded={gamesOpen}
-                  onClick={() => setGamesOpen((prev) => !prev)}
-                >
-                  Your games ▾
-                </button>
-                {gamesOpen && (
-                  <div className="games-panel" role="menu">
-                    <button type="button" className="games-new" onClick={newGame}>
-                      + New game
-                    </button>
-                    {chats.length === 0 ? (
-                      <p className="games-empty">No saved games yet.</p>
-                    ) : (
-                      <ul>
-                        {chats.map((chat) => (
-                          <li key={chat.id} className="games-row">
-                            <button
-                              type="button"
-                              className={chat.id === activeChatId ? "active" : ""}
-                              onClick={() => openChat(chat)}
-                            >
-                              <strong>{chat.game || "Untitled game"}</strong>
-                              {chat.platform && <small>{chat.platform}</small>}
-                            </button>
-                            <button
-                              type="button"
-                              className="games-delete"
-                              aria-label={`Delete ${chat.game || "Untitled game"}`}
-                              onClick={(event) => void deleteChat(chat, event)}
-                            >
-                              ×
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-              </div>
-              <button type="button" className="nav-button" onClick={signOut}>
-                Sign out
-              </button>
-            </>
+            <button type="button" className="nav-button" onClick={signOut}>
+              Sign out
+            </button>
           ) : supabaseReady ? (
             <button
               type="button"
@@ -445,6 +463,82 @@ export default function Home() {
           )}
         </div>
       </nav>
+
+      {user && (
+        <>
+          <div
+            className={`sidebar-backdrop${sidebarOpen ? " open" : ""}`}
+            onClick={() => {
+              setSidebarOpen(false);
+              setMenuOpenId(null);
+            }}
+            aria-hidden="true"
+          />
+          <aside
+            className={`sidebar${sidebarOpen ? " open" : ""}`}
+            aria-label="Your games"
+            aria-hidden={!sidebarOpen}
+          >
+            <div className="sidebar-head">
+              <span>Your games</span>
+              <button
+                type="button"
+                className="sidebar-close"
+                aria-label="Close sidebar"
+                onClick={() => setSidebarOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <button type="button" className="sidebar-new" onClick={newGame}>
+              + New game
+            </button>
+            {chats.length === 0 ? (
+              <p className="sidebar-empty">No saved games yet.</p>
+            ) : (
+              <ul className="sidebar-list">
+                {chats.map((chat) => (
+                  <li
+                    key={chat.id}
+                    className={`sidebar-row${chat.id === activeChatId ? " active" : ""}`}
+                  >
+                    <button
+                      type="button"
+                      className="sidebar-open"
+                      onClick={() => openChat(chat)}
+                    >
+                      <strong>{chat.game || "Untitled game"}</strong>
+                      {chat.platform && <small>{chat.platform}</small>}
+                    </button>
+                    <div className="row-menu">
+                      <button
+                        type="button"
+                        className="kebab"
+                        aria-label={`Options for ${chat.game || "Untitled game"}`}
+                        aria-expanded={menuOpenId === chat.id}
+                        onClick={(event) => toggleRowMenu(chat.id, event)}
+                      >
+                        ⋮
+                      </button>
+                      {menuOpenId === chat.id && (
+                        <div className="row-menu-pop" role="menu">
+                          <button
+                            type="button"
+                            className="row-menu-delete"
+                            onClick={(event) => void deleteChat(chat, event)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </aside>
+        </>
+      )}
 
       {!started && (
         <section className="hero">
@@ -585,7 +679,7 @@ export default function Home() {
                     ↻
                   </button>
                 </div>
-                <div className="answer">{message.content}</div>
+                <AnswerBody text={message.content} />
                 {message.highlights && message.highlights.length > 0 && (
                   <div className="highlights">
                     {groupHighlights(message.highlights).map(({ kind, items }) => (
