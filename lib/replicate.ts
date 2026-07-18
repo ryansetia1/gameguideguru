@@ -52,6 +52,13 @@ function resolveModel(): ModelName | null {
   return model as ModelName;
 }
 
+// Combine the per-call timeout with an optional caller signal (client Stop /
+// disconnect), so aborting the request also cancels the Replicate prediction.
+function withTimeout(ms: number, signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(ms);
+  return signal ? AbortSignal.any([timeout, signal]) : timeout;
+}
+
 function readText(output: unknown): string {
   if (typeof output === "string") return output;
   if (Array.isArray(output)) {
@@ -68,6 +75,7 @@ function readText(output: unknown): string {
 export async function resolveQuestion(input: {
   question: string;
   history?: Turn[];
+  signal?: AbortSignal;
 }): Promise<string> {
   const token = process.env.REPLICATE_API_TOKEN;
   const model = resolveModel();
@@ -86,7 +94,7 @@ export async function resolveQuestion(input: {
         max_output_tokens: 200,
         thinking_budget: 0,
       },
-      signal: AbortSignal.timeout(15_000),
+      signal: withTimeout(15_000, input.signal),
     });
 
     const rawOutput = readText(output);
@@ -118,6 +126,7 @@ export type SummarizeInput = {
   images?: string[];
   spoilerPrefs?: SpoilerPrefs;
   playerName?: string;
+  signal?: AbortSignal;
 };
 
 export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
@@ -151,7 +160,7 @@ export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
       max_output_tokens: 4096,
       thinking_budget: 0,
     },
-    signal: AbortSignal.timeout(50_000),
+    signal: withTimeout(50_000, input.signal),
   });
 
   const rawOutput = readText(output).trim();
@@ -182,6 +191,7 @@ export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
 export async function censorSpoilers(input: {
   answer: string;
   highlights: Highlight[];
+  signal?: AbortSignal;
 }): Promise<{ answer: string; highlights: Highlight[] } | null> {
   const token = process.env.REPLICATE_API_TOKEN;
   const model = resolveModel();
@@ -198,7 +208,7 @@ export async function censorSpoilers(input: {
         max_output_tokens: 4096,
         thinking_budget: 0,
       },
-      signal: AbortSignal.timeout(30_000),
+      signal: withTimeout(30_000, input.signal),
     });
 
     const rawOutput = readText(output).trim();

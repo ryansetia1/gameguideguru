@@ -41,6 +41,18 @@ and simply cannot save.
   (remembered in `localStorage`), and auto-scroll (smooth on new turns, instant
   jump when opening a saved game). `runTurn`/`persistChat` centralise ask +
   save; `conversationGame` tracks which game the visible thread belongs to.
+  While a turn runs the Send button becomes a **Stop** button that aborts the
+  `/api/solve` fetch (`abortRef`); the abort propagates via `request.signal` to
+  cancel the Replicate prediction + Tavily search server-side. A promise-based
+  confirm dialog (`askConfirm` → `confirmState`) guards every destructive action
+  (delete chat from the sidebar/game-card/library kebabs, clear cover, and
+  edit/retry when it would drop attached images). A themed `snackbar` (`toast`)
+  confirms a successful Steam link. The game-card and saved-library cards use the
+  sidebar kebab pattern (`menuOpenId`/`toggleRowMenu`) for Edit/Delete; the
+  sticky-header back arrow calls `goHome` (pops the pushed chat entry). Mobile
+  **edge-swipe**: left→sidebar, right→last-opened library (`lastLibrary`; Steam
+  when connected, else saved), signed-in only, disabled while an overlay/edit is
+  active.
 - `app/auth-panel.tsx`: themed sign-in/sign-up modal (email+password and Google
   OAuth via `getSupabase().auth`). Surfaces the "check your email" state when the
   project has email confirmation enabled.
@@ -91,9 +103,13 @@ and simply cannot save.
   and `GET /api/steam/library` (Bearer token) trust **only** the account's linked
   Steam when authenticated — the cookie is used solely in the token-less transient
   right after the OpenID return — so a shared browser can't leak one user's
-  library to another. `app/steam-library.tsx` grid UI; picking a game opens/resumes
-  a PC chat with Steam cover art. Requires `STEAM_API_KEY`; user's Steam
-  **Game details** must be Public.
+  library to another. `app/steam-library.tsx` grid UI (with search filter and
+  square in-theme loading skeletons); picking a game opens/resumes a PC chat with
+  Steam cover art. It caches the fetched list in `localStorage` (`gg:steam-library`,
+  keyed per account via the `cacheKey` prop, 6h TTL) and renders it instantly on
+  reopen while revalidating in the background (stale-while-revalidate) — no more
+  full reload every open. Requires `STEAM_API_KEY`; user's Steam **Game details**
+  must be Public.
 - `app/api/games/route.ts`: TheGamesDB proxy. Runs
   `Games/ByGameName?include=boxart,platform` with `THEGAMESDB_API_KEY` and returns
   `{ games, available }` (each game has `cover` + raw `platform` name). Missing key
@@ -172,13 +188,20 @@ and simply cannot save.
   payload to `{ id, name, year, cover }` (year from `release_date`, cover built
   from the front box-art in the `include` block), dropping malformed entries.
   Covered by `npm run check`.
-- PWA + brand: UI font is **Rubik** via `next/font` in `app/layout.tsx`. The logo is `GGG.png` (2000x2000 source), resized with `sips` into
+- PWA + brand: UI font is **Rubik** via `next/font` in `app/layout.tsx`. The logo is `GGG.png` (2000x2000 source, `#00FFAA` bg), resized with `sips` into
   static icons — `app/icon.png` (favicon), `app/apple-icon.png` (apple-touch),
-  `public/icon-192.png` / `public/icon-512.png` (manifest, referenced by
-  `app/manifest.ts`), and `public/logo.png` (nav brand mark, `<img>` in
-  `app/page.tsx`). Re-run the `sips -Z <size>` commands to regenerate from a new
-  source. `public/sw.js` is a minimal network-first service worker registered by
-  `app/sw-register.tsx`.
+  `public/icon-192.png` / `public/icon-512.png` (manifest `purpose: "any"`), and
+  `public/logo.png` (nav brand mark, `<img>` in `app/page.tsx`). Maskable is a
+  **separate** padded icon `public/icon-512-maskable.png` (`sips -Z 380` then
+  `--padToHeightWidth 512 512 --padColor 00FFAA`) so Android's adaptive mask
+  doesn't zoom/crop the tight-framed logo — never point `purpose: "maskable"` at
+  the plain icon. Manifest `background_color`/`theme_color` are `#00FFAA` (Android
+  splash). iOS ignores those, so `public/splash/apple-splash-<w>-<h>.png` (solid
+  `#00FFAA` + centered logo, `sips` pad) are wired as `apple-touch-startup-image`
+  `<link>` tags generated from `APPLE_SPLASH` in `app/layout.tsx` (curated
+  portrait device set). Re-run the `sips` commands to regenerate from a new source.
+  `public/sw.js` is a network-first service worker (cache `gg-runtime-v2`, evicts
+  stale caches on activate) registered by `app/sw-register.tsx`.
 - Persistence model: one `public.chats` row per saved game (`game`, `platform`,
   `preferred_guide_url`, `cover_url`, `release_year`, `messages` jsonb), RLS-scoped
   to `auth.uid()`; the client upserts the whole `messages` array each turn and
@@ -190,6 +213,19 @@ and simply cannot save.
 
 ## Known limits (ponytail)
 
+- Stop/cancel threads the client `AbortController` → `/api/solve` `request.signal`
+  → `AbortSignal.any([timeout, signal])` into the `replicate.run` calls
+  (`lib/replicate.ts`) and every Tavily/Serper fetch (`lib/tavily.ts`), so `run()`'s
+  built-in signal cancels the prediction. It relies on Vercel propagating the
+  client disconnect to `request.signal` (nodejs runtime); if a disconnect isn't
+  propagated the prediction may finish server-side (result discarded). Upgrade
+  path for guaranteed cancel: `predictions.create` + tracked id + a `/cancel`
+  endpoint (needs SSE to hand the id to the client mid-flight).
+- iOS PWA splash images are a curated **portrait-only** device set
+  (`APPLE_SPLASH` in `app/layout.tsx`); landscape/older devices fall back to the
+  OS default. Edge-swipe uses fixed edge (24px) / threshold (60px) heuristics and
+  is meant for the installed PWA (a browser tab's own back-gesture can fight the
+  left edge).
 - Model-call input fields are Gemini-specific; switching `REPLICATE_MODEL` to a
   non-Gemini model would silently drop `system_instruction`/`thinking_budget`.
 - Chat history is sent as plain text inside the prompt and trimmed by turn count,

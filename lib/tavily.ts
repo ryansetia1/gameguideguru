@@ -5,6 +5,13 @@ import { selectSources } from "@/lib/rank";
 const TAVILY_URL = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
 
+// Per-call timeout combined with an optional caller signal (client Stop), so a
+// Stop mid-search aborts the outstanding provider request instead of waiting it out.
+function combineSignal(ms: number, signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(ms);
+  return signal ? AbortSignal.any([timeout, signal]) : timeout;
+}
+
 export type SearchResult = {
   title: string;
   url: string;
@@ -63,6 +70,7 @@ async function runSearch(
   apiKey: string,
   query: string,
   includeDomains: string[],
+  signal?: AbortSignal,
 ): Promise<SearchResult[]> {
   const response = await fetch(TAVILY_URL, {
     method: "POST",
@@ -80,7 +88,7 @@ async function runSearch(
       exclude_domains: EXCLUDE_DOMAINS,
       ...(includeDomains.length ? { include_domains: includeDomains } : {}),
     }),
-    signal: AbortSignal.timeout(12_000),
+    signal: combineSignal(12_000, signal),
   });
 
   if (!response.ok) {
@@ -166,6 +174,7 @@ async function extractPreferred(
   apiKey: string,
   rawUrl: string,
   query: string,
+  signal?: AbortSignal,
 ): Promise<SearchResult | null> {
   let parsed: URL;
   try {
@@ -182,7 +191,7 @@ async function extractPreferred(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ urls: [parsed.toString()] }),
-    signal: AbortSignal.timeout(12_000),
+    signal: combineSignal(12_000, signal),
   });
 
   if (!response.ok) return null;
@@ -221,6 +230,7 @@ async function searchTavily(
   query: string,
   preferredUrl?: string,
   focusQuery?: string,
+  signal?: AbortSignal,
 ): Promise<SearchResult[]> {
   const focus = (focusQuery ?? query).trim();
   const preferred = (preferredUrl ?? "").trim();
@@ -238,7 +248,7 @@ async function searchTavily(
     // with a higher-scoring index (e.g. a 108-Stars recruit list on the same host).
     if (!hub) {
       try {
-        const exact = await extractPreferred(apiKey, preferred, focus);
+        const exact = await extractPreferred(apiKey, preferred, focus, signal);
         if (exact) return [exact];
       } catch {
         // ponytail: fall through to site-search on the same host.
@@ -249,7 +259,7 @@ async function searchTavily(
     if (host) {
       let domainResults: SearchResult[] = [];
       try {
-        domainResults = await runSearch(apiKey, query, [host]);
+        domainResults = await runSearch(apiKey, query, [host], signal);
       } catch {
         domainResults = [];
       }
@@ -267,7 +277,7 @@ async function searchTavily(
       const picks = articles.length ? articles : ranked;
       if (picks.length) {
         try {
-          const deep = await extractPreferred(apiKey, picks[0].url, focus);
+          const deep = await extractPreferred(apiKey, picks[0].url, focus, signal);
           if (deep) {
             return [{ ...deep, title: picks[0].title || deep.title }];
           }
@@ -281,7 +291,7 @@ async function searchTavily(
     // Hub URL only: site-search found nothing useful — try extracting the paste.
     if (hub) {
       try {
-        const exact = await extractPreferred(apiKey, preferred, focus);
+        const exact = await extractPreferred(apiKey, preferred, focus, signal);
         if (exact) return [exact];
       } catch {
         // ponytail: extract failures fall through to tiered search.
@@ -290,11 +300,15 @@ async function searchTavily(
   }
 
   // 3. Normal tiered search.
-  return selectSources(await tieredSearch(apiKey, query));
+  return selectSources(await tieredSearch(apiKey, query, signal));
 }
 
 /** Collect tiered Tavily results without the answer-time confidence gate. */
-async function tieredSearch(apiKey: string, query: string): Promise<SearchResult[]> {
+async function tieredSearch(
+  apiKey: string,
+  query: string,
+  signal?: AbortSignal,
+): Promise<SearchResult[]> {
   const seen = new Set<string>();
   const collected: SearchResult[] = [];
   let attempts = 0;
@@ -304,7 +318,7 @@ async function tieredSearch(apiKey: string, query: string): Promise<SearchResult
     let tier: SearchResult[] = [];
     attempts += 1;
     try {
-      tier = await runSearch(apiKey, query, includeDomains);
+      tier = await runSearch(apiKey, query, includeDomains, signal);
     } catch {
       // ponytail: per-tier failures are non-fatal; search is supporting evidence.
       failures += 1;
@@ -378,12 +392,16 @@ function mapSerper(payload: unknown): SearchResult[] {
   });
 }
 
-async function serperQuery(apiKey: string, q: string): Promise<SearchResult[]> {
+async function serperQuery(
+  apiKey: string,
+  q: string,
+  signal?: AbortSignal,
+): Promise<SearchResult[]> {
   const response = await fetch(SERPER_URL, {
     method: "POST",
     headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
     body: JSON.stringify({ q, num: 10 }),
-    signal: AbortSignal.timeout(12_000),
+    signal: combineSignal(12_000, signal),
   });
   if (!response.ok) throw new Error(`Serper search failed with status ${response.status}`);
   return mapSerper(await response.json());
@@ -398,6 +416,7 @@ async function searchSerper(
   apiKey: string,
   query: string,
   preferredUrl?: string,
+  signal?: AbortSignal,
 ): Promise<SearchResult[]> {
   let host = "";
   try {
@@ -407,10 +426,10 @@ async function searchSerper(
   }
 
   if (host) {
-    const scoped = await serperQuery(apiKey, `site:${host} ${query}`);
+    const scoped = await serperQuery(apiKey, `site:${host} ${query}`, signal);
     if (scoped.length) return scoped.slice(0, 3);
   }
-  return (await serperQuery(apiKey, query)).slice(0, 3);
+  return (await serperQuery(apiKey, query, signal)).slice(0, 3);
 }
 
 /**
@@ -423,6 +442,7 @@ export async function searchGuides(
   query: string,
   preferredUrl?: string,
   focusQuery?: string,
+  signal?: AbortSignal,
 ): Promise<SearchResult[]> {
   const tavilyKey = process.env.TAVILY_API_KEY;
   const serperKey = process.env.SERPER_API_KEY;
@@ -432,13 +452,13 @@ export async function searchGuides(
 
   if (tavilyKey) {
     try {
-      return await searchTavily(tavilyKey, query, preferredUrl, focusQuery);
+      return await searchTavily(tavilyKey, query, preferredUrl, focusQuery, signal);
     } catch (error) {
       if (!serperKey) throw error;
       console.error("Tavily unavailable; falling back to Serper:", error);
     }
   }
-  return searchSerper(serperKey as string, query, preferredUrl);
+  return searchSerper(serperKey as string, query, preferredUrl, signal);
 }
 
 const DISCOVER_MAX = 8;

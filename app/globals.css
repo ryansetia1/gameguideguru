@@ -1047,6 +1047,14 @@ details.sources small {
   animation: spin 700ms linear infinite;
 }
 
+/* Stop button: reuses .submit (signal square) with a filled stop glyph. */
+.stop-glyph {
+  display: block;
+  width: 13px;
+  height: 13px;
+  background: var(--on-signal);
+}
+
 .disclaimer {
   margin: 22px auto 0;
   color: var(--muted);
@@ -1401,6 +1409,7 @@ details.sources small {
 }
 
 .library-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1451,6 +1460,47 @@ details.sources small {
 .library-card small {
   color: var(--muted);
   font-size: 0.68rem;
+}
+
+/* Loading skeletons: square, sharp-cornered, in-theme. */
+.library-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  box-shadow: 3px 3px 0 var(--ink);
+  padding: 8px;
+}
+
+.library-skeleton-tile {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background: var(--line);
+}
+
+.library-skeleton-bar {
+  height: 12px;
+  background: var(--line);
+}
+
+.library-skeleton-bar.short {
+  width: 55%;
+}
+
+.library-skeleton-tile,
+.library-skeleton-bar {
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
 }
 
 .sidebar-list {
@@ -1584,6 +1634,54 @@ details.sources small {
 
 .row-menu-delete:hover {
   background: #fdecea;
+}
+
+/* Kebab in the game-card / library-card corner: a bordered square that reads
+   over cover art (vs. the sidebar row's divider-only style). */
+.game-card-menu,
+.library-card-menu {
+  position: absolute;
+  display: flex;
+}
+
+.game-card-menu {
+  top: 12px;
+  right: 12px;
+}
+
+.library-card-menu {
+  top: 6px;
+  right: 6px;
+}
+
+.game-card-menu .kebab,
+.library-card-menu .kebab {
+  width: 32px;
+  height: 32px;
+  border: 1.5px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper-strong);
+  color: var(--ink);
+}
+
+.game-card-menu .kebab:hover,
+.library-card-menu .kebab:hover {
+  background: var(--signal);
+  color: var(--on-signal);
+}
+
+/* Library card is now a container: inner open-button + corner kebab. */
+.library-open {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
 }
 
 /* Full-width fields inside setup (no grid — flex column). */
@@ -2941,4 +3039,90 @@ details.sources small {
   margin: 0;
   color: var(--text-subtle);
   font-size: 0.88rem;
+}
+
+/* --- Confirmation dialog (all destructive actions) --- */
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(23, 33, 31, 0.45);
+  animation: fade 160ms ease-out backwards;
+}
+
+.confirm-modal {
+  width: min(100%, 360px);
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  box-shadow: 8px 8px 0 var(--ink);
+  padding: 20px;
+  animation: rise 180ms ease-out backwards;
+}
+
+.confirm-message {
+  margin: 0 0 18px;
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.45;
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.confirm-cancel,
+.confirm-delete {
+  border: 1.5px solid var(--ink);
+  padding: 9px 16px;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.confirm-cancel {
+  background: var(--paper-strong);
+  color: var(--ink);
+}
+
+.confirm-cancel:hover {
+  background: var(--signal);
+  color: var(--on-signal);
+}
+
+/* --paper-strong text flips with the theme, so it contrasts on --danger in both
+   (dark red bg in light theme, light red bg in dark theme). */
+.confirm-delete {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--paper-strong);
+}
+
+.confirm-delete:hover {
+  filter: brightness(1.08);
+}
+
+/* --- Snackbar / toast --- */
+.snackbar {
+  position: fixed;
+  left: 50%;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 90;
+  max-width: calc(100% - 32px);
+  border: 1.5px solid var(--ink);
+  background: var(--signal);
+  color: var(--on-signal);
+  box-shadow: 4px 4px 0 var(--ink);
+  padding: 12px 18px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  animation: rise 200ms ease-out backwards;
 }

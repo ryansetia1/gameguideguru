@@ -15,6 +15,8 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onPick: (game: SteamGame) => void;
+  /** Steam id (or user id) — namespaces the cache so accounts don't leak. */
+  cacheKey?: string;
 };
 
 function formatPlaytime(minutes: number) {
@@ -23,13 +25,42 @@ function formatPlaytime(minutes: number) {
   return `${hours}h played`;
 }
 
-export function SteamLibrary({ open, onClose, onPick }: Props) {
+// Best-effort localStorage cache so reopening the library is instant instead of
+// re-hitting Steam every time. Stale-while-revalidate: show cached games, then
+// refresh in the background. Keyed per account. 6h TTL.
+const LIB_CACHE_KEY = "gg:steam-library";
+const LIB_TTL = 6 * 60 * 60 * 1000;
+
+function readLibCache(key: string): SteamGame[] | null {
+  if (!key || typeof window === "undefined") return null;
+  try {
+    const all = JSON.parse(window.localStorage.getItem(LIB_CACHE_KEY) || "{}");
+    const hit = all[key];
+    return hit && Date.now() - hit.ts < LIB_TTL ? (hit.games as SteamGame[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLibCache(key: string, games: SteamGame[]) {
+  if (!key || typeof window === "undefined") return;
+  try {
+    const all = JSON.parse(window.localStorage.getItem(LIB_CACHE_KEY) || "{}");
+    all[key] = { games, ts: Date.now() };
+    window.localStorage.setItem(LIB_CACHE_KEY, JSON.stringify(all));
+  } catch {
+    // over quota / disabled — skip caching
+  }
+}
+
+export function SteamLibrary({ open, onClose, onPick, cacheKey = "" }: Props) {
   const [games, setGames] = useState<SteamGame[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
 
-  const loadLibrary = useCallback(async () => {
+  const loadLibrary = useCallback(
+    async (showSpinner: boolean) => {
     const supabase = getSupabase();
     if (!supabase) {
       setError("Sign in to use your Steam library.");
@@ -43,7 +74,7 @@ export function SteamLibrary({ open, onClose, onPick }: Props) {
       return;
     }
 
-    setLoading(true);
+    if (showSpinner) setLoading(true);
     setError("");
     try {
       const response = await fetch("/api/steam/library", {
@@ -72,6 +103,7 @@ export function SteamLibrary({ open, onClose, onPick }: Props) {
 
       const list = Array.isArray(payload.games) ? payload.games : [];
       setGames(list);
+      if (list.length) writeLibCache(cacheKey, list);
       if (payload.error === "fetch_failed") {
         setError("Could not reach Steam right now. Try again in a moment.");
       } else if (!list.length) {
@@ -81,17 +113,27 @@ export function SteamLibrary({ open, onClose, onPick }: Props) {
       }
     } catch {
       setError("Could not load Steam library.");
-      setGames([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+    },
+    [cacheKey],
+  );
 
   useEffect(() => {
     if (!open) return;
     setQuery("");
-    void loadLibrary();
-  }, [open, loadLibrary]);
+    // Show cached games instantly (no skeleton); always revalidate in the
+    // background. First-ever open (no cache) shows the loading skeletons.
+    const cached = readLibCache(cacheKey);
+    if (cached) {
+      setGames(cached);
+      void loadLibrary(false);
+    } else {
+      setGames([]);
+      void loadLibrary(true);
+    }
+  }, [open, loadLibrary, cacheKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -125,8 +167,16 @@ export function SteamLibrary({ open, onClose, onPick }: Props) {
               ×
             </button>
           </div>
-          {loading ? (
-            <p className="library-empty">Loading your Steam games…</p>
+          {loading && games.length === 0 ? (
+            <div className="library-grid" aria-label="Loading games" aria-busy="true">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="library-skeleton" aria-hidden="true">
+                  <span className="library-skeleton-tile" />
+                  <span className="library-skeleton-bar" />
+                  <span className="library-skeleton-bar short" />
+                </div>
+              ))}
+            </div>
           ) : error && games.length === 0 ? (
             <p className="library-empty">{error}</p>
           ) : (

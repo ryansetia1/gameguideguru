@@ -79,6 +79,9 @@ export async function POST(request: Request) {
   const images = parseImages(record.images);
   const spoilerPrefs = coerceSpoilerPrefs(record.spoilerPrefs);
   const playerName = coerceDisplayName(record.playerName);
+  // Client Stop aborts the fetch; this fires so we cancel the Replicate
+  // prediction / Tavily search instead of finishing (and billing) them.
+  const signal = request.signal;
 
   if (question.length < 2) {
     return NextResponse.json(
@@ -101,7 +104,7 @@ export async function POST(request: Request) {
     if (process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY) {
       // Rewrite into a standalone English search query first (first messages
       // benefit from translation/normalisation; follow-ups need context resolved).
-      const searchTopic = await resolveQuestion({ question, history });
+      const searchTopic = await resolveQuestion({ question, history, signal });
       const searchQuery = [game, platform, searchTopic, "walkthrough guide"]
         .filter(Boolean)
         .join(" ");
@@ -113,7 +116,7 @@ export async function POST(request: Request) {
         sources = cached as SearchResult[];
       } else {
         try {
-          sources = await searchGuides(searchQuery, preferredUrl, searchTopic);
+          sources = await searchGuides(searchQuery, preferredUrl, searchTopic, signal);
           void setCachedSearch(cacheKey, sources);
         } catch (searchError) {
           console.error("Search failed, continuing without sources:", searchError);
@@ -130,6 +133,7 @@ export async function POST(request: Request) {
       images,
       spoilerPrefs,
       playerName,
+      signal,
     });
 
     // Spoilers OFF + the model flagged its own answer as risky -> run the
@@ -137,7 +141,7 @@ export async function POST(request: Request) {
     // Best-effort: on failure censorSpoilers returns null and we keep the
     // (prompt-guarded) original. Most turns never reach this branch.
     if (!spoilerPrefs.major && spoilerRisk) {
-      const cleaned = await censorSpoilers({ answer, highlights });
+      const cleaned = await censorSpoilers({ answer, highlights, signal });
       if (cleaned) {
         answer = cleaned.answer;
         highlights = cleaned.highlights;

@@ -14,6 +14,23 @@ const rubik = Rubik({
 
 const themeInitScript = `(function(){try{var t=localStorage.getItem("gg:theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}})();`;
 
+// iOS ignores manifest background_color; a colored launch screen needs one
+// pre-rendered image per device resolution. Portrait-only curated set (files in
+// public/splash, solid #00FFAA + centered logo). CSS px = device px / dpr.
+const APPLE_SPLASH: { w: number; h: number; dpr: number }[] = [
+  { w: 1290, h: 2796, dpr: 3 },
+  { w: 1179, h: 2556, dpr: 3 },
+  { w: 1170, h: 2532, dpr: 3 },
+  { w: 1284, h: 2778, dpr: 3 },
+  { w: 1125, h: 2436, dpr: 3 },
+  { w: 1080, h: 2340, dpr: 3 },
+  { w: 828, h: 1792, dpr: 2 },
+  { w: 750, h: 1334, dpr: 2 },
+  { w: 1536, h: 2048, dpr: 2 },
+  { w: 1668, h: 2388, dpr: 2 },
+  { w: 2048, h: 2732, dpr: 2 },
+];
+
 export const metadata: Metadata = {
   title: "Game Guide Guru",
   description: "Find your way out when your adventure gets stuck.",
@@ -30,7 +47,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f3f0e7" },
+    { media: "(prefers-color-scheme: light)", color: "#00FFAA" },
     { media: "(prefers-color-scheme: dark)", color: "#14181a" },
   ],
 };
@@ -40,6 +57,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" className={rubik.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        {APPLE_SPLASH.map(({ w, h, dpr }) => (
+          <link
+            key={`${w}x${h}`}
+            rel="apple-touch-startup-image"
+            media={`screen and (device-width: ${w / dpr}px) and (device-height: ${h / dpr}px) and (-webkit-device-pixel-ratio: ${dpr}) and (orientation: portrait)`}
+            href={`/splash/apple-splash-${w}-${h}.png`}
+          />
+        ))}
       </head>
       <body className={rubik.className} suppressHydrationWarning>
         {children}

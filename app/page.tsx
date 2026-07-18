@@ -357,6 +357,12 @@ export default function Home() {
   const spoilerPrefs = effectiveSpoilerPrefs(globalSpoilerMajor, gameSpoilerMajor);
   const [attachOpen, setAttachOpen] = useState(false);
   const [librarySearch, setLibrarySearch] = useState("");
+  const [confirmState, setConfirmState] = useState<{
+    message: string;
+    resolve: (value: boolean) => void;
+  } | null>(null);
+  const [toast, setToast] = useState("");
+  const [lastLibrary, setLastLibrary] = useState<"saved" | "steam">("saved");
 
   const feedRef = useRef<HTMLDivElement>(null);
   const lastUserRef = useRef<HTMLDivElement>(null);
@@ -364,6 +370,7 @@ export default function Home() {
   const jumpRef = useRef(false);
   const chatHistoryPushed = useRef(false);
   const steamLinkHandledRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
   const conversationGame = useRef("");
   const activeChatIdRef = useRef<string | null>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -486,6 +493,7 @@ export default function Home() {
     const { data } = await supabase.auth.refreshSession();
     if (data.session?.user) setUser(data.session.user);
     if (linkPayload.steamId) setSteamId(linkPayload.steamId);
+    setToast("Steam connected ✓");
     return true;
   }, [user]);
 
@@ -612,6 +620,91 @@ export default function Home() {
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [attachOpen]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), 3500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  useEffect(() => {
+    if (!confirmState) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        confirmState!.resolve(false);
+        setConfirmState(null);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [confirmState]);
+
+  // Mobile edge-swipe: from the left edge → sidebar; from the right edge → the
+  // last-opened library (Steam if connected + last used, else saved). Signed-in
+  // only; ignored while an overlay is open or a message is being edited.
+  // ponytail: fixed edge/threshold heuristics; free in the installed PWA (no
+  // browser back-gesture to fight there).
+  useEffect(() => {
+    if (typeof window === "undefined" || !user) return;
+    const EDGE = 24;
+    const THRESHOLD = 60;
+    const blocked =
+      sidebarOpen ||
+      libraryOpen ||
+      steamLibraryOpen ||
+      authOpen ||
+      confirmState !== null ||
+      editingGame ||
+      editingIndex !== null;
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+
+    function onStart(event: TouchEvent) {
+      if (blocked || event.touches.length !== 1) {
+        tracking = false;
+        return;
+      }
+      const t = event.touches[0];
+      tracking = t.clientX <= EDGE || t.clientX >= window.innerWidth - EDGE;
+      startX = t.clientX;
+      startY = t.clientY;
+    }
+
+    function onEnd(event: TouchEvent) {
+      if (!tracking) return;
+      tracking = false;
+      const t = event.changedTouches[0];
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      if (Math.abs(dx) < THRESHOLD || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      if (startX <= EDGE && dx > 0) {
+        setSidebarOpen(true);
+        pushOverlayHistory();
+      } else if (startX >= window.innerWidth - EDGE && dx < 0) {
+        if (steamConnected && lastLibrary === "steam") openSteamLibrary();
+        else openSavedLibrary();
+      }
+    }
+
+    window.addEventListener("touchstart", onStart, { passive: true });
+    window.addEventListener("touchend", onEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onStart);
+      window.removeEventListener("touchend", onEnd);
+    };
+  }, [
+    user,
+    sidebarOpen,
+    libraryOpen,
+    steamLibraryOpen,
+    authOpen,
+    confirmState,
+    editingGame,
+    editingIndex,
+    steamConnected,
+    lastLibrary,
+  ]);
 
   useEffect(() => {
     setGlobalSpoilerMajor(loadGlobalSpoilerPrefs().major);
@@ -804,6 +897,7 @@ export default function Home() {
   }
 
   async function clearCover() {
+    if (!(await askConfirm("Remove this cover image?"))) return;
     const toRemove = [coverStoragePath(cover), replacedCoverRef.current].filter(
       (path): path is string => Boolean(path),
     );
@@ -862,10 +956,49 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // Return to the empty home view. Pop the pushed chat entry so the history stack
+  // matches a hardware back (popstate then runs newGame); fall back to a direct
+  // reset if nothing was pushed.
+  function goHome() {
+    if (chatHistoryPushed.current) window.history.back();
+    else newGame();
+  }
+
+  // Promise-based confirm dialog (replaces window.confirm): resolves true/false
+  // when the user acts. Shared by every destructive action.
+  const askConfirm = useCallback(
+    (message: string) =>
+      new Promise<boolean>((resolve) => setConfirmState({ message, resolve })),
+    [],
+  );
+
+  function openSavedLibrary() {
+    setSidebarOpen(false);
+    setMenuOpenId(null);
+    setLibrarySearch("");
+    setLastLibrary("saved");
+    setLibraryOpen(true);
+    pushOverlayHistory();
+  }
+
+  function openSteamLibrary() {
+    setSidebarOpen(false);
+    setMenuOpenId(null);
+    setLastLibrary("steam");
+    setSteamLibraryOpen(true);
+    pushOverlayHistory();
+  }
+
   function openFromLibrary(chat: Chat) {
     openChat(chat);
     if (libraryOpen) dismissOverlay();
     else setLibraryOpen(false);
+  }
+
+  function editFromLibrary(chat: Chat) {
+    setMenuOpenId(null);
+    openFromLibrary(chat);
+    setEditingGame(true);
   }
 
   function connectSteam() {
@@ -988,10 +1121,14 @@ export default function Home() {
     setMenuOpenId((prev) => (prev === id ? null : id));
   }
 
-  async function deleteChat(chat: Chat, event: MouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
+  async function deleteChat(chat: Chat, event?: MouseEvent<HTMLButtonElement>) {
+    event?.stopPropagation();
     setMenuOpenId(null);
-    if (!window.confirm(`Delete "${chat.game || "Untitled game"}"? This cannot be undone.`)) {
+    if (
+      !(await askConfirm(
+        `Delete "${chat.game || "Untitled game"}"? This cannot be undone.`,
+      ))
+    ) {
       return;
     }
     const supabase = getSupabase();
@@ -1015,6 +1152,18 @@ export default function Home() {
     }
     if (chat.id === activeChatId) newGame();
     void loadChats();
+  }
+
+  // Delete the chat currently shown in the game card. Unsaved drafts (no row yet)
+  // just discard back to home.
+  async function deleteActiveChat() {
+    setMenuOpenId(null);
+    const chat = chats.find((c) => c.id === activeChatIdRef.current);
+    if (chat) {
+      await deleteChat(chat);
+      return;
+    }
+    if (await askConfirm("Discard this game?")) newGame();
   }
 
   async function persistChat(nextMessages: Message[], targetChatId: string | null) {
@@ -1077,10 +1226,14 @@ export default function Home() {
     const optimistic: Message[] = [...priorMessages, userMessage];
     setMessages(optimistic);
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       const response = await fetch("/api/solve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           game,
           platform,
@@ -1136,12 +1289,21 @@ export default function Home() {
       if (savedId) activeChatIdRef.current = savedId;
     } catch (caught) {
       setMessages(priorMessages);
-      setError(
-        caught instanceof Error ? caught.message : "An unknown error occurred.",
-      );
+      // A user-triggered Stop aborts the fetch — treat it as a silent cancel,
+      // not an error.
+      if (!(caught instanceof DOMException && caught.name === "AbortError")) {
+        setError(
+          caught instanceof Error ? caught.message : "An unknown error occurred.",
+        );
+      }
     } finally {
+      abortRef.current = null;
       setLoading(false);
     }
+  }
+
+  function stopGeneration() {
+    abortRef.current?.abort();
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1174,10 +1336,21 @@ export default function Home() {
     setEditingText("");
   }
 
+  // Editing/retrying discards the dropped turns' attached images. Confirm first
+  // when there's actually an image to lose; plain text edits stay instant.
+  async function confirmDropImages(dropped: Message[]) {
+    const count = dropped.reduce((n, m) => n + (m.images?.length ?? 0), 0);
+    if (count === 0) return true;
+    return askConfirm(
+      `This removes ${count} attached image${count > 1 ? "s" : ""}. Continue?`,
+    );
+  }
+
   async function saveEdit(index: number) {
     const text = editingText.trim();
     if (text.length < 2 || loading) return;
     const dropped = messages.slice(index);
+    if (!(await confirmDropImages(dropped))) return;
     await deleteMessageImages(dropped);
     await runTurn(text, messages.slice(0, index), activeChatIdRef.current);
   }
@@ -1186,6 +1359,7 @@ export default function Home() {
     if (loading || index < 1 || messages[index - 1].role !== "user") return;
     const question = messages[index - 1].content;
     const dropped = messages.slice(index - 1);
+    if (!(await confirmDropImages(dropped))) return;
     await deleteMessageImages(dropped);
     await runTurn(question, messages.slice(0, index - 1), activeChatIdRef.current);
   }
@@ -1278,13 +1452,7 @@ export default function Home() {
               <button
                 type="button"
                 className="sidebar-library-btn"
-                onClick={() => {
-                  setSidebarOpen(false);
-                  setMenuOpenId(null);
-                  setLibrarySearch("");
-                  setLibraryOpen(true);
-                  pushOverlayHistory();
-                }}
+                onClick={openSavedLibrary}
               >
                 ▦ Saved library
               </button>
@@ -1297,12 +1465,7 @@ export default function Home() {
                 <button
                   type="button"
                   className="sidebar-steam-btn"
-                  onClick={() => {
-                    setSidebarOpen(false);
-                    setMenuOpenId(null);
-                    setSteamLibraryOpen(true);
-                    pushOverlayHistory();
-                  }}
+                  onClick={openSteamLibrary}
                 >
                   <SteamIcon /> Steam library
                 </button>
@@ -1420,26 +1583,56 @@ export default function Home() {
                           ) : (
                             <div className="library-grid">
                               {shown.map((chat) => (
-                                <button
-                                  key={chat.id}
-                                  type="button"
-                                  className="library-card"
-                                  onClick={() => openFromLibrary(chat)}
-                                >
-                                  <CoverThumb
-                                    cover={chat.cover_url ?? ""}
-                                    name={chat.game}
-                                    className="cover-tile"
-                                  />
-                                  <strong>{chat.game || "Untitled game"}</strong>
-                                  {(chat.platform || chat.release_year) && (
-                                    <small>
-                                      {[chat.platform, chat.release_year]
-                                        .filter(Boolean)
-                                        .join(" · ")}
-                                    </small>
-                                  )}
-                                </button>
+                                <div key={chat.id} className="library-card">
+                                  <button
+                                    type="button"
+                                    className="library-open"
+                                    onClick={() => openFromLibrary(chat)}
+                                  >
+                                    <CoverThumb
+                                      cover={chat.cover_url ?? ""}
+                                      name={chat.game}
+                                      className="cover-tile"
+                                    />
+                                    <strong>{chat.game || "Untitled game"}</strong>
+                                    {(chat.platform || chat.release_year) && (
+                                      <small>
+                                        {[chat.platform, chat.release_year]
+                                          .filter(Boolean)
+                                          .join(" · ")}
+                                      </small>
+                                    )}
+                                  </button>
+                                  <div className="row-menu library-card-menu">
+                                    <button
+                                      type="button"
+                                      className="kebab"
+                                      aria-label={`Options for ${chat.game || "Untitled game"}`}
+                                      aria-expanded={menuOpenId === `lib-${chat.id}`}
+                                      onClick={(event) => toggleRowMenu(`lib-${chat.id}`, event)}
+                                    >
+                                      ⋮
+                                    </button>
+                                    {menuOpenId === `lib-${chat.id}` && (
+                                      <div className="row-menu-pop" role="menu">
+                                        <button
+                                          type="button"
+                                          className="row-menu-item"
+                                          onClick={() => editFromLibrary(chat)}
+                                        >
+                                          Edit
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="row-menu-item row-menu-delete"
+                                          onClick={(event) => void deleteChat(chat, event)}
+                                        >
+                                          Delete
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
                               ))}
                             </div>
                           )}
@@ -1456,6 +1649,7 @@ export default function Home() {
             open={steamLibraryOpen}
             onClose={dismissOverlay}
             onPick={startFromSteamGame}
+            cacheKey={steamId ?? user?.id ?? ""}
           />
         </>
       )}
@@ -1465,8 +1659,8 @@ export default function Home() {
           <button
             type="button"
             className="sticky-back"
-            onClick={scrollToTop}
-            aria-label="Back to top"
+            onClick={goHome}
+            aria-label="Back to home"
           >
             ←
           </button>
@@ -1497,18 +1691,40 @@ export default function Home() {
 
       {started && !editingGame ? (
         <section className="game-card" aria-label="Game" ref={topRef}>
-          <button
-            type="button"
-            className="game-card-edit"
-            onClick={() => {
-              setEditingGame(true);
-              scrollToTop();
-            }}
-            disabled={loading}
-            aria-label="Edit game details"
-          >
-            Edit
-          </button>
+          <div className="row-menu game-card-menu">
+            <button
+              type="button"
+              className="kebab"
+              aria-label="Game options"
+              aria-expanded={menuOpenId === "game-card"}
+              onClick={(event) => toggleRowMenu("game-card", event)}
+              disabled={loading}
+            >
+              ⋮
+            </button>
+            {menuOpenId === "game-card" && (
+              <div className="row-menu-pop" role="menu">
+                <button
+                  type="button"
+                  className="row-menu-item"
+                  onClick={() => {
+                    setMenuOpenId(null);
+                    setEditingGame(true);
+                    scrollToTop();
+                  }}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className="row-menu-item row-menu-delete"
+                  onClick={() => void deleteActiveChat()}
+                >
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
           {coverEnabled && <CoverThumb cover={cover} name={game} className="cover-lg" />}
           <div className="game-card-meta">
             <h2>{game || "Untitled game"}</h2>
@@ -1927,20 +2143,27 @@ export default function Home() {
               />
             </div>
           )}
-          <button
-            className="submit"
-            type="submit"
-            disabled={loading || input.trim().length < 2}
-            aria-label="Send question"
-          >
-            {loading ? (
-              <span className="loader" aria-hidden="true" />
-            ) : (
+          {loading ? (
+            <button
+              className="submit submit-stop"
+              type="button"
+              onClick={stopGeneration}
+              aria-label="Stop generating"
+            >
+              <span className="stop-glyph" aria-hidden="true" />
+            </button>
+          ) : (
+            <button
+              className="submit"
+              type="submit"
+              disabled={input.trim().length < 2}
+              aria-label="Send question"
+            >
               <span className="arrow" aria-hidden="true">
                 ↗
               </span>
-            )}
-          </button>
+            </button>
+          )}
         </div>
       </form>
 
@@ -1949,6 +2172,51 @@ export default function Home() {
       </p>
 
       {authOpen && <AuthPanel onClose={dismissOverlay} />}
+
+      {confirmState && (
+        <div
+          className="confirm-overlay"
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              confirmState.resolve(false);
+              setConfirmState(null);
+            }
+          }}
+        >
+          <div className="confirm-modal" role="dialog" aria-modal="true">
+            <p className="confirm-message">{confirmState.message}</p>
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="confirm-cancel"
+                onClick={() => {
+                  confirmState.resolve(false);
+                  setConfirmState(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="confirm-delete"
+                onClick={() => {
+                  confirmState.resolve(true);
+                  setConfirmState(null);
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="snackbar" role="status" aria-live="polite">
+          {toast}
+        </div>
+      )}
     </main>
   );
 }
