@@ -22,7 +22,7 @@ import {
   shouldRetrySpeechError,
   voiceLangFromUserMetadata,
 } from "../lib/voice.js";
-import { supportsLiveVoiceMeter } from "../lib/voice-meter.js";
+import { warmUpMicrophone } from "../lib/voice-meter.js";
 import { buildGuideDiscoveryQuery } from "../lib/guide-search.js";
 import {
   steamIdFromClaimedId,
@@ -125,7 +125,7 @@ assert.equal(shouldRetrySpeechError("not-allowed"), false);
 assert.equal(isBenignSpeechError("aborted"), true);
 assert.equal(isBenignSpeechError("network"), false);
 assert.equal(typeof prefersChunkedSpeechRecognition(), "boolean");
-assert.equal(typeof supportsLiveVoiceMeter(), "boolean");
+assert.equal(typeof warmUpMicrophone, "function");
 
 assert.equal(
   buildGuideDiscoveryQuery("Suikoden", "PlayStation", ""),

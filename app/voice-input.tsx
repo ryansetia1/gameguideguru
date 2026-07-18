@@ -4,7 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getSupabase } from "@/lib/supabase";
-import { createVoiceMeter, releaseVoiceMeter } from "@/lib/voice-meter.js";
+import { warmUpMicrophone } from "@/lib/voice-meter.js";
 import {
   getSpeechRecognition,
   isBenignSpeechError,
@@ -24,7 +24,6 @@ type VoiceInputOptions = {
   disabled?: boolean;
   onTranscript: (text: string) => void;
   onListeningChange?: (listening: boolean) => void;
-  onMeterChange?: (analyser: AnalyserNode | null) => void;
 };
 
 async function persistVoiceLangForUser(code: string) {
@@ -49,7 +48,6 @@ export function useVoiceInput({
   disabled,
   onTranscript,
   onListeningChange,
-  onMeterChange,
 }: VoiceInputOptions) {
   const [supported, setSupported] = useState(false);
   const [lang, setLang] = useState("");
@@ -62,8 +60,6 @@ export function useVoiceInput({
   const networkRetriesRef = useRef(0);
   const onTranscriptRef = useRef(onTranscript);
   const onListeningChangeRef = useRef(onListeningChange);
-  const onMeterChangeRef = useRef(onMeterChange);
-  const meterRef = useRef<Awaited<ReturnType<typeof createVoiceMeter>>>(null);
   const stopRef = useRef<() => void>(() => {});
 
   useEffect(() => {
@@ -73,10 +69,6 @@ export function useVoiceInput({
   useEffect(() => {
     onListeningChangeRef.current = onListeningChange;
   }, [onListeningChange]);
-
-  useEffect(() => {
-    onMeterChangeRef.current = onMeterChange;
-  }, [onMeterChange]);
 
   useEffect(() => {
     onListeningChangeRef.current?.(listening);
@@ -103,19 +95,12 @@ export function useVoiceInput({
     }
   }, []);
 
-  const releaseMeter = useCallback(() => {
-    releaseVoiceMeter(meterRef.current);
-    meterRef.current = null;
-    onMeterChangeRef.current?.(null);
-  }, []);
-
   const teardown = useCallback(
     (invalidateSession: boolean) => {
       clearRestartTimer();
       if (invalidateSession) sessionRef.current += 1;
       listeningIntentRef.current = false;
       networkRetriesRef.current = 0;
-      releaseMeter();
       const recognition = recognitionRef.current;
       recognitionRef.current = null;
       setListening(false);
@@ -125,7 +110,7 @@ export function useVoiceInput({
         // ignore
       }
     },
-    [clearRestartTimer, releaseMeter],
+    [clearRestartTimer],
   );
 
   const stop = useCallback(() => {
@@ -154,8 +139,6 @@ export function useVoiceInput({
       clearRestartTimer();
       sessionRef.current += 1;
       listeningIntentRef.current = false;
-      releaseVoiceMeter(meterRef.current);
-      meterRef.current = null;
       try {
         recognitionRef.current?.abort();
       } catch {
@@ -164,18 +147,6 @@ export function useVoiceInput({
       recognitionRef.current = null;
     };
   }, [clearRestartTimer]);
-
-  async function acquireMeter() {
-    releaseMeter();
-    try {
-      const meter = await createVoiceMeter();
-      meterRef.current = meter;
-      onMeterChangeRef.current?.(meter?.analyser ?? null);
-    } catch {
-      meterRef.current = null;
-      onMeterChangeRef.current?.(null);
-    }
-  }
 
   function getRecognitionInstance(SpeechRecognition: new () => any) {
     if (!recognitionRef.current) {
@@ -261,7 +232,7 @@ export function useVoiceInput({
     } catch {
       // ignore
     }
-    await acquireMeter();
+    await warmUpMicrophone();
     if (session !== sessionRef.current) return;
     const recognition = getRecognitionInstance(SpeechRecognition);
     bindRecognition(recognition, session, code);
@@ -314,10 +285,10 @@ type Props = VoiceInputOptions;
  * Mic button (Web Speech API). Free browser dictation; permission prompts only
  * on click. Hidden when the browser lacks SpeechRecognition (e.g. Firefox).
  */
-export function VoiceInput({ user, disabled, onTranscript, onListeningChange, onMeterChange }: Props) {
+export function VoiceInput({ user, disabled, onTranscript, onListeningChange }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const { supported, lang, listening, pickerOpen, setPickerOpen, handleClick, pickLanguage } =
-    useVoiceInput({ user, disabled, onTranscript, onListeningChange, onMeterChange });
+    useVoiceInput({ user, disabled, onTranscript, onListeningChange });
 
   useEffect(() => {
     if (!pickerOpen) return;

@@ -389,7 +389,6 @@ export default function Home() {
   const spoilerPrefs = effectiveSpoilerPrefs(globalSpoilerMajor, gameSpoilerMajor);
   const [attachOpen, setAttachOpen] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
-  const [voiceAnalyser, setVoiceAnalyser] = useState<AnalyserNode | null>(null);
   const [librarySearch, setLibrarySearch] = useState("");
   const [confirmState, setConfirmState] = useState<{
     message: string;
@@ -2220,7 +2219,7 @@ export default function Home() {
               required
               disabled={composerLocked}
             />
-            <VoiceVisualizer active={voiceListening} analyser={voiceAnalyser} />
+            <VoiceVisualizer active={voiceListening} />
           </div>
           {showCombinedExtras ? (
             <ComposerExtras
@@ -2228,7 +2227,6 @@ export default function Home() {
               disabled={composerLocked}
               attachDisabled={pendingImages.length >= MAX_MESSAGE_IMAGES}
               onListeningChange={setVoiceListening}
-              onMeterChange={setVoiceAnalyser}
               onTranscript={(text) =>
                 setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))
               }
@@ -2304,7 +2302,6 @@ export default function Home() {
                 user={user}
                 disabled={composerLocked}
                 onListeningChange={setVoiceListening}
-                onMeterChange={setVoiceAnalyser}
                 onTranscript={(text) =>
                   setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))
                 }

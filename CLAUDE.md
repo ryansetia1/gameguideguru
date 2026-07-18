@@ -180,8 +180,9 @@ and simply cannot save.
   `user_metadata.voice_lang`; changeable on `/profile`. Final-result only for
   cross-device stability (iOS Safari drops interim). Singleton recognition
   instance, 250ms delayed onend restart, iOS uses `continuous: false` + manual
-  restart, stops on tab background. Live bars via `lib/voice-meter.js` (single
-  getUserMedia before recognition on desktop; CSS fallback on iOS). `coerceVoiceLang`
+  restart, stops on tab background. `warmUpMicrophone()` acquires then releases
+  the mic before recognition (primes iOS); live level meters are CSS-only because
+  holding getUserMedia during recognition blocks SpeechRecognition. `coerceVoiceLang`
   + speech retry helpers covered by `npm run check`.
 - `lib/prompt.js`: exports `SYSTEM_INSTRUCTION` (persona + rules: knowledge-first,
   web-as-support, on-topic guardrail — only game guidance, decline off-topic and

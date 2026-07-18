@@ -1204,15 +1204,7 @@ details.sources small {
   background: var(--signal);
   transform: scaleY(0.12);
   transform-origin: center;
-}
-
-.voice-visualizer:not(.live) span {
   animation: voice-bar 0.85s ease-in-out infinite alternate;
-}
-
-.voice-visualizer.live span {
-  animation: none;
-  will-change: transform;
 }
 
 @keyframes voice-bar {
