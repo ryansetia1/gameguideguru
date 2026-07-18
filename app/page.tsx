@@ -358,8 +358,10 @@ export default function Home() {
   const [attachOpen, setAttachOpen] = useState(false);
 
   const feedRef = useRef<HTMLDivElement>(null);
+  const lastUserRef = useRef<HTMLDivElement>(null);
   const topRef = useRef<HTMLElement>(null);
   const jumpRef = useRef(false);
+  const chatHistoryPushed = useRef(false);
   const conversationGame = useRef("");
   const activeChatIdRef = useRef<string | null>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -406,11 +408,29 @@ export default function Home() {
       }
       if (authOpen) {
         setAuthOpen(false);
+        return;
+      }
+      // No overlay open: a back press from a game thread returns to the home page.
+      if (messages.length > 0) {
+        chatHistoryPushed.current = false;
+        newGame();
       }
     }
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [authOpen, libraryOpen, sidebarOpen, steamLibraryOpen]);
+  }, [authOpen, libraryOpen, sidebarOpen, steamLibraryOpen, messages.length]);
+
+  // Give the browser a history entry to pop when a chat thread is showing, so the
+  // hardware/gesture back returns home instead of leaving the app.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (messages.length > 0 && !chatHistoryPushed.current) {
+      chatHistoryPushed.current = true;
+      window.history.pushState({ gggChat: true }, "");
+    } else if (messages.length === 0) {
+      chatHistoryPushed.current = false;
+    }
+  }, [messages.length]);
 
   const supabaseReady = Boolean(getSupabase());
   // Cover art (TheGamesDB display + device upload) is a signed-in-only feature:
@@ -465,11 +485,14 @@ export default function Home() {
   }, [activeChatId]);
 
   useEffect(() => {
-    feedRef.current?.scrollIntoView({
-      behavior: jumpRef.current ? "auto" : "smooth",
-      block: "end",
-    });
-    jumpRef.current = false;
+    // Opening a saved chat jumps to the newest message; a live turn instead pins
+    // the latest question to the top so the answer reads top-down (no scroll-up).
+    if (jumpRef.current) {
+      feedRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+      jumpRef.current = false;
+      return;
+    }
+    lastUserRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [messages, loading]);
 
   useEffect(() => {
@@ -1154,6 +1177,7 @@ export default function Home() {
   }
 
   const started = messages.length > 0;
+  const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
 
   return (
     <main>
@@ -1281,7 +1305,10 @@ export default function Home() {
                     <button
                       type="button"
                       className="sidebar-open"
-                      onClick={() => openChat(chat)}
+                      onClick={() => {
+                        openChat(chat);
+                        if (sidebarOpen) dismissOverlay();
+                      }}
                     >
                       <CoverThumb
                         cover={chat.cover_url ?? ""}
@@ -1591,6 +1618,7 @@ export default function Home() {
               <div
                 className={`turn user${editingIndex === index ? " editing" : ""}`}
                 key={index}
+                ref={index === lastUserIndex ? lastUserRef : undefined}
               >
                 {editingIndex === index ? (
                   <div className="edit-box">
@@ -1788,11 +1816,7 @@ export default function Home() {
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder={
-              started
-                ? "Ask a follow-up... (e.g. where to after that boss?)"
-                : "Where are you stuck?"
-            }
+            placeholder={started ? "Ask a follow-up..." : "Where are you stuck?"}
             rows={1}
             maxLength={300}
             required

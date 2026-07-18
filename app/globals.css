@@ -387,6 +387,22 @@ h1 em {
   cursor: not-allowed;
 }
 
+/* Loading spinner inside the game field so typing shows a fetch is in flight. */
+.combo-input.loading {
+  padding-right: 40px;
+}
+
+.combo-spinner {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
 .combo-year {
   color: var(--muted);
   font-size: 0.85em;
@@ -470,6 +486,8 @@ h1 em {
   position: relative;
   align-self: flex-end;
   max-width: 85%;
+  /* Cleared past the sticky mini-header when a new turn scrolls it to the top. */
+  scroll-margin-top: 72px;
   border: 1.5px solid var(--ink);
   background: var(--signal);
   padding: 11px 15px 11px 15px;
@@ -505,8 +523,11 @@ h1 em {
   cursor: not-allowed;
 }
 
+/* Sits transparent on the signal-colored user bubble, so its text must use the
+   on-signal ink (plain --ink is light in dark mode and vanishes on the lime). */
 .turn-action-muted {
   background: transparent;
+  color: var(--on-signal);
 }
 
 .turn-action-icon {
@@ -1347,7 +1368,8 @@ details.sources small {
   flex: 1;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* minmax(0,1fr) so a long non-wrapping title can't blow one column wider. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   padding: 16px;
   align-content: start;
@@ -1628,8 +1650,8 @@ details.sources small {
   display: grid;
   place-items: center;
   flex: none;
-  width: 44px;
-  height: 50px;
+  width: 42px;
+  height: 42px;
   border: 1.5px solid var(--ink);
   background: var(--paper-strong);
   font-size: 1.1rem;
@@ -2745,7 +2767,18 @@ details.sources small {
 .profile-menu-toggle input {
   width: 16px;
   height: 16px;
-  accent-color: var(--ink);
+  accent-color: var(--danger);
+}
+
+/* Checked = spoilers ON: match the home toggle's spoiler-red nuance. Keep the
+   red text on the spoiler surface (not the green hover) so contrast stays high. */
+.profile-menu-toggle:has(input:checked) {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.profile-menu-toggle:has(input:checked):hover {
+  background: var(--spoiler-surface);
 }
 
 .profile-menu-section {

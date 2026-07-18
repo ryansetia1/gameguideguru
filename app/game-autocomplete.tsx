@@ -205,7 +205,7 @@ export function GameAutocomplete({
       <input
         id="game"
         name="game"
-        className="combo-input"
+        className={`combo-input${loading ? " loading" : ""}`}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onFocus={() => {
@@ -220,6 +220,7 @@ export function GameAutocomplete({
         aria-autocomplete="list"
         disabled={disabled}
       />
+      {loading && <span className="combo-spinner loader" aria-hidden="true" />}
       {showPanel && (
         <div className="combo-panel">
           <ul className="combo-list" role="listbox">

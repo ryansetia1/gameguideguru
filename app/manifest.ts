@@ -7,6 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     description:
       "Tell it where you are stuck in a game and get a clear, sourced guide.",
     start_url: "/",
+    scope: "/",
     display: "standalone",
     background_color: "#f3f0e7",
     theme_color: "#f3f0e7",
