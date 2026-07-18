@@ -896,7 +896,7 @@ export default function Home() {
         </div>
 
         <div className="nav-actions">
-          <ThemeToggle />
+          <ThemeToggle user={user} />
           {user ? (
             <button type="button" className="nav-button" onClick={signOut}>
               Sign out

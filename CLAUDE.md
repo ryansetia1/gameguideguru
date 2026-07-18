@@ -34,7 +34,8 @@ and simply cannot save.
   opens a 2-column cover-art grid,   per-message image attachments (signed-in only: compressed client-side, one
   paperclip menu beside Send for photo library or camera, uploaded to the `covers` bucket at send time, sent
   to Gemini via Replicate's `images` field`; edit/retry drops truncated turns'
-  Storage images), System/Light/Dark theme toggle (`gg:theme` in `localStorage`),
+  Storage images), System/Light/Dark theme toggle (`gg:theme` in `localStorage`;
+  signed-in users also sync via Supabase Auth `user_metadata.theme`),
   light-markdown rendering of answers (`lib/markdown.js`: bold/lists/headings),
   a dismissable examples strip
   (remembered in `localStorage`), and auto-scroll (smooth on new turns, instant
