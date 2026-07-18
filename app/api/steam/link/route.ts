@@ -27,15 +27,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
-  const supabase = createClient(url, anonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-  const { data, error: userError } = await supabase.auth.getUser();
-  if (userError || !data.user) {
+  // ponytail: bearer-only is enough for getUser() but updateUser() needs
+  // setSession — see docs/troubleshooting.md (Connect Steam).
+  let refreshToken = "";
+  try {
+    const body = await request.json();
+    refreshToken =
+      typeof body?.refresh_token === "string" ? body.refresh_token.trim() : "";
+  } catch {
+  }
+  if (!refreshToken) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
-  if (steamIdFromMetadata(data.user.user_metadata) === steamId) {
+  const supabase = createClient(url, anonKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+    access_token: token,
+    refresh_token: refreshToken,
+  });
+  if (sessionError || !sessionData.user) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
+
+  const user = sessionData.user;
+  if (steamIdFromMetadata(user.user_metadata) === steamId) {
     return NextResponse.json({ ok: true, steamId, alreadyLinked: true });
   }
 
@@ -47,6 +64,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "link_failed" }, { status: 500 });
   }
 
-  const response = NextResponse.json({ ok: true, steamId });
-  return response;
+  return NextResponse.json({ ok: true, steamId });
 }

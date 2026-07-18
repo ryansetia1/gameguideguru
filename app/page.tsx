@@ -457,7 +457,8 @@ export default function Home() {
 
     const { data: sessionData } = await supabase.auth.getSession();
     const token = sessionData.session?.access_token;
-    if (!token) return false;
+    const refreshToken = sessionData.session?.refresh_token;
+    if (!token || !refreshToken) return false;
 
     // The gg_steam cookie set by the OpenID callback holds the verified SteamID;
     // /api/steam/link reads it server-side. Do NOT pre-check /api/steam/me — when
@@ -466,7 +467,11 @@ export default function Home() {
     const linkResponse = await fetch("/api/steam/link", {
       method: "POST",
       credentials: "include",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
     });
     const linkPayload: { ok?: boolean; error?: string; steamId?: string } =
       await linkResponse.json();

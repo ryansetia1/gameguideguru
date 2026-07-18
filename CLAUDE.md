@@ -83,7 +83,9 @@ and simply cannot save.
   Flow: `app/api/steam/login` -> Steam OpenID -> `callback` verifies and sets the
   `gg_steam` cookie, then redirects `/?steam=linked`. The client links **only**
   on that explicit return (`linkSteamToAccount` writes `steam_id` via
-  `POST /api/steam/link`); the sign-in effect merely *refreshes* status and never
+  `POST /api/steam/link` with bearer + `refresh_token` so the route can
+  `setSession` before `updateUser` — see `docs/troubleshooting.md` if link
+  fails with `Auth session missing!`); the sign-in effect merely *refreshes* status and never
   auto-links, so a leftover device cookie can't silently attach to the next user.
   `signOut` clears `gg_steam` (`DELETE /api/steam/pending`). `GET /api/steam/me`
   and `GET /api/steam/library` (Bearer token) trust **only** the account's linked
@@ -240,6 +242,12 @@ and simply cannot save.
 - Autocomplete platform auto-fill depends on TheGamesDB returning
   `include=platform` and `tgdbPlatformToLabel` recognising the name; unknown names
   leave the selector untouched for manual choice.
+- **Steam link + Supabase server auth:** `auth.updateUser()` on a server route
+  fails with `Auth session missing!` if the Supabase client only has a bearer
+  token in `global.headers` — `getUser()` still works, which is misleading.
+  `POST /api/steam/link` must receive `refresh_token` and call `setSession`
+  before `updateUser`. See [`docs/troubleshooting.md`](docs/troubleshooting.md)
+  (Connect Steam section) before changing that flow.
 
 ## Commands
 

@@ -121,6 +121,11 @@ Manual dashboard steps in Supabase:
 Open [http://localhost:3000](http://localhost:3000), enter a game and platform,
 then ask your question and follow up.
 
+### Troubleshooting
+
+See [`docs/troubleshooting.md`](docs/troubleshooting.md) for recurring issues
+(e.g. Connect Steam OpenID succeeding but the account not linking).
+
 ## Flow
 
 1. The browser sends `{ game, platform, question, history, preferredUrl }` to
