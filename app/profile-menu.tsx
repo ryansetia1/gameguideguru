@@ -2,7 +2,7 @@
 
 import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 
 import {
   avatarInitialFromUser,
@@ -22,13 +22,18 @@ import {
   saveTheme,
   themeFromUserMetadata,
 } from "@/lib/theme.js";
+import { IconMoon, IconSun, IconSystem, type IconProps } from "./icons";
 
 type ThemeMode = "system" | "light" | "dark";
 
-const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: string }[] = [
-  { mode: "system", label: "System", icon: "◐" },
-  { mode: "light", label: "Light", icon: "☀" },
-  { mode: "dark", label: "Dark", icon: "☾" },
+const THEME_OPTIONS: {
+  mode: ThemeMode;
+  label: string;
+  Icon: ComponentType<IconProps>;
+}[] = [
+  { mode: "system", label: "System", Icon: IconSystem },
+  { mode: "light", label: "Light", Icon: IconSun },
+  { mode: "dark", label: "Dark", Icon: IconMoon },
 ];
 
 type Props = {
@@ -139,7 +144,8 @@ export function ProfileMenu({
   const avatarUrl = user ? avatarUrlFromUser(user) : null;
   const displayName = user ? displayNameFromMetadata(user.user_metadata) : "";
   const initial = user ? avatarInitialFromUser(user) : "?";
-  const themeIcon = THEME_OPTIONS.find((option) => option.mode === themeMode)?.icon ?? "◐";
+  const themeOption = THEME_OPTIONS.find((option) => option.mode === themeMode) ?? THEME_OPTIONS[0];
+  const ThemeIcon = themeOption.Icon;
 
   return (
     <div className="nav-account-wrap" ref={wrapRef}>
@@ -155,7 +161,7 @@ export function ProfileMenu({
             setThemeOpen((value) => !value);
           }}
         >
-          <span aria-hidden="true">{themeIcon}</span>
+          <ThemeIcon />
         </button>
 
         {themeOpen && (
@@ -166,10 +172,10 @@ export function ProfileMenu({
                 type="button"
                 role="menuitemradio"
                 aria-checked={themeMode === option.mode}
-                className={themeMode === option.mode ? "active" : undefined}
+                className={`icon-inline${themeMode === option.mode ? " active" : ""}`}
                 onClick={() => pickTheme(option.mode)}
               >
-                <span aria-hidden="true">{option.icon}</span> {option.label}
+                <option.Icon /> {option.label}
               </button>
             ))}
           </div>

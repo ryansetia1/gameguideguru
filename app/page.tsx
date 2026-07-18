@@ -4,7 +4,21 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { AuthPanel } from "./auth-panel";
+import { ComposerExtras } from "./composer-extras";
 import { GameAutocomplete } from "./game-autocomplete";
+import {
+  IconArrowLeft,
+  IconArrowUpRight,
+  IconDiamond,
+  IconDotsVertical,
+  IconGrid,
+  IconPaperclip,
+  IconPencil,
+  IconPlus,
+  IconRefresh,
+  IconStop,
+  IconX,
+} from "./icons";
 import { GuideLinkField } from "./guide-link-field";
 import { PlatformSelect } from "./platform-select";
 import { SteamLibrary, type SteamGame } from "./steam-library";
@@ -35,6 +49,7 @@ import {
 import { displayNameFromMetadata } from "@/lib/profile.js";
 import { getSupabase, type Chat } from "@/lib/supabase";
 import { steamIdFromMetadata } from "@/lib/steam.js";
+import { getSpeechRecognition } from "@/lib/voice.js";
 
 async function fetchSteamStatus(token?: string) {
   const headers: HeadersInit = {};
@@ -261,6 +276,18 @@ const FUN_ROLES = [
   "endgame grinders", "secret finders", "speedrun timers", "forever-stuck heroes",
 ];
 
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const update = () => setMatches(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, [query]);
+  return matches;
+}
+
 function RotatingWord() {
   const [i, setI] = useState(0);
   // Tap/click to freeze on a word (e.g. to screenshot), tap again to resume.
@@ -451,6 +478,8 @@ export default function Home() {
   // Cover art (TheGamesDB display + device upload) is a signed-in-only feature:
   // keeps the signed-out flow simple and avoids any Storage use for anon users.
   const coverEnabled = Boolean(user);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const compactComposer = useMediaQuery("(max-width: 540px)");
   const steamConnected = Boolean(
     user && (steamId || steamIdFromMetadata(user.user_metadata)),
   );
@@ -723,6 +752,10 @@ export default function Home() {
 
   useEffect(() => {
     setGlobalSpoilerMajor(loadGlobalSpoilerPrefs().major);
+  }, []);
+
+  useEffect(() => {
+    setVoiceSupported(Boolean(getSpeechRecognition()));
   }, []);
 
   useEffect(() => {
@@ -1382,6 +1415,7 @@ export default function Home() {
   const started = messages.length > 0;
   const hasGame = Boolean(game.trim());
   const composerLocked = loading || !hasGame;
+  const showCombinedExtras = compactComposer && coverEnabled && voiceSupported;
   const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
 
   return (
@@ -1459,16 +1493,16 @@ export default function Home() {
                   dismissOverlay();
                 }}
               >
-                ×
+                <IconX />
               </button>
             </div>
             <div className="sidebar-actions">
               <button
                 type="button"
-                className="sidebar-library-btn"
+                className="sidebar-library-btn icon-inline"
                 onClick={openSavedLibrary}
               >
-                ▦ Saved library
+                <IconGrid /> Saved library
               </button>
               {user && !steamConnected && (
                 <button type="button" className="sidebar-steam-btn" onClick={connectSteam}>
@@ -1522,7 +1556,7 @@ export default function Home() {
                         aria-expanded={menuOpenId === chat.id}
                         onClick={(event) => toggleRowMenu(chat.id, event)}
                       >
-                        ⋮
+                        <IconDotsVertical />
                       </button>
                       {menuOpenId === chat.id && (
                         <div className="row-menu-pop" role="menu">
@@ -1548,8 +1582,8 @@ export default function Home() {
               </ul>
             )}
             <div className="sidebar-footer">
-              <button type="button" className="sidebar-new" onClick={newGame}>
-                + New game
+              <button type="button" className="sidebar-new icon-inline" onClick={newGame}>
+                <IconPlus /> New game
               </button>
             </div>
             </div>
@@ -1573,7 +1607,7 @@ export default function Home() {
                       aria-label="Close library"
                       onClick={dismissOverlay}
                     >
-                      ×
+                      <IconX />
                     </button>
                   </div>
                   {chats.length === 0 ? (
@@ -1632,7 +1666,7 @@ export default function Home() {
                                       aria-expanded={menuOpenId === `lib-${chat.id}`}
                                       onClick={(event) => toggleRowMenu(`lib-${chat.id}`, event)}
                                     >
-                                      ⋮
+                                      <IconDotsVertical />
                                     </button>
                                     {menuOpenId === `lib-${chat.id}` && (
                                       <div className="row-menu-pop" role="menu">
@@ -1698,7 +1732,7 @@ export default function Home() {
             }}
             aria-label="Back to home"
           >
-            ←
+            <IconArrowLeft />
           </button>
           {coverEnabled && <CoverThumb cover={cover} name={game} className="cover-mini" />}
           <div className="sticky-meta">
@@ -1736,7 +1770,7 @@ export default function Home() {
               onClick={(event) => toggleRowMenu("game-card", event)}
               disabled={loading}
             >
-              ⋮
+              <IconDotsVertical />
             </button>
             {menuOpenId === "game-card" && (
               <div className="row-menu-pop" role="menu">
@@ -1774,7 +1808,9 @@ export default function Home() {
                 target="_blank"
                 rel="noreferrer"
               >
-                Preferred guide ↗
+                <span className="icon-inline">
+                  Preferred guide <IconArrowUpRight />
+                </span>
               </a>
             )}
             <div className="spoiler-panel">
@@ -1818,7 +1854,7 @@ export default function Home() {
                     onClick={() => void clearCover()}
                     disabled={uploadingCover || loading}
                   >
-                    ×
+                    <IconX />
                   </button>
                 </div>
                 {pendingCover && <span className="cover-pending">Uploads when you send</span>}
@@ -1830,8 +1866,8 @@ export default function Home() {
               <div className="field-head">
                 <label htmlFor="game">Game name</label>
                 {coverEnabled && !cover && (
-                  <label className="cover-add-btn">
-                    <span aria-hidden="true">+</span> Add cover
+                  <label className="cover-add-btn icon-inline">
+                    <IconPlus /> Add cover
                     <input
                       type="file"
                       accept="image/*"
@@ -1934,7 +1970,7 @@ export default function Home() {
               aria-label="Hide examples"
               onClick={dismissExamples}
             >
-              ×
+              <IconX />
             </button>
           </div>
           <div className="examples">
@@ -2024,7 +2060,7 @@ export default function Home() {
                       onClick={() => startEdit(index)}
                       disabled={loading}
                     >
-                      ✎
+                      <IconPencil />
                     </button>
                   </>
                 )}
@@ -2032,8 +2068,8 @@ export default function Home() {
             ) : (
               <article className="turn guide" key={index}>
                 <div className="guide-head">
-                  <div className="guide-tag">
-                    <span aria-hidden="true">◆</span> ROUTE FOUND
+                  <div className="guide-tag icon-inline">
+                    <IconDiamond /> ROUTE FOUND
                   </div>
                   <button
                     type="button"
@@ -2042,7 +2078,7 @@ export default function Home() {
                     onClick={() => void retry(index)}
                     disabled={loading}
                   >
-                    ↻
+                    <IconRefresh />
                   </button>
                 </div>
                 <AnswerBody text={message.content} />
@@ -2101,7 +2137,7 @@ export default function Home() {
                               <small>{hostname(source.url)}</small>
                             </span>
                             <span className="source-arrow" aria-hidden="true">
-                              ↗
+                              <IconArrowUpRight />
                             </span>
                           </a>
                         </li>
@@ -2143,7 +2179,7 @@ export default function Home() {
                   onClick={() => removePendingImage(i)}
                   disabled={loading}
                 >
-                  ×
+                  <IconX size={16} />
                 </button>
               </div>
             ))}
@@ -2179,78 +2215,93 @@ export default function Home() {
             />
             <VoiceVisualizer active={voiceListening} />
           </div>
-          {coverEnabled && (
-            <div className="composer-attach-wrap" ref={attachRef}>
-              <button
-                type="button"
-                className="composer-attach"
-                title="Attach images"
-                aria-label="Attach images"
-                aria-expanded={attachOpen}
-                aria-haspopup="menu"
-                disabled={composerLocked || pendingImages.length >= MAX_MESSAGE_IMAGES}
-                onClick={() => setAttachOpen((open) => !open)}
-              >
-                <span aria-hidden="true">📎</span>
-              </button>
-              {attachOpen && (
-                <div className="composer-attach-menu" role="menu">
+          {showCombinedExtras ? (
+            <ComposerExtras
+              user={user}
+              disabled={composerLocked}
+              attachDisabled={pendingImages.length >= MAX_MESSAGE_IMAGES}
+              onListeningChange={setVoiceListening}
+              onTranscript={(text) =>
+                setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))
+              }
+              onSelectImages={(files) => void selectMessageImages(files)}
+            />
+          ) : (
+            <>
+              {coverEnabled && (
+                <div className="composer-attach-wrap" ref={attachRef}>
                   <button
                     type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      galleryInputRef.current?.click();
-                      setAttachOpen(false);
-                    }}
+                    className="composer-attach"
+                    title="Attach images"
+                    aria-label="Attach images"
+                    aria-expanded={attachOpen}
+                    aria-haspopup="menu"
+                    disabled={composerLocked || pendingImages.length >= MAX_MESSAGE_IMAGES}
+                    onClick={() => setAttachOpen((open) => !open)}
                   >
-                    Photo library
+                    <IconPaperclip />
                   </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      cameraInputRef.current?.click();
-                      setAttachOpen(false);
+                  {attachOpen && (
+                    <div className="composer-attach-menu" role="menu">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          galleryInputRef.current?.click();
+                          setAttachOpen(false);
+                        }}
+                      >
+                        Photo library
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          cameraInputRef.current?.click();
+                          setAttachOpen(false);
+                        }}
+                      >
+                        Camera
+                      </button>
+                    </div>
+                  )}
+                  <input
+                    ref={galleryInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    hidden
+                    disabled={composerLocked || pendingImages.length >= MAX_MESSAGE_IMAGES}
+                    onChange={(event) => {
+                      void selectMessageImages(event.target.files);
+                      event.target.value = "";
                     }}
-                  >
-                    Camera
-                  </button>
+                  />
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    hidden
+                    disabled={composerLocked || pendingImages.length >= MAX_MESSAGE_IMAGES}
+                    onChange={(event) => {
+                      void selectMessageImages(event.target.files);
+                      event.target.value = "";
+                    }}
+                  />
                 </div>
               )}
-              <input
-                ref={galleryInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                hidden
-                disabled={composerLocked || pendingImages.length >= MAX_MESSAGE_IMAGES}
-                onChange={(event) => {
-                  void selectMessageImages(event.target.files);
-                  event.target.value = "";
-                }}
+              <VoiceInput
+                user={user}
+                disabled={composerLocked}
+                onListeningChange={setVoiceListening}
+                onTranscript={(text) =>
+                  setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))
+                }
               />
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                hidden
-                disabled={composerLocked || pendingImages.length >= MAX_MESSAGE_IMAGES}
-                onChange={(event) => {
-                  void selectMessageImages(event.target.files);
-                  event.target.value = "";
-                }}
-              />
-            </div>
+            </>
           )}
-          <VoiceInput
-            user={user}
-            disabled={composerLocked}
-            onListeningChange={setVoiceListening}
-            onTranscript={(text) =>
-              setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))
-            }
-          />
           {loading ? (
             <button
               className="submit submit-stop"
@@ -2258,7 +2309,7 @@ export default function Home() {
               onClick={stopGeneration}
               aria-label="Stop generating"
             >
-              <span className="stop-glyph" aria-hidden="true" />
+              <IconStop />
             </button>
           ) : (
             <button
@@ -2267,9 +2318,7 @@ export default function Home() {
               disabled={composerLocked || input.trim().length < 2}
               aria-label="Send question"
             >
-              <span className="arrow" aria-hidden="true">
-                ↗
-              </span>
+              <IconArrowUpRight />
             </button>
           )}
         </div>

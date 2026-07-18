@@ -5,6 +5,7 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { AuthPanel } from "@/app/auth-panel";
+import { IconArrowLeft } from "@/app/icons";
 import { ProfileMenu } from "@/app/profile-menu";
 import {
   avatarInitialFromUser,
@@ -113,8 +114,8 @@ export default function ProfilePage() {
     <main className="profile-page-shell">
       <nav className="nav" aria-label="Brand">
         <div className="nav-left">
-          <Link className="profile-back" href="/">
-            ← Home
+          <Link className="profile-back icon-inline" href="/">
+            <IconArrowLeft /> Home
           </Link>
         </div>
         <div className="nav-actions">

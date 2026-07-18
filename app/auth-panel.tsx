@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { getSupabase } from "@/lib/supabase";
+import { IconX } from "./icons";
 
 type Props = {
   onClose: () => void;
@@ -97,7 +98,7 @@ export function AuthPanel({ onClose }: Props) {
           aria-label="Close"
           onClick={onClose}
         >
-          ×
+          <IconX />
         </button>
         <h2 className="auth-title">
           {mode === "signin" ? "Sign in" : "Create account"}

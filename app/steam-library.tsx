@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { getSupabase } from "@/lib/supabase";
+import { IconX } from "./icons";
 
 export type SteamGame = {
   appId: number;
@@ -164,7 +165,7 @@ export function SteamLibrary({ open, onClose, onPick, cacheKey = "" }: Props) {
           <div className="library-head">
             <span>Steam library</span>
             <button type="button" className="sidebar-close" aria-label="Close" onClick={onClose}>
-              ×
+              <IconX />
             </button>
           </div>
           {loading && games.length === 0 ? (

@@ -18,6 +18,101 @@
   --nav-icon: 38px;
 }
 
+.icon {
+  display: block;
+  flex: none;
+}
+
+.icon-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-attach .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.submit .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.nav-icon-btn .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.combo-caret .icon,
+.combo-clear .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.kebab .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.turn-action-icon .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.cover-clear .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.sidebar-close .icon,
+.auth-close .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.sticky-back .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.guide-tag .icon {
+  width: 10px;
+  height: 10px;
+}
+
+.theme-toggle-menu .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.source-link .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.sidebar-library-btn .icon,
+.sidebar-new .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.cover-add-btn .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.profile-back .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.attachment-thumb button .icon,
+.examples-dismiss .icon {
+  width: 12px;
+  height: 12px;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -1157,11 +1252,6 @@ details.sources small {
   transform: none;
 }
 
-.arrow {
-  font-size: 1.25rem;
-  line-height: 1;
-}
-
 .loader {
   width: 20px;
   height: 20px;
@@ -1169,14 +1259,6 @@ details.sources small {
   border-right-color: transparent;
   border-radius: 50%;
   animation: spin 700ms linear infinite;
-}
-
-/* Stop button: reuses .submit (signal square) with a filled stop glyph. */
-.stop-glyph {
-  display: block;
-  width: 13px;
-  height: 13px;
-  background: var(--on-signal);
 }
 
 .disclaimer {
@@ -1962,10 +2044,15 @@ details.sources small {
   background: var(--signal);
 }
 
-/* Voice mic: reuses .composer-attach; pulses while listening. */
-.composer-mic.listening {
+/* Voice mic / mobile extras: reuses .composer-attach; pulses while listening. */
+.composer-mic.listening,
+.composer-extras.listening {
   background: var(--signal);
   animation: mic-pulse 1.1s ease-in-out infinite;
+}
+
+.composer-extras-back {
+  font-weight: 600;
 }
 
 @keyframes mic-pulse {

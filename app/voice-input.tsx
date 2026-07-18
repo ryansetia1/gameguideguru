@@ -11,12 +11,12 @@ import {
   VOICE_LANGUAGES,
   voiceLangFromUserMetadata,
 } from "@/lib/voice.js";
+import { IconMic, IconStop } from "./icons";
 
-type Props = {
+type VoiceInputOptions = {
   user: User | null;
   disabled?: boolean;
   onTranscript: (text: string) => void;
-  /** Fires when recording starts/stops so the composer can show the visualizer. */
   onListeningChange?: (listening: boolean) => void;
 };
 
@@ -31,36 +31,33 @@ async function persistVoiceLangForUser(code: string) {
 }
 
 /**
- * Mic button (Web Speech API). Free browser dictation, so we set the chosen
- * BCP-47 language on the recognizer before starting. First click with no saved
- * language opens a picker; after that a click starts/stops listening. The mic
- * permission prompt only appears when the user starts recognition (a click),
- * never on page load. Available to all users; signed-in users' choice syncs to
- * user_metadata. Hidden entirely when the browser has no SpeechRecognition.
+ * Shared Web Speech dictation state for the standalone mic button and the
+ * mobile combined composer-extras menu.
  *
  * ponytail: final-result only (interimResults/continuous off) for stability
- * across devices — iOS Safari drops interim results. Upgrade to live interim
- * later by flipping interimResults/continuous and streaming onresult chunks.
+ * across devices — iOS Safari drops interim results.
  */
-export function VoiceInput({ user, disabled, onTranscript, onListeningChange }: Props) {
+export function useVoiceInput({
+  user,
+  disabled,
+  onTranscript,
+  onListeningChange,
+}: VoiceInputOptions) {
   const [supported, setSupported] = useState(false);
   const [lang, setLang] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [listening, setListening] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
     onListeningChange?.(listening);
   }, [listening, onListeningChange]);
 
-  // Detect after mount to avoid an SSR/client hydration mismatch.
   useEffect(() => {
     setSupported(Boolean(getSpeechRecognition()));
     setLang(loadVoiceLang());
   }, []);
 
-  // Signed-in users: adopt the language saved on the account.
   useEffect(() => {
     if (!user) return;
     const remote = voiceLangFromUserMetadata(user.user_metadata);
@@ -70,16 +67,6 @@ export function VoiceInput({ user, disabled, onTranscript, onListeningChange }: 
     }
   }, [user]);
 
-  useEffect(() => {
-    if (!pickerOpen) return;
-    function onPointerDown(event: PointerEvent) {
-      if (!wrapRef.current?.contains(event.target as Node)) setPickerOpen(false);
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [pickerOpen]);
-
-  // Stop any in-flight recognition on unmount.
   useEffect(() => {
     return () => {
       try {
@@ -92,7 +79,7 @@ export function VoiceInput({ user, disabled, onTranscript, onListeningChange }: 
 
   function start(code: string) {
     const SpeechRecognition = getSpeechRecognition();
-    if (!SpeechRecognition || !code) return;
+    if (!SpeechRecognition || !code || disabled) return;
     try {
       recognitionRef.current?.abort();
     } catch {
@@ -113,11 +100,20 @@ export function VoiceInput({ user, disabled, onTranscript, onListeningChange }: 
     recognition.onend = () => setListening(false);
     recognitionRef.current = recognition;
     try {
-      recognition.start(); // triggers the mic permission prompt on first use
+      recognition.start();
       setListening(true);
     } catch {
       setListening(false);
     }
+  }
+
+  function stop() {
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      // ignore
+    }
+    setListening(false);
   }
 
   function pickLanguage(code: string) {
@@ -130,12 +126,7 @@ export function VoiceInput({ user, disabled, onTranscript, onListeningChange }: 
 
   function handleClick() {
     if (listening) {
-      try {
-        recognitionRef.current?.stop();
-      } catch {
-        // ignore
-      }
-      setListening(false);
+      stop();
       return;
     }
     if (!lang) {
@@ -144,6 +135,39 @@ export function VoiceInput({ user, disabled, onTranscript, onListeningChange }: 
     }
     start(lang);
   }
+
+  return {
+    supported,
+    lang,
+    listening,
+    pickerOpen,
+    setPickerOpen,
+    start,
+    stop,
+    handleClick,
+    pickLanguage,
+  };
+}
+
+type Props = VoiceInputOptions;
+
+/**
+ * Mic button (Web Speech API). Free browser dictation; permission prompts only
+ * on click. Hidden when the browser lacks SpeechRecognition (e.g. Firefox).
+ */
+export function VoiceInput({ user, disabled, onTranscript, onListeningChange }: Props) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const { supported, lang, listening, pickerOpen, setPickerOpen, handleClick, pickLanguage } =
+    useVoiceInput({ user, disabled, onTranscript, onListeningChange });
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!wrapRef.current?.contains(event.target as Node)) setPickerOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [pickerOpen, setPickerOpen]);
 
   if (!supported) return null;
 
@@ -159,7 +183,7 @@ export function VoiceInput({ user, disabled, onTranscript, onListeningChange }: 
         disabled={disabled}
         onClick={handleClick}
       >
-        <span aria-hidden="true">{listening ? "■" : "🎙"}</span>
+        {listening ? <IconStop /> : <IconMic />}
       </button>
       {pickerOpen && (
         <div className="composer-attach-menu composer-lang-menu" role="menu">

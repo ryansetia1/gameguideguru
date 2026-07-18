@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { matchPlatforms } from "@/lib/platforms";
+import { IconChevronDown, IconX } from "./icons";
 
 type Props = {
   value: string;
@@ -86,11 +87,11 @@ export function PlatformSelect({ value, onChange, disabled }: Props) {
               commit("");
             }}
           >
-            ×
+            <IconX />
           </span>
         ) : (
           <span className="combo-caret" aria-hidden="true">
-            ▾
+            <IconChevronDown />
           </span>
         )}
       </button>
