@@ -1782,15 +1782,16 @@ export default function Home() {
       ) : (
         <section className="setup" aria-label="Game context" ref={topRef}>
           <div className="setup-main">
-          {coverEnabled && (
+          {/* Cover column only mounts once a cover exists (upload or autocomplete);
+              its reveal animation gives the "fill in" effect. No cover = no noisy
+              placeholder tile — the "+ Add cover" text button below stands in. */}
+          {coverEnabled && cover && (
             <div className="field field-cover">
               <div className="cover-edit">
-                <div className={`cover-drop${cover ? " has-cover" : ""}`}>
+                <div className="cover-drop has-cover">
                   <CoverThumb cover={cover} name={game} className="cover-setup" />
                   <label className="cover-upload">
-                    <span className="cover-upload-label">
-                      {cover ? "Replace" : "Upload cover"}
-                    </span>
+                    <span className="cover-upload-label">Replace</span>
                     <input
                       type="file"
                       accept="image/*"
@@ -1803,17 +1804,15 @@ export default function Home() {
                       }}
                     />
                   </label>
-                  {cover && (
-                    <button
-                      type="button"
-                      className="cover-clear"
-                      aria-label="Remove cover"
-                      onClick={() => void clearCover()}
-                      disabled={uploadingCover || loading}
-                    >
-                      ×
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="cover-clear"
+                    aria-label="Remove cover"
+                    onClick={() => void clearCover()}
+                    disabled={uploadingCover || loading}
+                  >
+                    ×
+                  </button>
                 </div>
                 {pendingCover && <span className="cover-pending">Uploads when you send</span>}
               </div>
@@ -1821,7 +1820,25 @@ export default function Home() {
           )}
           <div className="setup-fields">
             <div className="field field-game">
-              <label htmlFor="game">Game name</label>
+              <div className="field-head">
+                <label htmlFor="game">Game name</label>
+                {coverEnabled && !cover && (
+                  <label className="cover-add-btn">
+                    <span aria-hidden="true">+</span> Add cover
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      disabled={uploadingCover || loading}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = "";
+                        if (file) selectCover(file);
+                      }}
+                    />
+                  </label>
+                )}
+              </div>
               <GameAutocomplete
                 value={game}
                 onChange={handleGameChange}

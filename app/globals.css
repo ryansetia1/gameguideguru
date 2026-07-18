@@ -230,6 +230,54 @@ h1 em {
 .field-cover {
   flex: none;
   width: 92px;
+  /* Reveal: grow from zero width so the fields slide over to make room, giving
+     the "fill in" effect on upload or autocomplete pick. overflow hidden clips
+     the tile while max-width animates. Neutralized by the reduced-motion block. */
+  overflow: hidden;
+  animation: cover-reveal 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes cover-reveal {
+  from {
+    opacity: 0;
+    max-width: 0;
+  }
+  to {
+    opacity: 1;
+    max-width: 92px;
+  }
+}
+
+/* Game-name label + right-aligned "+ Add cover" text button. */
+.field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cover-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.cover-add-btn span {
+  font-size: 0.9rem;
+  line-height: 0;
+}
+
+.cover-add-btn:hover {
+  color: var(--ink);
 }
 
 .field {
