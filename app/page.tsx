@@ -50,6 +50,13 @@ import { displayNameFromMetadata } from "@/lib/profile.js";
 import { getSupabase, type Chat } from "@/lib/supabase";
 import { steamIdFromMetadata } from "@/lib/steam.js";
 import { getSpeechRecognition } from "@/lib/voice.js";
+import {
+  clearSessionDraft,
+  getChatIdFromUrl,
+  loadSessionDraft,
+  saveSessionDraft,
+  setChatUrl,
+} from "@/lib/chat-session.js";
 
 async function fetchSteamStatus(token?: string) {
   const headers: HeadersInit = {};
@@ -373,7 +380,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
 
   const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [chats, setChats] = useState<Chat[]>([]);
+  const [chatsLoaded, setChatsLoaded] = useState(false);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -402,6 +411,7 @@ export default function Home() {
   const topRef = useRef<HTMLElement>(null);
   const jumpRef = useRef(false);
   const chatHistoryPushed = useRef(false);
+  const sessionHydratedRef = useRef(false);
   const steamLinkHandledRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const conversationGame = useRef("");
@@ -568,10 +578,16 @@ export default function Home() {
 
   useEffect(() => {
     const supabase = getSupabase();
-    if (!supabase) return;
+    if (!supabase) {
+      setAuthReady(true);
+      return;
+    }
     let mounted = true;
     supabase.auth.getSession().then(({ data }) => {
-      if (mounted) setUser(data.session?.user ?? null);
+      if (mounted) {
+        setUser(data.session?.user ?? null);
+        setAuthReady(true);
+      }
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
@@ -583,13 +599,83 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!authReady) return;
     if (user) {
-      void loadChats();
+      setChatsLoaded(false);
+      void loadChats().finally(() => setChatsLoaded(true));
     } else {
       setChats([]);
       setActiveChatId(null);
+      setChatsLoaded(true);
     }
-  }, [user, loadChats]);
+  }, [user, loadChats, authReady]);
+
+  // After auth + chat list load, reopen the thread from ?chat= or sessionStorage.
+  useEffect(() => {
+    if (!authReady || !chatsLoaded || sessionHydratedRef.current) return;
+
+    const chatId = getChatIdFromUrl();
+    if (chatId && user) {
+      const chat = chats.find((row) => row.id === chatId);
+      if (chat) {
+        openChat(chat);
+        sessionHydratedRef.current = true;
+        return;
+      }
+      setChatUrl(null);
+    }
+
+    const draft = loadSessionDraft();
+    if (draft) {
+      jumpRef.current = true;
+      setActiveChatId(draft.activeChatId);
+      setGame(draft.game);
+      setPlatform(draft.platform);
+      setPreferredUrl(draft.preferredUrl);
+      setCover(draft.cover);
+      setPendingCover(null);
+      replacedCoverRef.current = null;
+      clearPendingImages();
+      setReleaseYear(draft.releaseYear);
+      setEditingGame(false);
+      setMessages(coerceMessages(draft.messages));
+      conversationGame.current = draft.game;
+      setInput("");
+      setError("");
+      setEditingIndex(null);
+      setEditingText("");
+      if (draft.activeChatId) setChatUrl(draft.activeChatId);
+      sessionHydratedRef.current = true;
+      return;
+    }
+
+    sessionHydratedRef.current = true;
+  }, [authReady, chatsLoaded, user, chats]);
+
+  // Keep the URL / session draft in sync so a refresh returns to this thread.
+  useEffect(() => {
+    if (!sessionHydratedRef.current) return;
+    if (messages.length === 0) {
+      clearSessionDraft();
+      setChatUrl(null);
+      return;
+    }
+    if (activeChatId) {
+      setChatUrl(activeChatId);
+      clearSessionDraft();
+      return;
+    }
+    setChatUrl(null);
+    saveSessionDraft({
+      game,
+      platform,
+      preferredUrl,
+      cover: cover.startsWith("blob:") ? "" : cover,
+      releaseYear,
+      activeChatId: null,
+      messages,
+    });
+  }, [messages, activeChatId, game, platform, preferredUrl, cover, releaseYear]);
 
   useEffect(() => {
     void refreshSteamStatus();
@@ -814,6 +900,8 @@ export default function Home() {
   }
 
   function newGame() {
+    setChatUrl(null);
+    clearSessionDraft();
     setActiveChatId(null);
     setMessages([]);
     setGame("");
@@ -840,6 +928,8 @@ export default function Home() {
 
   function openChat(chat: Chat) {
     jumpRef.current = true;
+    setChatUrl(chat.id);
+    clearSessionDraft();
     setActiveChatId(chat.id);
     setGame(chat.game);
     setPlatform(chat.platform);

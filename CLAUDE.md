@@ -39,7 +39,9 @@ and simply cannot save.
   light-markdown rendering of answers (`lib/markdown.js`: bold/lists/headings),
   a dismissable examples strip
   (remembered in `localStorage`), and auto-scroll (smooth on new turns, instant
-  jump when opening a saved game). `runTurn`/`persistChat` centralise ask +
+  jump when opening a saved game). Refresh restores the open thread via `?chat=<id>`
+  (signed-in saved chats) or a `sessionStorage` draft (`lib/chat-session.js`;
+  anon / not-yet-saved). `runTurn`/`persistChat` centralise ask +
   save; `conversationGame` tracks which game the visible thread belongs to.
   While a turn runs the Send button becomes a **Stop** button that aborts the
   `/api/solve` fetch (`abortRef`); the abort propagates via `request.signal` to

@@ -30,6 +30,12 @@ import {
   steamLibraryCoverUrl,
 } from "../lib/steam.js";
 import { signSteamSession, verifySteamSession } from "../lib/steam-session.js";
+import {
+  CHAT_QUERY_PARAM,
+  coerceSessionDraft,
+  getChatIdFromUrl,
+  isChatId,
+} from "../lib/chat-session.js";
 
 // System instruction carries the persona + safety rules.
 assert.match(SYSTEM_INSTRUCTION, /untrusted data/);
@@ -360,5 +366,18 @@ const elfPage =
 const elfFocused = focusSection(elfPage, "elf village events", 400);
 assert.ok(elfFocused.includes("gauntlet"), "focusSection should match short game terms like elf");
 assert.ok(!elfFocused.startsWith("banquet"), "focusSection should skip generic walkthrough boilerplate");
+
+const sampleId = "a1b2c3d4-e5f6-4789-a012-3456789abcde";
+assert.ok(isChatId(sampleId));
+assert.ok(!isChatId("not-a-uuid"));
+assert.equal(getChatIdFromUrl(`https://gg.test/?${CHAT_QUERY_PARAM}=${sampleId}`), sampleId);
+assert.equal(getChatIdFromUrl("https://gg.test/?chat=bad"), null);
+const draft = coerceSessionDraft({
+  game: "Hades",
+  platform: "PC",
+  messages: [{ role: "user", content: "Where is the mirror?" }],
+});
+assert.equal(draft?.game, "Hades");
+assert.equal(coerceSessionDraft({ messages: [] }), null);
 
 console.log("Self-check passed.");
