@@ -329,6 +329,9 @@ export default function Home() {
   const [game, setGame] = useState("");
   const [platform, setPlatform] = useState("");
   const [preferredUrl, setPreferredUrl] = useState("");
+  // Which optional section shows below the trigger row — only one at a time, so
+  // toggling keeps the two triggers fixed in place instead of reflowing them.
+  const [optPanel, setOptPanel] = useState<"guide" | "spoiler" | null>(null);
   const [cover, setCover] = useState("");
   const [pendingCover, setPendingCover] = useState<File | null>(null);
   const [releaseYear, setReleaseYear] = useState("");
@@ -1855,27 +1858,56 @@ export default function Home() {
             </div>
           </div>
           </div>
-          <div className="opt-row">
-            <GuideLinkField
-              value={preferredUrl}
-              onChange={setPreferredUrl}
-              game={game}
-              platform={platform}
-              disabled={loading}
-            />
-            <details className="field spoiler-field opt-details">
-              <summary className="opt-summary">
+          {/* Two triggers stay fixed side-by-side; the open section renders in the
+              shared panel below. Only one open at a time, so toggling swaps the
+              panel without shifting the triggers. */}
+          <div className="opt-group">
+            <div className="opt-tabs">
+              <button
+                type="button"
+                className={`opt-tab${optPanel === "guide" ? " open" : ""}`}
+                aria-expanded={optPanel === "guide"}
+                aria-controls="opt-panel-guide"
+                onClick={() => setOptPanel((cur) => (cur === "guide" ? null : "guide"))}
+              >
+                <span className="opt-summary-label">Preferred guide (optional)</span>
+                {preferredUrl && (
+                  <span className="opt-summary-value">{hostname(preferredUrl)}</span>
+                )}
+              </button>
+              <button
+                type="button"
+                className={`opt-tab${optPanel === "spoiler" ? " open" : ""}`}
+                aria-expanded={optPanel === "spoiler"}
+                aria-controls="opt-panel-spoiler"
+                onClick={() => setOptPanel((cur) => (cur === "spoiler" ? null : "spoiler"))}
+              >
                 <span className="opt-summary-label">Spoilers</span>
                 <span className={`opt-summary-value${gameSpoilerMajor ? " is-on" : ""}`}>
                   {gameSpoilerMajor ? "On for this game" : "Off"}
                 </span>
-              </summary>
-              <p className="field-hint">{GAME_SPOILER_HINT}</p>
-              <SpoilerToggle
-                prefs={{ major: gameSpoilerMajor }}
-                onChange={updateGameSpoiler}
-              />
-            </details>
+              </button>
+            </div>
+            {optPanel === "guide" && (
+              <div className="opt-panel" id="opt-panel-guide">
+                <GuideLinkField
+                  value={preferredUrl}
+                  onChange={setPreferredUrl}
+                  game={game}
+                  platform={platform}
+                  disabled={loading}
+                />
+              </div>
+            )}
+            {optPanel === "spoiler" && (
+              <div className="opt-panel" id="opt-panel-spoiler">
+                <p className="field-hint">{GAME_SPOILER_HINT}</p>
+                <SpoilerToggle
+                  prefs={{ major: gameSpoilerMajor }}
+                  onChange={updateGameSpoiler}
+                />
+              </div>
+            )}
           </div>
           {editingGame && (
             <div className="field field-wide setup-done">

@@ -1145,6 +1145,7 @@ details.sources small {
   border: 1.5px solid var(--ink);
   background: var(--paper-strong);
   box-shadow: 4px 4px 0 var(--ink);
+  animation: rise 160ms ease-out backwards;
 }
 
 .theme-toggle-menu button {
@@ -1884,6 +1885,7 @@ details.sources small {
   border: 1.5px solid var(--ink);
   background: var(--paper-strong);
   box-shadow: 4px 4px 0 var(--ink);
+  animation: rise 160ms ease-out backwards;
 }
 
 .composer-attach-menu button {
@@ -1920,7 +1922,7 @@ details.sources small {
   overflow-y: auto;
 }
 
-.spoiler-field .field-hint {
+.opt-panel .field-hint {
   margin: 0;
   color: var(--muted);
   font-size: 0.85rem;
@@ -1943,8 +1945,8 @@ details.sources small {
   cursor: pointer;
 }
 
-/* Setup toggle spans the field; the compact menu variant stays inline. */
-.spoiler-field .spoiler-toggle {
+/* Setup toggle spans the panel; the compact menu variant stays inline. */
+.opt-panel .spoiler-toggle {
   display: flex;
   width: 100%;
 }
@@ -2239,39 +2241,54 @@ details.sources small {
 
 /* Preferred guide: paste link or search the web */
 .guide-link-field {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
-/* Two collapsibles share a row to save vertical space: side-by-side while both
-   are closed, then any open one (and its siblings) stacks full-width so the
-   expanded content gets the whole row — essential on mobile. Pure CSS via :has(). */
-.opt-row {
+/* Preferred guide + Spoilers: a fixed trigger row, then whichever is open renders
+   in the shared panel below — so toggling never shifts the triggers. */
+.opt-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.opt-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
 }
 
-/* Preferred guide + Spoilers split the full width evenly. */
-.opt-row > * {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.opt-row > .opt-details {
+.opt-tab {
   flex: 1 1 calc(50% - 6px);
   min-width: 0;
+  /* Clip a long value (e.g. a guide host) to this half so it can't spill over
+     the neighbouring trigger. */
+  overflow: hidden;
 }
 
-.opt-row:has(.opt-details[open]) > .opt-details {
-  flex-basis: 100%;
+/* Secondary value (guide host / spoiler state) truncates instead of overflowing. */
+.opt-tab .opt-summary-value {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.opt-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: opt-reveal 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* Collapsible section trigger (native <details>) */
-.opt-summary {
+.opt-summary,
+.opt-tab {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  width: fit-content;
   padding: 4px 0;
   cursor: pointer;
   list-style: none;
@@ -2283,11 +2300,19 @@ details.sources small {
   color: var(--muted);
 }
 
+/* .opt-tab is a <button>; strip its chrome and left-align like the old summary. */
+.opt-tab {
+  border: none;
+  background: none;
+  text-align: left;
+}
+
 .opt-summary::-webkit-details-marker {
   display: none;
 }
 
-.opt-summary::before {
+.opt-summary::before,
+.opt-tab::before {
   content: "+";
   display: inline-grid;
   place-items: center;
@@ -2299,11 +2324,25 @@ details.sources small {
   line-height: 1;
 }
 
-.opt-details[open] .opt-summary::before {
+.opt-tab.open::before {
   content: "−";
 }
 
-.opt-summary:hover {
+/* Content reveal when a section opens — the .opt-panel mounts fresh, so this
+   fade+slide runs once. Neutralized by the reduced-motion block. */
+@keyframes opt-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.opt-summary:hover,
+.opt-tab:hover {
   color: var(--ink);
 }
 
@@ -3029,6 +3068,7 @@ details.sources small {
   border: 1.5px solid var(--ink);
   background: var(--paper-strong);
   box-shadow: 4px 4px 0 var(--ink);
+  animation: rise 160ms ease-out backwards;
 }
 
 .profile-menu-head {

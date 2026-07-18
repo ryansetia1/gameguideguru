@@ -30,9 +30,6 @@ export function GuideLinkField({ value, onChange, game, platform, disabled }: Pr
   const inputId = useId();
   const searchInputId = useId();
   const autoRanRef = useRef(false);
-  // Collapsed by default to keep the setup clean; opens on mount only if a guide
-  // was already chosen. Stable across renders so the user's toggle sticks.
-  const [initialOpen] = useState(() => Boolean(value));
   const trimmedGame = game.trim();
   const canSearch = trimmedGame.length > 0;
 
@@ -98,14 +95,8 @@ export function GuideLinkField({ value, onChange, game, platform, disabled }: Pr
   }
 
   return (
-    <details className="field guide-link-field opt-details" open={initialOpen}>
-      <summary className="opt-summary">
-        <span className="opt-summary-label" id={`${inputId}-label`}>
-          Preferred guide (optional)
-        </span>
-        {value && <span className="opt-summary-value">{hostLabel(value)}</span>}
-      </summary>
-      <div className="guide-link-modes" role="tablist" aria-labelledby={`${inputId}-label`}>
+    <div className="guide-link-field">
+      <div className="guide-link-modes" role="tablist" aria-label="Preferred guide source">
         <button
           type="button"
           role="tab"
@@ -134,7 +125,7 @@ export function GuideLinkField({ value, onChange, game, platform, disabled }: Pr
           type="url"
           inputMode="url"
           role="tabpanel"
-          aria-labelledby={`${inputId}-label`}
+          aria-label="Preferred guide URL"
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder="Paste a specific guide page (not a category/hub) for best results"
@@ -146,7 +137,7 @@ export function GuideLinkField({ value, onChange, game, platform, disabled }: Pr
         <div
           className={`guide-search-panel${canSearch ? "" : " is-inactive"}`}
           role="tabpanel"
-          aria-labelledby={`${inputId}-label`}
+          aria-label="Search web for a guide"
           aria-disabled={!canSearch || undefined}
         >
           <form className="guide-search-form" onSubmit={onSearchSubmit}>
@@ -204,6 +195,6 @@ export function GuideLinkField({ value, onChange, game, platform, disabled }: Pr
           )}
         </div>
       )}
-    </details>
+    </div>
   );
 }
