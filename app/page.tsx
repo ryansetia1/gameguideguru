@@ -1784,10 +1784,12 @@ export default function Home() {
           {coverEnabled && (
             <div className="field field-cover">
               <div className="cover-edit">
-                <div className="cover-drop">
+                <div className={`cover-drop${cover ? " has-cover" : ""}`}>
                   <CoverThumb cover={cover} name={game} className="cover-setup" />
                   <label className="cover-upload">
-                    {cover ? "Replace" : "Upload cover"}
+                    <span className="cover-upload-label">
+                      {cover ? "Replace" : "Upload cover"}
+                    </span>
                     <input
                       type="file"
                       accept="image/*"
@@ -1800,17 +1802,18 @@ export default function Home() {
                       }}
                     />
                   </label>
+                  {cover && (
+                    <button
+                      type="button"
+                      className="cover-clear"
+                      aria-label="Remove cover"
+                      onClick={() => void clearCover()}
+                      disabled={uploadingCover || loading}
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
-                {cover && (
-                  <button
-                    type="button"
-                    className="cover-clear"
-                    onClick={() => void clearCover()}
-                    disabled={uploadingCover || loading}
-                  >
-                    Clear
-                  </button>
-                )}
                 {pendingCover && <span className="cover-pending">Uploads when you send</span>}
               </div>
             </div>

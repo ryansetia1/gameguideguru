@@ -2084,14 +2084,27 @@ details.sources small {
   object-fit: cover;
 }
 
+/* Whole tile is the file picker. Empty: the chip sits centered on the mint
+   placeholder. With a cover: the chip tucks to the bottom so the art stays clean. */
 .cover-upload {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  max-width: calc(100% - 10px);
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.cover-drop.has-cover .cover-upload {
+  align-items: flex-end;
+  padding-bottom: 8px;
+}
+
+.cover-upload-label {
+  max-width: calc(100% - 12px);
   border: 1.5px solid var(--ink);
   background: var(--paper-strong);
+  color: var(--ink);
   padding: 7px 9px;
   text-align: center;
   font-family: var(--font-sans);
@@ -2100,21 +2113,54 @@ details.sources small {
   letter-spacing: 0.05em;
   line-height: 1.25;
   text-transform: uppercase;
-  cursor: pointer;
 }
 
-.cover-upload:hover {
+.cover-upload:hover .cover-upload-label {
   background: var(--signal);
   color: var(--on-signal);
 }
 
+/* Over real art: compact, translucent so it reads on any cover without hiding it. */
+.cover-drop.has-cover .cover-upload-label {
+  border-color: rgba(255, 255, 255, 0.55);
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  padding: 5px 8px;
+  font-size: 0.52rem;
+}
+
+.cover-drop.has-cover .cover-upload:hover .cover-upload-label {
+  background: var(--signal);
+  color: var(--on-signal);
+  border-color: var(--signal);
+}
+
+/* Clear = small corner × overlay (no vertical space added below the cover). */
 .cover-clear {
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.68rem;
-  text-decoration: underline;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1.5px solid rgba(255, 255, 255, 0.55);
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 1.05rem;
+  line-height: 1;
   cursor: pointer;
+}
+
+.cover-clear:hover:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.cover-clear:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .setup-done {
