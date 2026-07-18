@@ -9,6 +9,7 @@ import {
   getSpeechRecognition,
   isBenignSpeechError,
   loadVoiceLang,
+  mergeSpeechParts,
   prefersChunkedSpeechRecognition,
   saveVoiceLang,
   shouldRetrySpeechError,
@@ -39,10 +40,8 @@ async function persistVoiceLangForUser(code: string) {
 /**
  * Shared Web Speech dictation for the mic button and mobile composer-extras menu.
  *
- * ponytail: singleton instance (no re-new per start), delayed onend restart,
- * iOS uses continuous=false + manual restart, visibility stop on background.
- * User stop calls recognition.stop() (not abort) so finals flush; desktop keeps
- * interimResults for a last-chunk capture on stop.
+ * ponytail: buffer finals/interim locally while listening; composer gets one
+ * append on explicit stop only. iOS uses continuous=false + manual restart.
  */
 export function useVoiceInput({
   user,
@@ -59,7 +58,8 @@ export function useVoiceInput({
   const sessionRef = useRef(0);
   const restartTimerRef = useRef(0);
   const networkRetriesRef = useRef(0);
-  const lastInterimRef = useRef("");
+  const finalPartsRef = useRef<string[]>([]);
+  const interimRef = useRef("");
   const stopFallbackTimerRef = useRef(0);
   const onTranscriptRef = useRef(onTranscript);
   const onListeningChangeRef = useRef(onListeningChange);
@@ -105,11 +105,24 @@ export function useVoiceInput({
     }
   }, []);
 
-  const flushInterim = useCallback(() => {
-    const pending = lastInterimRef.current.trim();
-    lastInterimRef.current = "";
-    if (pending) onTranscriptRef.current(pending);
+  const clearBuffer = useCallback(() => {
+    finalPartsRef.current = [];
+    interimRef.current = "";
   }, []);
+
+  const bufferedText = useCallback(() => {
+    const merged = mergeSpeechParts(finalPartsRef.current);
+    const interim = interimRef.current.trim();
+    if (!merged) return interim;
+    if (!interim) return merged;
+    return `${merged} ${interim}`;
+  }, []);
+
+  const flushBuffer = useCallback(() => {
+    const text = bufferedText();
+    clearBuffer();
+    if (text) onTranscriptRef.current(text);
+  }, [bufferedText, clearBuffer]);
 
   const finishStop = useCallback(() => {
     clearRestartTimer();
@@ -124,7 +137,7 @@ export function useVoiceInput({
     clearStopFallback();
     listeningIntentRef.current = false;
     networkRetriesRef.current = 0;
-    lastInterimRef.current = "";
+    clearBuffer();
     const recognition = recognitionRef.current;
     recognitionRef.current = null;
     setListening(false);
@@ -134,7 +147,7 @@ export function useVoiceInput({
     } catch {
       // ignore
     }
-  }, [clearRestartTimer, clearStopFallback]);
+  }, [clearRestartTimer, clearStopFallback, clearBuffer]);
 
   const requestStop = useCallback(() => {
     clearRestartTimer();
@@ -149,14 +162,13 @@ export function useVoiceInput({
     stopFallbackTimerRef.current = window.setTimeout(() => {
       stopFallbackTimerRef.current = 0;
       if (recognitionRef.current !== recognition) return;
-      flushInterim();
+      flushBuffer();
       finishStop();
     }, 750);
     try {
-      // stop() lets the engine flush a final result; abort() drops it.
       recognition.stop();
     } catch {
-      flushInterim();
+      flushBuffer();
       try {
         recognition.abort();
       } catch {
@@ -164,7 +176,7 @@ export function useVoiceInput({
       }
       finishStop();
     }
-  }, [clearRestartTimer, clearStopFallback, flushInterim, finishStop]);
+  }, [clearRestartTimer, clearStopFallback, flushBuffer, finishStop]);
 
   const stop = useCallback(() => {
     requestStop();
@@ -193,6 +205,7 @@ export function useVoiceInput({
       clearStopFallback();
       sessionRef.current += 1;
       listeningIntentRef.current = false;
+      clearBuffer();
       try {
         recognitionRef.current?.abort();
       } catch {
@@ -200,7 +213,7 @@ export function useVoiceInput({
       }
       recognitionRef.current = null;
     };
-  }, [clearRestartTimer, clearStopFallback]);
+  }, [clearRestartTimer, clearStopFallback, clearBuffer]);
 
   function getRecognitionInstance(SpeechRecognition: new () => any) {
     if (!recognitionRef.current) {
@@ -244,10 +257,11 @@ export function useVoiceInput({
         if (typeof transcript !== "string" || !transcript.trim()) continue;
         const text = transcript.trim();
         if (chunk.isFinal) {
-          lastInterimRef.current = "";
-          onTranscriptRef.current(text);
+          const parts = finalPartsRef.current;
+          if (parts[parts.length - 1] !== text) parts.push(text);
+          interimRef.current = "";
         } else {
-          lastInterimRef.current = text;
+          interimRef.current = text;
         }
       }
     };
@@ -271,7 +285,7 @@ export function useVoiceInput({
     recognition.onend = () => {
       if (session !== sessionRef.current) return;
       if (!listeningIntentRef.current) {
-        flushInterim();
+        flushBuffer();
         finishStop();
         return;
       }
@@ -286,7 +300,7 @@ export function useVoiceInput({
     sessionRef.current += 1;
     const session = sessionRef.current;
     networkRetriesRef.current = 0;
-    lastInterimRef.current = "";
+    clearBuffer();
     try {
       recognitionRef.current?.abort();
     } catch {

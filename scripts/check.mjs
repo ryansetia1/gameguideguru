@@ -18,6 +18,7 @@ import { coerceThemeMode, themeFromUserMetadata } from "../lib/theme.js";
 import {
   coerceVoiceLang,
   isBenignSpeechError,
+  mergeSpeechParts,
   prefersChunkedSpeechRecognition,
   shouldRetrySpeechError,
   voiceLangFromUserMetadata,
@@ -379,5 +380,11 @@ const draft = coerceSessionDraft({
 });
 assert.equal(draft?.game, "Hades");
 assert.equal(coerceSessionDraft({ messages: [] }), null);
+
+assert.equal(
+  mergeSpeechParts(["hello", "hello", "world", "world"]),
+  "hello world",
+);
+assert.equal(mergeSpeechParts(["  ", "", "ok"]), "ok");
 
 console.log("Self-check passed.");

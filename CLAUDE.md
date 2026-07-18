@@ -175,13 +175,13 @@ and simply cannot save.
 - `lib/voice.js` + `app/voice-input.tsx`: mic button in the composer (between
   attach and Send, **all users**) using the free browser Web Speech API. First
   click with no saved language opens a popular-language picker; after that a
-  click starts/stops dictation and appends the final transcript to the composer.
-  Mic permission only prompts on click (`recognition.start()`), never on load;
+  click starts/stops dictation; the transcript is buffered while listening and
+  appended to the composer once on stop (not live). Mic permission only prompts on click (`recognition.start()`), never on load;
   the button hides when the browser lacks `SpeechRecognition` (e.g. Firefox).
   Language persists in `localStorage` (`gg:voice-lang`) and, signed-in,
   `user_metadata.voice_lang`; changeable on `/profile`. Stop uses
-  `recognition.stop()` (not `abort`) so finals flush into the composer; desktop
-  enables interim capture for the last chunk on stop, iOS stays final-only.
+  `recognition.stop()` so finals flush into the buffer, then one composer append.
+  Desktop keeps interim capture for the trailing chunk; iOS stays final-only.
   Singleton recognition instance, 250ms delayed onend restart, iOS uses
   `continuous: false` + manual restart, stops on tab background.
   `warmUpMicrophone()` acquires then releases
