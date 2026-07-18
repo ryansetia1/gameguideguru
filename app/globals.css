@@ -151,11 +151,17 @@ h1 em {
 }
 
 .setup {
-  display: grid;
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   margin-top: 30px;
   animation: rise 480ms 60ms ease-out backwards;
+}
+
+.setup-primary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .field {
@@ -174,7 +180,7 @@ h1 em {
   color: var(--muted);
 }
 
-.field input {
+.field input:not([type="checkbox"]):not([type="radio"]) {
   width: 100%;
   min-height: 48px;
   border: 1.5px solid var(--ink);
@@ -185,7 +191,7 @@ h1 em {
   font-size: 0.95rem;
 }
 
-.field input::placeholder {
+.field input:not([type="checkbox"]):not([type="radio"])::placeholder {
   color: var(--placeholder);
 }
 
@@ -1364,9 +1370,9 @@ details.sources small {
   background: #fdecea;
 }
 
-/* Preferred-guide field spans the full setup width */
+/* Full-width fields inside setup (no grid — flex column). */
 .field-wide {
-  grid-column: 1 / -1;
+  width: 100%;
 }
 
 /* --- Game cover + metadata card, editable setup, sticky header --- */
@@ -1513,12 +1519,12 @@ details.sources small {
 .spoiler-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: 0 10px;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
   border: 1.5px solid var(--ink);
   background: var(--paper-strong);
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   cursor: pointer;
 }
 
@@ -1527,6 +1533,9 @@ details.sources small {
 }
 
 .spoiler-toggle input {
+  flex: none;
+  width: 15px;
+  height: 15px;
   margin: 0;
   accent-color: var(--signal-dark);
 }
@@ -2008,8 +2017,19 @@ details.sources small {
 }
 
 @media (min-width: 640px) {
-  .setup {
-    grid-template-columns: 1.4fr 1fr;
+  .setup-primary {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 16px;
+  }
+
+  .field-cover {
+    flex: none;
+  }
+
+  .field-game {
+    flex: 1;
+    min-width: 0;
   }
 }
 

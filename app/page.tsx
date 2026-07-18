@@ -1137,52 +1137,54 @@ export default function Home() {
         </section>
       ) : (
         <section className="setup" aria-label="Game context" ref={topRef}>
-          {coverEnabled && (
-            <div className="field field-cover">
-              <span className="field-label">Cover</span>
-              <div className="cover-edit">
-                <CoverThumb cover={cover} name={game} className="cover-md" />
-                <div className="cover-edit-actions">
-                  <label className="cover-upload">
-                    {cover ? "Replace" : "Upload cover"}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      hidden
-                      disabled={uploadingCover || loading}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        event.target.value = "";
-                        if (file) selectCover(file);
-                      }}
-                    />
-                  </label>
-                  {cover && (
-                    <button
-                      type="button"
-                      className="cover-clear"
-                      onClick={() => void clearCover()}
-                      disabled={uploadingCover || loading}
-                    >
-                      Clear
-                    </button>
-                  )}
+          <div className="setup-primary">
+            {coverEnabled && (
+              <div className="field field-cover">
+                <span className="field-label">Cover</span>
+                <div className="cover-edit">
+                  <CoverThumb cover={cover} name={game} className="cover-md" />
+                  <div className="cover-edit-actions">
+                    <label className="cover-upload">
+                      {cover ? "Replace" : "Upload cover"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        disabled={uploadingCover || loading}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          event.target.value = "";
+                          if (file) selectCover(file);
+                        }}
+                      />
+                    </label>
+                    {cover && (
+                      <button
+                        type="button"
+                        className="cover-clear"
+                        onClick={() => void clearCover()}
+                        disabled={uploadingCover || loading}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {pendingCover && <span className="cover-pending">Uploads when you send</span>}
                 </div>
-                {pendingCover && <span className="cover-pending">Uploads when you send</span>}
               </div>
+            )}
+            <div className="field field-game">
+              <label htmlFor="game">Game name</label>
+              <GameAutocomplete
+                value={game}
+                onChange={handleGameChange}
+                onPick={pickGame}
+                showCover={coverEnabled}
+                disabled={loading}
+              />
             </div>
-          )}
-          <div className="field">
-            <label htmlFor="game">Game name</label>
-            <GameAutocomplete
-              value={game}
-              onChange={handleGameChange}
-              onPick={pickGame}
-              showCover={coverEnabled}
-              disabled={loading}
-            />
           </div>
-          <div className="field">
+          <div className="field field-platform">
             <span className="field-label" id="platform-label">
               Platform
             </span>
