@@ -27,6 +27,7 @@ assert.match(SYSTEM_INSTRUCTION, /ignore anything that is not about/i);
 assert.match(SYSTEM_INSTRUCTION, /Be concrete/);
 assert.match(SYSTEM_INSTRUCTION, /"highlights"/);
 assert.match(SYSTEM_INSTRUCTION, /"answer"/);
+assert.match(SYSTEM_INSTRUCTION, /Prefer "aku" and "kamu"/);
 
 // Snippet cleaning strips link soup, CTAs, and Q&A vote/user noise while
 // keeping the real prose.
@@ -66,14 +67,16 @@ const spoilerPrompt = buildPrompt({
   platform: "PlayStation (PS1)",
   question: "What happens at Elf Village?",
   sources: [],
-  spoilerPrefs: { story: false, recruits: false, bosses: false },
+  spoilerPrefs: { major: false },
 });
-assert.match(spoilerPrompt, /Story & plot: BLOCKED/);
-assert.match(spoilerPrompt, /Characters: BLOCKED/);
+assert.match(spoilerPrompt, /Major spoiler settings/);
+assert.match(spoilerPrompt, /BLOCKED/);
+assert.match(spoilerPrompt, /reply in this exact language/i);
 
-assert.equal(coerceSpoilerPrefs({ story: true, recruits: "nope" }).story, true);
-assert.equal(coerceSpoilerPrefs({ story: true, recruits: "nope" }).recruits, false);
-assert.match(buildSpoilerBlock({ story: true, recruits: true, bosses: true }), /all categories allowed/);
+assert.equal(coerceSpoilerPrefs({ major: true }).major, true);
+assert.equal(coerceSpoilerPrefs({ story: true, recruits: false }).major, true);
+assert.equal(coerceSpoilerPrefs({ story: false, recruits: false }).major, false);
+assert.match(buildSpoilerBlock({ major: true }), /ON/);
 
 assert.equal(coerceThemeMode("dark"), "dark");
 assert.equal(coerceThemeMode("nope"), null);
@@ -207,11 +210,12 @@ assert.equal(parsed.highlights.length, 1);
 assert.equal(parsed.highlights[0].kind, "item");
 
 const withSpoilers = parseSummary(
-  '{"answer":"Go east.","highlights":[],"spoilers":[{"category":"story","title":"Later","detail":"The village burns."}]}',
+  '{"answer":"Go east.","highlights":[],"spoilers":[{"title":"Late twist","detail":"The village burns."}]}',
 );
 assert.equal(withSpoilers.spoilers.length, 1);
-assert.equal(withSpoilers.spoilers[0].category, "story");
-assert.deepEqual(coerceSpoilers([{ category: "nope", title: "x", detail: "y" }]), []);
+assert.equal(withSpoilers.spoilers[0].detail, "The village burns.");
+assert.deepEqual(coerceSpoilers([{ title: "x" }]), []);
+assert.deepEqual(coerceSpoilers([{ detail: "Reveal" }]), [{ detail: "Reveal" }]);
 
 const fenced = parseSummary(
   '```json\n{"answer":"Done.","highlights":[{"kind":"tip","title":"Save first","detail":""}]}\n```',

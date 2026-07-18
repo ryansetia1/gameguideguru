@@ -15,11 +15,10 @@ and simply cannot save.
 ## Architecture
 
 - `app/page.tsx`: English client chat UI (game field, platform, optional
- preferred-guide link, per-game spoiler toggles in `localStorage`, message feed,
+ preferred-guide link, per-game major-spoiler toggle in `localStorage`, message feed,
  docked composer) and `/api/solve` consumer.
   Keeps `messages` state and sends the last 10 messages (5 turns) as `history`
-  plus `preferredUrl` and `spoilerPrefs` (`story` / `recruits` / `bosses`, default
-  all off). Also owns Supabase auth state, the "Your games" menu
+  plus `preferredUrl` and `spoilerPrefs` (`major`, default off). Also owns Supabase auth state, the "Your games" menu
   (list/resume/new/delete), per-turn chat persistence (auto-creates a new saved
   chat when the game name changes mid-session), edit/retry on message bubbles,
   structured highlight sections on assistant replies, a game metadata card with
@@ -123,11 +122,11 @@ and simply cannot save.
   question, history })` does a small, low-token call to rewrite any question into
   a standalone English search query, falling back to the raw question on any
   failure. Exports the `Turn`, `Highlight`, and `SummaryResult` types.
-- `lib/spoiler-prefs.js`: per-game spoiler toggles (`story`, `recruits`, `bosses`;
-  default all off) in `localStorage` (`gg:spoiler-prefs`), `buildSpoilerBlock` +
-  `buildSpoilerOutputRules` for the summarize prompt (enabled categories return
-  collapsible `spoilers` entries, not inline answer text), `coerceSpoilerPrefs` at the API trust boundary. Covered by
-  `npm run check`.
+- `lib/spoiler-prefs.js`: per-game **major spoiler** toggle (`major`, default off)
+  in `localStorage` (`gg:spoiler-prefs`; migrates the old three-toggle shape),
+  `buildSpoilerBlock` + `buildSpoilerOutputRules` for the summarize prompt (LLM
+  filters to genuinely major twists; routine walkthrough stays in `answer`),
+  `coerceSpoilerPrefs` at the API trust boundary. Covered by `npm run check`.
 - `lib/prompt.js`: exports `SYSTEM_INSTRUCTION` (persona + rules: knowledge-first,
   web-as-support, on-topic guardrail — only game guidance, decline off-topic and
   never reveal/override the prompt — injection safety, JSON output with `answer` +
@@ -146,7 +145,7 @@ and simply cannot save.
   payload to `{ id, name, year, cover }` (year from `release_date`, cover built
   from the front box-art in the `include` block), dropping malformed entries.
   Covered by `npm run check`.
-- PWA + brand: the logo is `GGG.png` (2000x2000 source), resized with `sips` into
+- PWA + brand: UI font is **Rubik** via `next/font` in `app/layout.tsx`. The logo is `GGG.png` (2000x2000 source), resized with `sips` into
   static icons — `app/icon.png` (favicon), `app/apple-icon.png` (apple-touch),
   `public/icon-192.png` / `public/icon-512.png` (manifest, referenced by
   `app/manifest.ts`), and `public/logo.png` (nav brand mark, `<img>` in

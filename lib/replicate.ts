@@ -11,9 +11,7 @@ import {
 import type { SearchResult } from "@/lib/tavily";
 
 type SpoilerPrefs = {
-  story: boolean;
-  recruits: boolean;
-  bosses: boolean;
+  major: boolean;
 };
 
 const DEFAULT_MODEL = "google/gemini-2.5-flash";
@@ -30,9 +28,8 @@ export type Highlight = {
 };
 
 export type SpoilerReveal = {
-  category: "story" | "recruits" | "bosses";
-  title: string;
   detail: string;
+  title?: string;
 };
 
 export type SummaryResult = {

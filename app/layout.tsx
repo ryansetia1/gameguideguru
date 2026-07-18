@@ -1,8 +1,16 @@
 import type { Metadata, Viewport } from "next";
+import { Rubik } from "next/font/google";
 import type { ReactNode } from "react";
 
 import "./globals.css";
 import { ServiceWorkerRegister } from "./sw-register";
+
+const rubik = Rubik({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-rubik",
+  display: "swap",
+});
 
 const themeInitScript = `(function(){try{var t=localStorage.getItem("gg:theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}})();`;
 
@@ -29,11 +37,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={rubik.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
-      <body suppressHydrationWarning>
+      <body className={rubik.className} suppressHydrationWarning>
         {children}
         <ServiceWorkerRegister />
       </body>

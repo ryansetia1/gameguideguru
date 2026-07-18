@@ -9,9 +9,12 @@
   --signal: #d8ff4f;
   --signal-dark: #263900;
   --on-signal: #17211f;
+  --spoiler-hint: #8f4a44;
+  --spoiler-surface: #f6eeec;
   --danger: #b83a2f;
   --disabled-bg: #e0e2d9;
   --disabled-text: #5f6762;
+  --font-sans: var(--font-rubik), "Rubik", system-ui, sans-serif;
 }
 
 * {
@@ -32,7 +35,7 @@ body {
     linear-gradient(90deg, rgba(23, 33, 31, 0.035) 1px, transparent 1px),
     var(--paper);
   background-size: 24px 24px;
-  font-family: "Avenir Next", Avenir, "Segoe UI", Helvetica, sans-serif;
+  font-family: var(--font-sans);
 }
 
 button,
@@ -74,7 +77,7 @@ main {
   gap: 10px;
   align-items: center;
   color: inherit;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.13em;
@@ -93,7 +96,7 @@ main {
   gap: 7px;
   align-items: center;
   color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -116,7 +119,7 @@ main {
 .eyebrow {
   margin: 0 0 14px;
   color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.65rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -125,7 +128,7 @@ main {
 h1 {
   max-width: 620px;
   margin: 0;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-sans);
   font-size: clamp(3.2rem, 15vw, 6.1rem);
   font-weight: 400;
   letter-spacing: -0.072em;
@@ -171,7 +174,7 @@ h1 em {
 
 .field label,
 .field-label {
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -297,7 +300,7 @@ h1 em {
 .combo-group-label {
   margin: 0;
   padding: 10px 13px 4px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -348,7 +351,7 @@ h1 em {
 .examples-label {
   display: block;
   margin-bottom: 10px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -436,7 +439,7 @@ h1 em {
   background: var(--paper-strong);
   color: var(--ink);
   padding: 4px 8px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -526,7 +529,7 @@ h1 em {
   gap: 7px;
   align-items: center;
   padding: 4px 0;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.6rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -538,7 +541,7 @@ h1 em {
 
 .answer {
   padding: 20px 18px 16px;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-sans);
   font-size: 1.02rem;
   line-height: 1.72;
   overflow-wrap: anywhere;
@@ -555,7 +558,7 @@ h1 em {
 
 .answer h4 {
   margin: 1.1em 0 0.5em;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.82rem;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -594,7 +597,7 @@ h1 em {
 .highlight-label {
   margin: 0 0 8px;
   color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.14em;
@@ -654,7 +657,7 @@ h1 em {
   content: "+";
   float: right;
   color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.72rem;
 }
 
@@ -687,8 +690,8 @@ h1 em {
 }
 
 details.spoiler-reveal {
-  border: 1.5px solid var(--ink);
-  background: var(--paper);
+  border: 1.5px solid color-mix(in srgb, var(--spoiler-hint) 55%, var(--ink));
+  background: var(--spoiler-surface);
 }
 
 details.spoiler-reveal > summary {
@@ -709,7 +712,7 @@ details.spoiler-reveal > summary::-webkit-details-marker {
 
 details.spoiler-reveal > summary::after {
   margin-left: auto;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 1rem;
   font-weight: 700;
   content: "+";
@@ -722,10 +725,10 @@ details.spoiler-reveal[open] > summary::after {
 .spoiler-reveal-tag {
   flex: none;
   padding: 2px 6px;
-  border: 1px solid var(--ink);
-  background: var(--paper-strong);
-  color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  border: 1px solid color-mix(in srgb, var(--spoiler-hint) 70%, var(--line));
+  background: color-mix(in srgb, var(--spoiler-surface) 80%, var(--paper-strong));
+  color: var(--spoiler-hint);
+  font-family: var(--font-sans);
   font-size: 0.58rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -747,7 +750,7 @@ details.sources {
 
 details.sources > summary {
   padding: 14px 18px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -796,7 +799,7 @@ details.sources li a:hover strong {
 
 .source-number {
   color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.64rem;
 }
 
@@ -861,7 +864,7 @@ details.sources small {
   place-items: center;
   border: 1px solid currentColor;
   border-radius: 50%;
-  font-family: Georgia, serif;
+  font-family: var(--font-sans);
   font-weight: 700;
 }
 
@@ -1010,7 +1013,7 @@ details.sources small {
   background: var(--paper-strong);
   color: var(--ink);
   padding: 8px 11px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.6rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -1093,7 +1096,7 @@ details.sources small {
   justify-content: space-between;
   padding: 16px 14px;
   border-bottom: 1.5px solid var(--ink);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -1115,7 +1118,7 @@ details.sources small {
   background: var(--signal);
   color: var(--ink);
   padding: 13px 14px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -1137,7 +1140,7 @@ details.sources small {
   background: var(--paper-strong);
   color: var(--ink);
   padding: 13px 14px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -1169,7 +1172,7 @@ details.sources small {
   padding: 16px 18px;
   border-bottom: 1.5px solid var(--ink);
   background: var(--paper-strong);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -1344,7 +1347,7 @@ details.sources small {
   background: transparent;
   color: var(--ink);
   padding: 11px 18px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -1403,7 +1406,7 @@ details.sources small {
 .combo-group-label {
   padding: 9px 13px;
   color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.66rem;
   font-weight: 700;
   letter-spacing: 0.09em;
@@ -1505,13 +1508,7 @@ details.sources small {
   line-height: 1.45;
 }
 
-.spoiler-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.spoiler-toggles-compact {
+.spoiler-toggle-compact {
   margin-top: 4px;
 }
 
@@ -1545,7 +1542,7 @@ details.sources small {
 
 .spoiler-panel-label {
   display: block;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -1601,7 +1598,7 @@ details.sources small {
 .cover-placeholder {
   display: grid;
   place-items: center;
-  font-family: Georgia, serif;
+  font-family: var(--font-sans);
   font-weight: 700;
   color: var(--ink);
   background: var(--signal);
@@ -1657,7 +1654,7 @@ details.sources small {
   background: var(--paper);
   color: var(--ink);
   padding: 5px 12px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -1690,7 +1687,7 @@ details.sources small {
 .game-card-meta p {
   margin: 0;
   color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.72rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1721,7 +1718,7 @@ details.sources small {
   border: 1.5px solid var(--ink);
   background: var(--paper-strong);
   padding: 8px 12px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -1762,7 +1759,7 @@ details.sources small {
   border: none;
   background: transparent;
   padding: 10px 12px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -1863,7 +1860,7 @@ details.sources small {
   display: block;
   margin-top: 2px;
   color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.62rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -1881,7 +1878,7 @@ details.sources small {
   border: 1.5px solid var(--ink);
   background: var(--paper);
   padding: 6px 10px;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.62rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -2017,7 +2014,7 @@ details.sources small {
 
 .auth-title {
   margin: 0;
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-sans);
   font-size: 1.7rem;
   font-weight: 400;
   letter-spacing: -0.02em;
@@ -2051,7 +2048,7 @@ details.sources small {
   gap: 10px;
   margin: 16px 0;
   color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.62rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -2073,7 +2070,7 @@ details.sources small {
 }
 
 .auth-field span {
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-sans);
   font-size: 0.6rem;
   font-weight: 700;
   letter-spacing: 0.1em;
@@ -2239,6 +2236,8 @@ details.sources small {
   --placeholder: #9aa39d;
   --line: #3a4340;
   --signal-dark: #c2ef5a;
+  --spoiler-hint: #c99a95;
+  --spoiler-surface: #221a19;
   --danger: #f08070;
   --disabled-bg: #2a3134;
   --disabled-text: #a8b0ab;
@@ -2261,7 +2260,7 @@ details.sources small {
 }
 
 :root[data-theme="dark"] details.spoiler-reveal {
-  background: #1a1f22;
+  background: var(--spoiler-surface);
 }
 
 :root[data-theme="dark"] details.sources,
@@ -2303,6 +2302,8 @@ details.sources small {
     --placeholder: #9aa39d;
     --line: #3a4340;
     --signal-dark: #c2ef5a;
+    --spoiler-hint: #c99a95;
+    --spoiler-surface: #221a19;
     --danger: #f08070;
     --disabled-bg: #2a3134;
     --disabled-text: #a8b0ab;
@@ -2325,7 +2326,7 @@ details.sources small {
   }
 
   :root:not([data-theme="light"]) details.spoiler-reveal {
-    background: #1a1f22;
+    background: var(--spoiler-surface);
   }
 
   :root:not([data-theme="light"]) details.sources,

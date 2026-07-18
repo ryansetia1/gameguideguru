@@ -20,8 +20,7 @@ import { parseBlocks } from "@/lib/markdown.js";
 import { tgdbPlatformToLabel } from "@/lib/platforms.js";
 import {
   DEFAULT_SPOILER_PREFS,
-  SPOILER_KINDS,
-  SPOILER_CATEGORY_LABELS,
+  SPOILER_TOGGLE_LABEL,
   loadSpoilerPrefs,
   saveSpoilerPrefs,
   type SpoilerPrefs,
@@ -215,31 +214,24 @@ function groupHighlights(highlights: Highlight[]) {
   });
 }
 
-function SpoilerToggles({
+function SpoilerToggle({
   prefs,
   onChange,
   compact = false,
 }: {
   prefs: SpoilerPrefs;
-  onChange: (id: keyof SpoilerPrefs, value: boolean) => void;
+  onChange: (value: boolean) => void;
   compact?: boolean;
 }) {
   return (
-    <div className={`spoiler-toggles${compact ? " spoiler-toggles-compact" : ""}`}>
-      {SPOILER_KINDS.map((kind) => {
-        const id = kind.id as keyof SpoilerPrefs;
-        return (
-          <label key={kind.id} className="spoiler-toggle">
-            <input
-              type="checkbox"
-              checked={prefs[id] === true}
-              onChange={(event) => onChange(id, event.target.checked)}
-            />
-            <span>{kind.label}</span>
-          </label>
-        );
-      })}
-    </div>
+    <label className={`spoiler-toggle${compact ? " spoiler-toggle-compact" : ""}`}>
+      <input
+        type="checkbox"
+        checked={prefs.major === true}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span>{SPOILER_TOGGLE_LABEL}</span>
+    </label>
   );
 }
 
@@ -378,9 +370,9 @@ export default function Home() {
   }, [editingIndex]);
 
   const updateSpoilerPref = useCallback(
-    (id: keyof SpoilerPrefs, value: boolean) => {
+    (value: boolean) => {
       setSpoilerPrefs((prev) => {
-        const next = { ...prev, [id]: value };
+        const next = { major: value };
         if (game.trim()) saveSpoilerPrefs(game, next);
         return next;
       });
@@ -796,9 +788,7 @@ export default function Home() {
       const highlights = coerceHighlights(
         "highlights" in data ? data.highlights : undefined,
       );
-      const spoilers = coerceSpoilers("spoilers" in data ? data.spoilers : undefined).filter(
-        (item) => spoilerPrefs[item.category],
-      );
+      const spoilers = coerceSpoilers("spoilers" in data ? data.spoilers : undefined);
       const nextMessages: Message[] = [
         ...priorMessages,
         userMessage,
@@ -807,7 +797,7 @@ export default function Home() {
           content: data.answer as string,
           sources,
           ...(highlights.length ? { highlights } : {}),
-          ...(spoilers.length ? { spoilers } : {}),
+          ...(spoilers.length && spoilerPrefs.major ? { spoilers } : {}),
         },
       ];
       setMessages(nextMessages);
@@ -1131,8 +1121,11 @@ export default function Home() {
               </a>
             )}
             <div className="spoiler-panel">
-              <span className="spoiler-panel-label">Spoilers</span>
-              <SpoilerToggles prefs={spoilerPrefs} onChange={updateSpoilerPref} compact />
+              <SpoilerToggle
+                prefs={spoilerPrefs}
+                onChange={updateSpoilerPref}
+                compact
+              />
             </div>
           </div>
         </section>
@@ -1199,10 +1192,10 @@ export default function Home() {
           <div className="field field-wide spoiler-field">
             <span className="field-label">Spoilers</span>
             <p className="field-hint">
-              All categories off by default — enable only what you want spoiled for this
-              game.
+              Off by default — enable only if you want major plot twists shown in a
+              collapsed section.
             </p>
-            <SpoilerToggles prefs={spoilerPrefs} onChange={updateSpoilerPref} />
+            <SpoilerToggle prefs={spoilerPrefs} onChange={updateSpoilerPref} />
           </div>
           {editingGame && (
             <div className="field field-wide setup-done">
@@ -1335,18 +1328,13 @@ export default function Home() {
                   </button>
                 </div>
                 <AnswerBody text={message.content} />
-                {message.spoilers &&
-                  message.spoilers.filter((item) => spoilerPrefs[item.category]).length > 0 && (
+                {message.spoilers && spoilerPrefs.major && message.spoilers.length > 0 && (
                   <div className="spoiler-reveals">
-                    {message.spoilers
-                      .filter((item) => spoilerPrefs[item.category])
-                      .map((item, i) => (
+                    {message.spoilers.map((item, i) => (
                       <details key={`spoiler-${i}`} className="spoiler-reveal">
                         <summary>
-                          <span className="spoiler-reveal-tag">
-                            {SPOILER_CATEGORY_LABELS[item.category]}
-                          </span>
-                          {item.title}
+                          <span className="spoiler-reveal-tag">Major spoiler</span>
+                          {item.title || "Tap to reveal"}
                         </summary>
                         <p>{item.detail}</p>
                       </details>
