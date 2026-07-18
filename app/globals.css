@@ -608,7 +608,9 @@ h1 em {
 .turn.guide {
   align-self: flex-start;
   width: 100%;
-  border: 1.5px solid var(--ink);
+  /* Soft --line, not ink: the reading area shouldn't be a hard frame in either
+     theme (--line resolves per theme). Interactive controls keep their ink border. */
+  border: 1.5px solid var(--line);
   background: var(--paper-strong);
 }
 
@@ -630,8 +632,8 @@ h1 em {
 .answer {
   padding: 20px 18px 16px;
   font-family: var(--font-sans);
-  font-size: 1.02rem;
-  line-height: 1.72;
+  font-size: 0.96rem;
+  line-height: 1.6;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -666,15 +668,15 @@ h1 em {
 }
 
 .answer strong {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .highlights {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 20px;
   border-top: 1px solid var(--line);
-  padding: 16px 18px 6px;
+  padding: 22px 18px 10px;
   background: #f7f6f0;
 }
 
@@ -702,9 +704,10 @@ h1 em {
   margin-top: 6px;
 }
 
+/* Just a colored left bar on a card surface — the full border was redundant with
+   the bar and stacked into visual clutter (see the "too many frames" fix). */
 .highlight {
-  border: 1px solid var(--line);
-  border-left-width: 3px;
+  border-left: 3px solid var(--line);
   background: var(--paper-strong);
 }
 
@@ -2425,9 +2428,9 @@ details.sources small {
   gap: 12px;
   cursor: pointer;
   padding: 8px 10px;
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--line);
   background: var(--paper-strong);
-  box-shadow: 0 4px 0 rgba(23, 33, 31, 0.1);
+  box-shadow: 0 6px 14px rgba(23, 33, 31, 0.16);
   animation: rise 200ms ease-out backwards;
 }
 
@@ -2804,6 +2807,12 @@ details.sources small {
   background: #1f2528;
 }
 
+/* Let the sticky header read as a floating layer so prose scrolling under it
+   looks intentional, not chopped. Stronger shadow than light mode. */
+:root[data-theme="dark"] .sticky-header {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
 :root[data-theme="dark"] details.spoiler-reveal {
   background: var(--spoiler-surface);
 }
@@ -2876,6 +2885,12 @@ details.sources small {
 
   :root:not([data-theme="light"]) .highlights {
     background: #1f2528;
+  }
+
+  /* System-theme (no data-theme attribute) counterpart of the explicit-dark
+     sticky-header shadow above. */
+  :root:not([data-theme="light"]) .sticky-header {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
   }
 
   :root:not([data-theme="light"]) details.spoiler-reveal {
