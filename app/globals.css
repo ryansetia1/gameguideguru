@@ -43,6 +43,7 @@ textarea,
 input,
 select {
   font: inherit;
+  color: inherit;
 }
 
 button,
@@ -753,6 +754,27 @@ details.spoiler-reveal p {
   line-height: 1.55;
 }
 
+details.spoiler-reveal .answer {
+  padding: 4px 16px 18px;
+  color: var(--text-subtle);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+details.spoiler-reveal .answer p,
+details.spoiler-reveal .answer li {
+  color: var(--text-subtle);
+}
+
+details.spoiler-reveal .answer strong {
+  color: var(--ink);
+}
+
+details.spoiler-reveal .answer em {
+  color: var(--ink);
+  font-style: italic;
+}
+
 details.sources {
   border-top: 1px solid var(--line);
   background: #eeede6;
@@ -1185,15 +1207,57 @@ details.sources small {
   font-size: 0.82rem;
 }
 
-/* Library: full-screen cover-art grid */
+/* Library: slide-over panel (matches sidebar, not a separate full-screen app) */
+.library-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  border: 0;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: rgba(23, 33, 31, 0.42);
+  transition: opacity 180ms ease;
+}
+
+.library-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .library {
   position: fixed;
   inset: 0;
   z-index: 70;
   display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.library.open {
+  pointer-events: none;
+}
+
+.library-panel {
+  display: flex;
   flex-direction: column;
+  width: min(100%, 420px);
+  height: 100%;
+  pointer-events: auto;
   background: var(--paper);
-  animation: rise 200ms ease-out backwards;
+  border-left: 1.5px solid var(--line);
+  box-shadow: -10px 0 32px rgba(23, 33, 31, 0.12);
+  animation: library-slide 220ms ease-out backwards;
+}
+
+@keyframes library-slide {
+  from {
+    transform: translateX(100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
 }
 
 .library-head {
@@ -1201,13 +1265,14 @@ details.sources small {
   align-items: center;
   justify-content: space-between;
   padding: 16px 18px;
-  border-bottom: 1.5px solid var(--ink);
+  border-bottom: 1px solid var(--line);
   background: var(--paper-strong);
   font-family: var(--font-sans);
   font-size: 0.8rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  color: var(--ink);
 }
 
 .library-empty {
@@ -1221,14 +1286,14 @@ details.sources small {
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 14px;
-  padding: 18px;
+  gap: 12px;
+  padding: 16px;
   align-content: start;
 }
 
 @media (min-width: 620px) {
   .library-grid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
 }
 
@@ -1236,23 +1301,32 @@ details.sources small {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border: 1.5px solid var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 10px;
   background: var(--paper-strong);
   padding: 8px;
   text-align: left;
+  color: var(--ink);
   cursor: pointer;
-  transition: transform 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
 }
 
 .library-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 4px 4px 0 var(--ink);
+  border-color: color-mix(in srgb, var(--ink) 35%, var(--line));
+  background: color-mix(in srgb, var(--paper-strong) 88%, var(--signal) 12%);
+}
+
+.library-card:active {
+  transform: scale(0.99);
 }
 
 .cover-tile {
   width: 100%;
   height: auto;
   aspect-ratio: 3 / 4;
+  border-radius: 6px;
 }
 
 .cover-tile.cover-placeholder {
@@ -1261,7 +1335,10 @@ details.sources small {
 
 .library-card strong {
   overflow: hidden;
-  font-size: 0.9rem;
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1328,6 +1405,7 @@ details.sources small {
 
 .sidebar-meta strong {
   overflow: hidden;
+  color: var(--ink);
   font-size: 0.9rem;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2307,6 +2385,14 @@ details.sources small {
   background: var(--spoiler-surface);
 }
 
+:root[data-theme="dark"] .library-backdrop.open {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+:root[data-theme="dark"] .library-panel {
+  box-shadow: -10px 0 32px rgba(0, 0, 0, 0.35);
+}
+
 :root[data-theme="dark"] details.sources,
 :root[data-theme="dark"] .combo-group-label {
   background: #22282b;
@@ -2371,6 +2457,14 @@ details.sources small {
 
   :root:not([data-theme="light"]) details.spoiler-reveal {
     background: var(--spoiler-surface);
+  }
+
+  :root:not([data-theme="light"]) .library-backdrop.open {
+    background: rgba(0, 0, 0, 0.55);
+  }
+
+  :root:not([data-theme="light"]) .library-panel {
+    box-shadow: -10px 0 32px rgba(0, 0, 0, 0.35);
   }
 
   :root:not([data-theme="light"]) details.sources,

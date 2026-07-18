@@ -163,10 +163,12 @@ function coerceMessages(value: unknown): Message[] {
   });
 }
 
-function renderInline(segments: { text: string; bold: boolean }[]) {
-  return segments.map((seg, i) =>
-    seg.bold ? <strong key={i}>{seg.text}</strong> : <span key={i}>{seg.text}</span>,
-  );
+function renderInline(segments: { text: string; bold: boolean; italic: boolean }[]) {
+  return segments.map((seg, i) => {
+    if (seg.bold) return <strong key={i}>{seg.text}</strong>;
+    if (seg.italic) return <em key={i}>{seg.text}</em>;
+    return <span key={i}>{seg.text}</span>;
+  });
 }
 
 // Render the model's light markdown (paragraphs, numbered/bulleted lists, bold)
@@ -295,6 +297,38 @@ export default function Home() {
   // Path of a previously-uploaded cover that a new pick will replace, deleted once
   // the replacement is saved so the bucket doesn't keep the orphan.
   const replacedCoverRef = useRef<string | null>(null);
+
+  function pushOverlayHistory() {
+    if (typeof window === "undefined") return;
+    window.history.pushState({ gggOverlay: true }, "");
+  }
+
+  function dismissOverlay() {
+    if (typeof window === "undefined") return;
+    window.history.back();
+  }
+
+  useEffect(() => {
+    function onPopState() {
+      if (steamLibraryOpen) {
+        setSteamLibraryOpen(false);
+        return;
+      }
+      if (libraryOpen) {
+        setLibraryOpen(false);
+        return;
+      }
+      if (sidebarOpen) {
+        setSidebarOpen(false);
+        return;
+      }
+      if (authOpen) {
+        setAuthOpen(false);
+      }
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [authOpen, libraryOpen, sidebarOpen, steamLibraryOpen]);
 
   const supabaseReady = Boolean(getSupabase());
   // Cover art (TheGamesDB display + device upload) is a signed-in-only feature:
@@ -694,20 +728,23 @@ export default function Home() {
 
   function openFromLibrary(chat: Chat) {
     openChat(chat);
-    setLibraryOpen(false);
+    if (libraryOpen) dismissOverlay();
+    else setLibraryOpen(false);
   }
 
   function connectSteam() {
     if (!user) {
       setError("Sign in first, then connect Steam.");
       setAuthOpen(true);
+      pushOverlayHistory();
       return;
     }
     window.location.href = "/api/steam/login";
   }
 
   function startFromSteamGame(game: SteamGame) {
-    setSteamLibraryOpen(false);
+    if (steamLibraryOpen) dismissOverlay();
+    else setSteamLibraryOpen(false);
     setSidebarOpen(false);
     setLibraryOpen(false);
 
@@ -1021,7 +1058,10 @@ export default function Home() {
               className="burger"
               aria-label="Open your games"
               aria-expanded={sidebarOpen}
-              onClick={() => setSidebarOpen(true)}
+              onClick={() => {
+                setSidebarOpen(true);
+                pushOverlayHistory();
+              }}
             >
               <span aria-hidden="true" />
               <span aria-hidden="true" />
@@ -1045,7 +1085,10 @@ export default function Home() {
             <button
               type="button"
               className="nav-button"
-              onClick={() => setAuthOpen(true)}
+              onClick={() => {
+                setAuthOpen(true);
+                pushOverlayHistory();
+              }}
             >
               Sign in
             </button>
@@ -1065,6 +1108,7 @@ export default function Home() {
             onClick={() => {
               setSidebarOpen(false);
               setMenuOpenId(null);
+              dismissOverlay();
             }}
             aria-hidden="true"
           />
@@ -1079,7 +1123,10 @@ export default function Home() {
                 type="button"
                 className="sidebar-close"
                 aria-label="Close sidebar"
-                onClick={() => setSidebarOpen(false)}
+                onClick={() => {
+                  setSidebarOpen(false);
+                  dismissOverlay();
+                }}
               >
                 ×
               </button>
@@ -1095,6 +1142,7 @@ export default function Home() {
                   setSidebarOpen(false);
                   setMenuOpenId(null);
                   setLibraryOpen(true);
+                  pushOverlayHistory();
                 }}
               >
                 ▦ Saved library
@@ -1112,6 +1160,7 @@ export default function Home() {
                     setSidebarOpen(false);
                     setMenuOpenId(null);
                     setSteamLibraryOpen(true);
+                    pushOverlayHistory();
                   }}
                 >
                   ⎆ Steam library
@@ -1182,50 +1231,60 @@ export default function Home() {
           </aside>
 
           {libraryOpen && (
-            <div className="library" role="dialog" aria-label="Saved library">
-              <div className="library-head">
-                <span>Saved library</span>
-                <button
-                  type="button"
-                  className="sidebar-close"
-                  aria-label="Close library"
-                  onClick={() => setLibraryOpen(false)}
-                >
-                  ×
-                </button>
-              </div>
-              {chats.length === 0 ? (
-                <p className="library-empty">No saved games yet.</p>
-              ) : (
-                <div className="library-grid">
-                  {chats.map((chat) => (
+            <>
+              <button
+                type="button"
+                className="library-backdrop open"
+                aria-label="Close library"
+                onClick={dismissOverlay}
+              />
+              <div className="library open" role="dialog" aria-label="Saved library">
+                <div className="library-panel">
+                  <div className="library-head">
+                    <span>Saved library</span>
                     <button
-                      key={chat.id}
                       type="button"
-                      className="library-card"
-                      onClick={() => openFromLibrary(chat)}
+                      className="sidebar-close"
+                      aria-label="Close library"
+                      onClick={dismissOverlay}
                     >
-                      <CoverThumb
-                        cover={chat.cover_url ?? ""}
-                        name={chat.game}
-                        className="cover-tile"
-                      />
-                      <strong>{chat.game || "Untitled game"}</strong>
-                      {(chat.platform || chat.release_year) && (
-                        <small>
-                          {[chat.platform, chat.release_year].filter(Boolean).join(" · ")}
-                        </small>
-                      )}
+                      ×
                     </button>
-                  ))}
+                  </div>
+                  {chats.length === 0 ? (
+                    <p className="library-empty">No saved games yet.</p>
+                  ) : (
+                    <div className="library-grid">
+                      {chats.map((chat) => (
+                        <button
+                          key={chat.id}
+                          type="button"
+                          className="library-card"
+                          onClick={() => openFromLibrary(chat)}
+                        >
+                          <CoverThumb
+                            cover={chat.cover_url ?? ""}
+                            name={chat.game}
+                            className="cover-tile"
+                          />
+                          <strong>{chat.game || "Untitled game"}</strong>
+                          {(chat.platform || chat.release_year) && (
+                            <small>
+                              {[chat.platform, chat.release_year].filter(Boolean).join(" · ")}
+                            </small>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            </>
           )}
 
           <SteamLibrary
             open={steamLibraryOpen}
-            onClose={() => setSteamLibraryOpen(false)}
+            onClose={dismissOverlay}
             onPick={startFromSteamGame}
           />
         </>
@@ -1511,7 +1570,7 @@ export default function Home() {
                           <span className="spoiler-reveal-tag">Major spoiler</span>
                           {item.title || "Tap to reveal"}
                         </summary>
-                        <p>{item.detail}</p>
+                        <AnswerBody text={item.detail} />
                       </details>
                     ))}
                   </div>
@@ -1713,7 +1772,7 @@ export default function Home() {
         Guides are summarized by AI. Check the sources for version-specific details.
       </p>
 
-      {authOpen && <AuthPanel onClose={() => setAuthOpen(false)} />}
+      {authOpen && <AuthPanel onClose={dismissOverlay} />}
     </main>
   );
 }

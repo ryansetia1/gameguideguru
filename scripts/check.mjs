@@ -271,9 +271,18 @@ assert.deepEqual(
 
 // Markdown: bold segments, numbered lists, and paragraphs render as blocks.
 assert.deepEqual(parseInline("go **north** now"), [
-  { text: "go ", bold: false },
-  { text: "north", bold: true },
-  { text: " now", bold: false },
+  { text: "go ", bold: false, italic: false },
+  { text: "north", bold: true, italic: false },
+  { text: " now", bold: false, italic: false },
+]);
+assert.deepEqual(parseInline("late *game* tips"), [
+  { text: "late ", bold: false, italic: false },
+  { text: "game", bold: false, italic: true },
+  { text: " tips", bold: false, italic: false },
+]);
+
+assert.deepEqual(coerceSpoilers([{ detail: "Line one.\n\n1. **Step**" }]), [
+  { detail: "Line one.\n\n1. **Step**" },
 ]);
 
 const blocks = parseBlocks(

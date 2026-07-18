@@ -103,42 +103,52 @@ export function SteamLibrary({ open, onClose, onPick }: Props) {
   if (!open) return null;
 
   return (
-    <div className="library" role="dialog" aria-label="Steam library">
-      <div className="library-head">
-        <span>Steam library</span>
-        <button type="button" className="sidebar-close" aria-label="Close" onClick={onClose}>
-          ×
-        </button>
-      </div>
-      {loading ? (
-        <p className="library-empty">Loading your Steam games…</p>
-      ) : error && games.length === 0 ? (
-        <p className="library-empty">{error}</p>
-      ) : (
-        <div className="library-grid">
-          {games.map((game) => (
-            <button
-              key={game.appId}
-              type="button"
-              className="library-card"
-              onClick={() => onPick(game)}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                className="cover-tile"
-                src={game.cover}
-                alt=""
-                loading="lazy"
-                onError={(event) => {
-                  event.currentTarget.style.visibility = "hidden";
-                }}
-              />
-              <strong>{game.name}</strong>
-              {game.playtimeMinutes > 0 && <small>{formatPlaytime(game.playtimeMinutes)}</small>}
+    <>
+      <button
+        type="button"
+        className="library-backdrop open"
+        aria-label="Close Steam library"
+        onClick={onClose}
+      />
+      <div className="library open" role="dialog" aria-label="Steam library">
+        <div className="library-panel">
+          <div className="library-head">
+            <span>Steam library</span>
+            <button type="button" className="sidebar-close" aria-label="Close" onClick={onClose}>
+              ×
             </button>
-          ))}
+          </div>
+          {loading ? (
+            <p className="library-empty">Loading your Steam games…</p>
+          ) : error && games.length === 0 ? (
+            <p className="library-empty">{error}</p>
+          ) : (
+            <div className="library-grid">
+              {games.map((game) => (
+                <button
+                  key={game.appId}
+                  type="button"
+                  className="library-card"
+                  onClick={() => onPick(game)}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    className="cover-tile"
+                    src={game.cover}
+                    alt=""
+                    loading="lazy"
+                    onError={(event) => {
+                      event.currentTarget.style.visibility = "hidden";
+                    }}
+                  />
+                  <strong>{game.name}</strong>
+                  {game.playtimeMinutes > 0 && <small>{formatPlaytime(game.playtimeMinutes)}</small>}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    </>
   );
 }
