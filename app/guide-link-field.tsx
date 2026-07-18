@@ -163,14 +163,27 @@ export function GuideLinkField({ value, onChange, game, platform, disabled, onGu
             />
             {canSearch && (
               <button type="submit" className="nav-button" disabled={disabled || searching}>
-                {searching ? "Searching…" : "Search"}
+                {searching ? (
+                  <span className="guide-search-busy">
+                    <span className="guide-search-spinner loader" aria-hidden="true" />
+                    Searching…
+                  </span>
+                ) : (
+                  "Search"
+                )}
               </button>
             )}
           </form>
           {canSearch && (
-            <p className="field-hint">
-              Searching walkthrough sites for “{trimmedGame}”
-              {platform ? ` on ${platform}` : ""}.
+            <p className="field-hint guide-search-status" aria-live="polite">
+              {searching && (
+                <span className="guide-search-spinner loader" aria-hidden="true" />
+              )}
+              <span>
+                Searching walkthrough sites for “{trimmedGame}”
+                {platform ? ` on ${platform}` : ""}
+                {searching ? "…" : "."}
+              </span>
             </p>
           )}
           {searchError && canSearch && <p className="guide-search-error">{searchError}</p>}

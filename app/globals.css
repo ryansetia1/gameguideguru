@@ -2608,6 +2608,20 @@ details.sources small {
   white-space: nowrap;
 }
 
+.guide-search-busy,
+.guide-search-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.guide-search-spinner {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
 .guide-search-error {
   margin: 0;
   color: #b42318;
