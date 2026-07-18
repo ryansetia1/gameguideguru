@@ -1064,6 +1064,15 @@ details.sources small {
   padding: 10px;
 }
 
+/* Wraps the textarea so the voice visualizer can overlay it exactly, regardless
+   of the composer button widths. */
+.composer-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
 .composer textarea {
   flex: 1;
   min-height: 42px;
@@ -1076,6 +1085,31 @@ details.sources small {
   padding: 9px 12px;
   font-size: 1rem;
   line-height: 1.5;
+}
+
+/* Live mic visualizer: covers the textarea and replaces the placeholder while
+   recording. Bars are driven by real audio (transform: scaleY) in voice-visualizer.tsx. */
+.voice-visualizer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 12px;
+  background: var(--paper-strong);
+  pointer-events: none;
+}
+
+.voice-visualizer span {
+  flex: none;
+  width: 3px;
+  height: 26px;
+  border-radius: 2px;
+  background: var(--signal);
+  transform: scaleY(0.1);
+  transform-origin: center;
+  will-change: transform;
 }
 
 .composer textarea:focus {

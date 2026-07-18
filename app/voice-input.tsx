@@ -16,6 +16,8 @@ type Props = {
   user: User | null;
   disabled?: boolean;
   onTranscript: (text: string) => void;
+  /** Fires when recording starts/stops so the composer can show the visualizer. */
+  onListeningChange?: (listening: boolean) => void;
 };
 
 async function persistVoiceLangForUser(code: string) {
@@ -40,13 +42,17 @@ async function persistVoiceLangForUser(code: string) {
  * across devices — iOS Safari drops interim results. Upgrade to live interim
  * later by flipping interimResults/continuous and streaming onresult chunks.
  */
-export function VoiceInput({ user, disabled, onTranscript }: Props) {
+export function VoiceInput({ user, disabled, onTranscript, onListeningChange }: Props) {
   const [supported, setSupported] = useState(false);
   const [lang, setLang] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [listening, setListening] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    onListeningChange?.(listening);
+  }, [listening, onListeningChange]);
 
   // Detect after mount to avoid an SSR/client hydration mismatch.
   useEffect(() => {

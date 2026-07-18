@@ -10,6 +10,7 @@ import { PlatformSelect } from "./platform-select";
 import { SteamLibrary, type SteamGame } from "./steam-library";
 import { ProfileMenu } from "./profile-menu";
 import { VoiceInput } from "./voice-input";
+import { VoiceVisualizer } from "./voice-visualizer";
 import {
   KINDS,
   KIND_LABELS,
@@ -360,6 +361,7 @@ export default function Home() {
   const [gameSpoilerMajor, setGameSpoilerMajor] = useState(false);
   const spoilerPrefs = effectiveSpoilerPrefs(globalSpoilerMajor, gameSpoilerMajor);
   const [attachOpen, setAttachOpen] = useState(false);
+  const [voiceListening, setVoiceListening] = useState(false);
   const [librarySearch, setLibrarySearch] = useState("");
   const [confirmState, setConfirmState] = useState<{
     message: string;
@@ -2146,24 +2148,29 @@ export default function Home() {
           </div>
         )}
         <div className="composer-inner">
-          <textarea
-            ref={composerRef}
-            id="query"
-            name="query"
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
+          <div className="composer-field">
+            <textarea
+              ref={composerRef}
+              id="query"
+              name="query"
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }
+              }}
+              placeholder={
+                voiceListening ? "" : started ? "Ask a follow-up..." : "Where are you stuck?"
               }
-            }}
-            placeholder={started ? "Ask a follow-up..." : "Where are you stuck?"}
-            rows={1}
-            maxLength={300}
-            required
-            disabled={loading}
-          />
+              rows={1}
+              maxLength={300}
+              required
+              disabled={loading}
+            />
+            <VoiceVisualizer active={voiceListening} />
+          </div>
           {coverEnabled && (
             <div className="composer-attach-wrap" ref={attachRef}>
               <button
@@ -2231,6 +2238,7 @@ export default function Home() {
           <VoiceInput
             user={user}
             disabled={loading}
+            onListeningChange={setVoiceListening}
             onTranscript={(text) =>
               setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))
             }
