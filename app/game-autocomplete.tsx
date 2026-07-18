@@ -2,15 +2,89 @@
 
 import { useEffect, useRef, useState } from "react";
 
-type Game = { id: number; name: string; year: string };
+import { tgdbPlatformToLabel } from "@/lib/platforms.js";
+
+type Game = { id: number; name: string; year: string; cover: string; platform: string };
+
+// Best-effort client cache of autocomplete results (24h) so repeat lookups don't
+// spend TheGamesDB's monthly quota. In-memory Map mirrored to localStorage; any
+// failure just falls through to the network. Only successful (available) results
+// are cached, so a missing/broken key retries once fixed.
+const CACHE_KEY = "gg:games-cache";
+const CACHE_TTL = 24 * 60 * 60 * 1000;
+const CACHE_MAX = 200;
+
+type CacheEntry = { games: Game[]; available: boolean; ts: number };
+
+const memCache = new Map<string, CacheEntry>();
+let cacheLoaded = false;
+
+function loadCache() {
+  if (cacheLoaded || typeof window === "undefined") return;
+  cacheLoaded = true;
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(CACHE_KEY) || "{}");
+    for (const [key, value] of Object.entries(raw)) {
+      memCache.set(key, value as CacheEntry);
+    }
+  } catch {
+    // ignore corrupt cache
+  }
+}
+
+function readCache(key: string): CacheEntry | null {
+  loadCache();
+  const hit = memCache.get(key);
+  return hit && Date.now() - hit.ts < CACHE_TTL ? hit : null;
+}
+
+function writeCache(key: string, entry: CacheEntry) {
+  memCache.set(key, entry);
+  if (typeof window === "undefined") return;
+  try {
+    if (memCache.size > CACHE_MAX) {
+      const excess = [...memCache.entries()]
+        .sort((a, b) => a[1].ts - b[1].ts)
+        .slice(0, memCache.size - CACHE_MAX);
+      for (const [old] of excess) memCache.delete(old);
+    }
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify(Object.fromEntries(memCache)));
+  } catch {
+    // over quota / disabled storage — keep the in-memory copy only
+  }
+}
+
+// Group results by their (mapped) platform label so a multi-console game lists
+// one row per console under a header. Preserves first-seen order.
+function groupByPlatform(results: Game[]) {
+  const order: string[] = [];
+  const groups = new Map<string, { game: Game; index: number }[]>();
+  results.forEach((game, index) => {
+    const label = tgdbPlatformToLabel(game.platform) || game.platform || "Other";
+    if (!groups.has(label)) {
+      groups.set(label, []);
+      order.push(label);
+    }
+    groups.get(label)!.push({ game, index });
+  });
+  return order.map((label) => ({ label, items: groups.get(label)! }));
+}
 
 type Props = {
   value: string;
   onChange: (value: string) => void;
+  onPick?: (game: { name: string; year: string; cover: string; platform: string }) => void;
+  showCover?: boolean;
   disabled?: boolean;
 };
 
-export function GameAutocomplete({ value, onChange, disabled }: Props) {
+export function GameAutocomplete({
+  value,
+  onChange,
+  onPick,
+  showCover = true,
+  disabled,
+}: Props) {
   const [results, setResults] = useState<Game[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -28,6 +102,17 @@ export function GameAutocomplete({ value, onChange, disabled }: Props) {
     if (query.length < 2) {
       setResults([]);
       setOpen(false);
+      return;
+    }
+
+    // Serve repeat lookups from the client cache (no API call, saves quota).
+    const cacheKey = query.toLowerCase();
+    const cached = readCache(cacheKey);
+    if (cached) {
+      setResults(cached.games);
+      setActive(-1);
+      setOpen(cached.available);
+      setLoading(false);
       return;
     }
 
@@ -53,6 +138,8 @@ export function GameAutocomplete({ value, onChange, disabled }: Props) {
         setResults(games);
         setActive(-1);
         setOpen(available);
+        // Only cache real results so a missing/broken key retries once fixed.
+        if (available) writeCache(cacheKey, { games, available, ts: Date.now() });
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           setResults([]);
@@ -81,6 +168,12 @@ export function GameAutocomplete({ value, onChange, disabled }: Props) {
   function pick(game: Game) {
     justPicked.current = true;
     onChange(game.name);
+    onPick?.({
+      name: game.name,
+      year: game.year,
+      cover: game.cover,
+      platform: game.platform,
+    });
     setResults([]);
     setOpen(false);
   }
@@ -104,6 +197,8 @@ export function GameAutocomplete({ value, onChange, disabled }: Props) {
   }
 
   const showPanel = open && value.trim().length >= 2;
+  const grouped = groupByPlatform(results);
+  const showGroupHeaders = grouped.length > 1;
 
   return (
     <div className="combo" ref={rootRef}>
@@ -134,22 +229,41 @@ export function GameAutocomplete({ value, onChange, disabled }: Props) {
             {!loading && results.length === 0 && (
               <li className="combo-empty">No matching games</li>
             )}
-            {results.map((game, index) => (
-              <li
-                key={game.id}
-                role="option"
-                aria-selected={index === active}
-                className={`combo-option${index === active ? " active" : ""}`}
-                onMouseEnter={() => setActive(index)}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  pick(game);
-                }}
-              >
-                {game.name}
-                {game.year && <span className="combo-year"> ({game.year})</span>}
-              </li>
-            ))}
+            {grouped.flatMap((group) => {
+              const header = showGroupHeaders ? (
+                <li key={`h-${group.label}`} className="combo-group-label" role="presentation">
+                  {group.label}
+                </li>
+              ) : null;
+              return [
+                header,
+                ...group.items.map(({ game, index }) => (
+                  <li
+                    key={game.id}
+                    role="option"
+                    aria-selected={index === active}
+                    className={`combo-option${index === active ? " active" : ""}`}
+                    onMouseEnter={() => setActive(index)}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      pick(game);
+                    }}
+                  >
+                    {showCover &&
+                      (game.cover ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img className="combo-cover" src={game.cover} alt="" loading="lazy" />
+                      ) : (
+                        <span className="combo-cover combo-cover-empty" aria-hidden="true" />
+                      ))}
+                    <span className="combo-name">
+                      {game.name}
+                      {game.year && <span className="combo-year"> ({game.year})</span>}
+                    </span>
+                  </li>
+                )),
+              ];
+            })}
           </ul>
         </div>
       )}

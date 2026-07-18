@@ -1,6 +1,7 @@
 import Replicate from "replicate";
 
 import { parseSummary } from "@/lib/highlights.js";
+import { logLlmCall } from "@/lib/llm-log";
 import {
   REWRITE_INSTRUCTION,
   SYSTEM_INSTRUCTION,
@@ -58,9 +59,10 @@ export async function resolveQuestion(input: {
 
   try {
     const replicate = new Replicate({ auth: token });
+    const prompt = buildRewritePrompt(input);
     const output: unknown = await replicate.run(model, {
       input: {
-        prompt: buildRewritePrompt(input),
+        prompt,
         system_instruction: REWRITE_INSTRUCTION,
         temperature: 0.2,
         // The query is short, but Flash needs token headroom even with thinking
@@ -71,7 +73,15 @@ export async function resolveQuestion(input: {
       signal: AbortSignal.timeout(15_000),
     });
 
-    const rewritten = readText(output)
+    const rawOutput = readText(output);
+    logLlmCall({
+      kind: "rewrite",
+      model,
+      system: REWRITE_INSTRUCTION,
+      prompt,
+      response: rawOutput,
+    });
+    const rewritten = rawOutput
       .replace(/\s+/g, " ")
       .replace(/^["']|["']$/g, "")
       .trim()
@@ -89,6 +99,7 @@ export type SummarizeInput = {
   question: string;
   sources: SearchResult[];
   history?: Turn[];
+  images?: string[];
 };
 
 export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
@@ -102,12 +113,16 @@ export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
     throw new Error("REPLICATE_MODEL must use owner/name format");
   }
 
+  const images = (input.images ?? []).filter((url) => typeof url === "string" && url);
   const replicate = new Replicate({ auth: token });
+  const prompt = buildPrompt({ ...input, imageCount: images.length });
   const output: unknown = await replicate.run(model, {
     input: {
-      prompt: buildPrompt(input),
+      prompt,
       // Gemini on Replicate: keep the persona/rules out of the prompt field.
       system_instruction: SYSTEM_INSTRUCTION,
+      // Attached screenshots/photos as visual context (Gemini multimodal input).
+      ...(images.length ? { images } : {}),
       temperature: 0.35,
       // Even with thinking_budget: 0, Flash on Replicate spends ~1k tokens of
       // reasoning overhead that counts against this cap, so it must stay
@@ -121,7 +136,15 @@ export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
     signal: AbortSignal.timeout(50_000),
   });
 
-  const parsed = parseSummary(readText(output).trim());
+  const rawOutput = readText(output).trim();
+  logLlmCall({
+    kind: "summarize",
+    model,
+    system: SYSTEM_INSTRUCTION,
+    prompt,
+    response: rawOutput,
+  });
+  const parsed = parseSummary(rawOutput);
   if (!parsed.answer) {
     throw new Error("Replicate returned an empty response");
   }

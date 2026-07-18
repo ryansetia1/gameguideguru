@@ -77,15 +77,10 @@ main {
 }
 
 .brand-mark {
-  display: grid;
-  width: 29px;
-  height: 29px;
-  place-items: center;
-  border: 1.5px solid var(--ink);
-  background: var(--signal);
-  font-family: Georgia, serif;
-  font-size: 0.82rem;
-  transform: rotate(-4deg);
+  display: block;
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
 }
 
 .live-badge {
@@ -1017,6 +1012,112 @@ details.sources small {
   font-size: 0.82rem;
 }
 
+.sidebar-library-btn {
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-strong);
+  color: var(--ink);
+  padding: 13px 14px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-library-btn:hover {
+  background: var(--signal);
+  color: #17211f;
+}
+
+/* Library: full-screen cover-art grid */
+.library {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  animation: rise 200ms ease-out backwards;
+}
+
+.library-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.library-empty {
+  margin: 0;
+  padding: 24px 18px;
+  color: var(--muted);
+}
+
+.library-grid {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  padding: 18px;
+  align-content: start;
+}
+
+@media (min-width: 620px) {
+  .library-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+}
+
+.library-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  padding: 8px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+
+.library-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.cover-tile {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 4;
+}
+
+.cover-tile.cover-placeholder {
+  font-size: 3rem;
+}
+
+.library-card strong {
+  overflow: hidden;
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-card small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
 .sidebar-list {
   margin: 0;
   padding: 0;
@@ -1040,12 +1141,13 @@ details.sources small {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
   border: none;
   background: transparent;
   color: var(--ink);
-  padding: 14px 12px 14px 14px;
+  padding: 10px 12px 10px 14px;
   text-align: left;
   cursor: pointer;
 }
@@ -1054,14 +1156,31 @@ details.sources small {
   background: #eeede6;
 }
 
-.sidebar-open strong {
+.cover-sm {
+  width: 34px;
+  height: 45px;
+  border-width: 1px;
+}
+
+.cover-sm.cover-placeholder {
+  font-size: 1.1rem;
+}
+
+.sidebar-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sidebar-meta strong {
   overflow: hidden;
   font-size: 0.9rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sidebar-open small {
+.sidebar-meta small {
   color: var(--muted);
   font-size: 0.7rem;
 }
@@ -1099,18 +1218,32 @@ details.sources small {
   animation: rise 140ms ease-out backwards;
 }
 
-.row-menu-delete {
+.row-menu-item {
   display: block;
+  width: 100%;
   border: none;
   background: transparent;
-  color: var(--danger);
+  color: var(--ink);
   padding: 11px 18px;
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 0.64rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  text-align: left;
   cursor: pointer;
+}
+
+.row-menu-item:hover {
+  background: #eeede6;
+}
+
+.row-menu-item + .row-menu-item {
+  border-top: 1px solid var(--line);
+}
+
+.row-menu-delete {
+  color: var(--danger);
 }
 
 .row-menu-delete:hover {
@@ -1120,6 +1253,313 @@ details.sources small {
 /* Preferred-guide field spans the full setup width */
 .field-wide {
   grid-column: 1 / -1;
+}
+
+/* --- Game cover + metadata card, editable setup, sticky header --- */
+
+/* Autocomplete option now carries a box-art thumbnail. */
+.combo-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.combo-cover {
+  flex-shrink: 0;
+  width: 28px;
+  height: 37px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: var(--paper-strong);
+}
+
+.combo-cover-empty {
+  background: var(--paper-strong);
+}
+
+.combo-name {
+  min-width: 0;
+}
+
+.combo-group-label {
+  padding: 9px 13px;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  background: #f1efe6;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.combo-group-label:first-child {
+  border-top: none;
+}
+
+/* Breathing room between an option and the next group's header. */
+.combo-option + .combo-group-label {
+  margin-top: 4px;
+}
+
+.cover-pending {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-style: italic;
+}
+
+/* Attached images on a user bubble */
+.msg-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.msg-image {
+  width: 84px;
+  height: 84px;
+  object-fit: cover;
+  border: 1.5px solid var(--ink);
+  display: block;
+}
+
+/* Composer attach/camera buttons + pending previews */
+.composer-attach {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 50px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.composer-attach:hover {
+  background: var(--signal);
+}
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.attachment-thumb {
+  position: relative;
+  width: 60px;
+  height: 60px;
+}
+
+.attachment-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 1.5px solid var(--ink);
+  display: block;
+}
+
+.attachment-thumb button {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--paper-strong);
+  color: var(--ink);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* Shared cover element (box art or letter tile). */
+.cover {
+  display: block;
+  flex-shrink: 0;
+  object-fit: cover;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+}
+
+.cover-placeholder {
+  display: grid;
+  place-items: center;
+  font-family: Georgia, serif;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--signal);
+}
+
+.cover-lg {
+  width: 84px;
+  height: 112px;
+}
+
+.cover-md {
+  width: 66px;
+  height: 88px;
+}
+
+.cover-mini {
+  width: 30px;
+  height: 40px;
+  border-width: 1px;
+}
+
+.cover-lg.cover-placeholder {
+  font-size: 2.4rem;
+}
+
+.cover-md.cover-placeholder {
+  font-size: 1.9rem;
+}
+
+.cover-mini.cover-placeholder {
+  font-size: 1rem;
+}
+
+/* Read-only game card shown once a chat has started. */
+.game-card {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-top: 30px;
+  padding: 16px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  animation: rise 480ms 60ms ease-out backwards;
+}
+
+.game-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.game-card-meta h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  overflow-wrap: anywhere;
+}
+
+.game-card-meta p {
+  margin: 0;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.game-card-link {
+  font-size: 0.82rem;
+  color: var(--signal-dark);
+  overflow-wrap: anywhere;
+}
+
+.game-card-hint {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+/* Cover field in the editable setup. */
+.cover-edit {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.cover-edit-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.cover-upload {
+  display: inline-block;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  padding: 8px 12px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.cover-upload:hover {
+  background: var(--signal);
+}
+
+.cover-clear {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.setup-done {
+  align-items: flex-start;
+}
+
+/* Compact sticky header once the card scrolls away. */
+.sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  box-shadow: 0 4px 0 rgba(23, 33, 31, 0.1);
+  animation: rise 200ms ease-out backwards;
+}
+
+.sticky-back {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sticky-back:hover {
+  background: var(--signal);
+}
+
+.sticky-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sticky-meta strong {
+  overflow: hidden;
+  font-size: 0.92rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sticky-meta small {
+  color: var(--muted);
+  font-size: 0.68rem;
 }
 
 /* Examples header + dismiss */
@@ -1382,5 +1822,85 @@ details.sources small {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+/* --- System-default dark mode (no toggle; follows prefers-color-scheme) --- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #14181a;
+    --paper-strong: #1d2225;
+    --ink: #e9ece7;
+    --muted: #98a09b;
+    --line: #333b38;
+    --signal-dark: #c2ef5a;
+    --danger: #e0685c;
+  }
+
+  body {
+    background:
+      linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+      var(--paper);
+    background-size: 24px 24px;
+  }
+
+  /* The lime accent stays light in both themes, so text on it must stay dark. */
+  .brand-mark,
+  .combo-option.active,
+  .turn.user,
+  .turn.user p,
+  .turn-action:hover:not(:disabled),
+  .submit,
+  .nav-button:hover,
+  .sidebar-new,
+  .cover-placeholder,
+  .cover-upload:hover,
+  .sticky-back:hover,
+  .auth-google:hover:not(:disabled),
+  .auth-submit {
+    color: #17211f;
+  }
+
+  .burger:hover span {
+    background: #17211f;
+  }
+
+  /* Hardcoded light surfaces -> dark equivalents. */
+  .highlights {
+    background: #1f2528;
+  }
+
+  details.sources,
+  .combo-group-label {
+    background: #22282b;
+  }
+
+  .sidebar-row.active,
+  .sidebar-open:hover,
+  .kebab:hover,
+  .row-menu-item:hover {
+    background: #262c2f;
+  }
+
+  .row-menu-delete:hover {
+    background: #3a2622;
+  }
+
+  .combo-search {
+    background: #23292c;
+  }
+
+  .combo-search:focus {
+    background: #2a3134;
+  }
+
+  .combo-search::placeholder {
+    color: var(--muted);
+  }
+
+  .submit:disabled {
+    background: #2a2f31;
+    color: #6b736e;
   }
 }

@@ -134,6 +134,18 @@ async function runSearch(
   });
 }
 
+// WordPress-style listing/hub paths that only carry teasers + "Read more" links,
+// not the actual walkthrough text. ponytail: path-pattern heuristic, not a content
+// check; extend the list if a site uses other archive prefixes.
+function looksLikeIndex(rawUrl: string): boolean {
+  try {
+    const path = new URL(rawUrl).pathname;
+    return /\/(category|categories|tag|tags|author|archives?|page)\//i.test(path);
+  } catch {
+    return false;
+  }
+}
+
 // Pull the full content of the user's preferred guide page directly. Returns a
 // single source or null (bad URL, unreachable page, or too little text). The
 // user explicitly trusts this page, so callers use it without a confidence gate.
@@ -186,19 +198,16 @@ async function extractPreferred(
 }
 
 /**
- * Find supporting web sources for a query. When `preferredUrl` is set, cascade:
- * (1) site-search the host for this question and extract the top section page,
- * else (2) return site-search snippets, else (3) extract the exact pasted URL,
- * else (4) fall back to the normal tiered search. Steps 1-3 return sources
- * solely from the preferred site; step 4 uses the usual mix.
+ * Tavily implementation. When `preferredUrl` is set, cascade: (1) site-search the
+ * host and extract the top section page, else (2) site-search snippets, else (3)
+ * extract the exact pasted URL, else (4) the normal tiered search. Throws when
+ * every Tavily call fails (e.g. quota/outage) so the caller can fall back.
  */
-export async function searchGuides(
+async function searchTavily(
+  apiKey: string,
   query: string,
   preferredUrl?: string,
 ): Promise<SearchResult[]> {
-  const apiKey = process.env.TAVILY_API_KEY;
-  if (!apiKey) throw new Error("TAVILY_API_KEY is not configured");
-
   const preferred = (preferredUrl ?? "").trim();
   if (preferred) {
     let host = "";
@@ -223,16 +232,21 @@ export async function searchGuides(
       const ranked = domainResults
         .slice()
         .sort((a, b) => b.score - a.score);
-      if (ranked.length) {
+      // Prefer real article pages over listing/hub pages (a pasted /category/...
+      // hub only has teasers; the actual walkthrough lives on a linked article),
+      // so we drill to the section page instead of extracting the index.
+      const articles = ranked.filter((result) => !looksLikeIndex(result.url));
+      const picks = articles.length ? articles : ranked;
+      if (picks.length) {
         try {
-          const deep = await extractPreferred(apiKey, ranked[0].url, query);
+          const deep = await extractPreferred(apiKey, picks[0].url, query);
           if (deep) {
-            return [{ ...deep, title: ranked[0].title || deep.title }];
+            return [{ ...deep, title: picks[0].title || deep.title }];
           }
         } catch {
           // ponytail: extract failures fall back to site-search snippets.
         }
-        return ranked.slice(0, 3);
+        return picks.slice(0, 3);
       }
     }
 
@@ -248,13 +262,17 @@ export async function searchGuides(
   // 3. Normal tiered search.
   const seen = new Set<string>();
   const collected: SearchResult[] = [];
+  let attempts = 0;
+  let failures = 0;
 
   for (const includeDomains of TIERS) {
     let tier: SearchResult[] = [];
+    attempts += 1;
     try {
       tier = await runSearch(apiKey, query, includeDomains);
     } catch {
       // ponytail: per-tier failures are non-fatal; search is supporting evidence.
+      failures += 1;
       continue;
     }
 
@@ -272,7 +290,119 @@ export async function searchGuides(
     if (collected.length >= MIN_RESULTS) break;
   }
 
+  // Every Tavily call failed (quota/outage) — signal the caller to try a fallback
+  // instead of masking it as "no relevant results".
+  if (attempts > 0 && failures === attempts) {
+    throw new Error("All Tavily searches failed");
+  }
+
   // Confidence gate + trim: returns [] when nothing is clearly relevant, so the
   // model answers from its own knowledge instead of a weak snippet.
   return selectSources(collected);
+}
+
+const SERPER_URL = "https://google.serper.dev/search";
+
+// Map Serper "organic" results into our SearchResult shape (snippet-only; Serper
+// has no page extraction). Score is a synthetic rank so downstream trimming works.
+function mapSerper(payload: unknown): SearchResult[] {
+  const organic =
+    payload && typeof payload === "object" && "organic" in payload
+      ? (payload.organic as unknown)
+      : null;
+  if (!Array.isArray(organic)) return [];
+
+  return organic.flatMap((item, index): SearchResult[] => {
+    if (
+      !item ||
+      typeof item !== "object" ||
+      typeof (item as { link?: unknown }).link !== "string" ||
+      typeof (item as { title?: unknown }).title !== "string"
+    ) {
+      return [];
+    }
+    const rawSnippet = (item as { snippet?: unknown }).snippet;
+    try {
+      const url = new URL((item as { link: string }).link);
+      if (url.protocol !== "http:" && url.protocol !== "https:") return [];
+      if (EXCLUDE_DOMAINS.some((domain) => url.hostname.endsWith(domain))) return [];
+      const content = cleanSnippet(typeof rawSnippet === "string" ? rawSnippet : "").slice(
+        0,
+        CONTENT_CAP,
+      );
+      if (content.length < MIN_CONTENT) return [];
+      return [
+        {
+          title: cleanSnippet((item as { title: string }).title) || url.hostname,
+          url: url.toString(),
+          content,
+          score: Math.max(0.5, 1 - index * 0.05),
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+}
+
+async function serperQuery(apiKey: string, q: string): Promise<SearchResult[]> {
+  const response = await fetch(SERPER_URL, {
+    method: "POST",
+    headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ q, num: 10 }),
+    signal: AbortSignal.timeout(12_000),
+  });
+  if (!response.ok) throw new Error(`Serper search failed with status ${response.status}`);
+  return mapSerper(await response.json());
+}
+
+/**
+ * Serper.dev fallback used when Tavily is unavailable. Snippet-only (no page
+ * extraction): a preferred host becomes a `site:` filter, otherwise one general
+ * query (the query already carries "walkthrough guide"). Trimmed to the top 3.
+ */
+async function searchSerper(
+  apiKey: string,
+  query: string,
+  preferredUrl?: string,
+): Promise<SearchResult[]> {
+  let host = "";
+  try {
+    if (preferredUrl) host = new URL(preferredUrl).hostname.replace(/^www\./, "");
+  } catch {
+    host = "";
+  }
+
+  if (host) {
+    const scoped = await serperQuery(apiKey, `site:${host} ${query}`);
+    if (scoped.length) return scoped.slice(0, 3);
+  }
+  return (await serperQuery(apiKey, query)).slice(0, 3);
+}
+
+/**
+ * Find supporting web sources for a query. Uses Tavily first; if Tavily is
+ * unconfigured or every call fails (quota/outage), falls back to Serper.dev when
+ * `SERPER_API_KEY` is set. Returns [] when nothing relevant; throws only when no
+ * provider is configured or the sole provider fails with no backup.
+ */
+export async function searchGuides(
+  query: string,
+  preferredUrl?: string,
+): Promise<SearchResult[]> {
+  const tavilyKey = process.env.TAVILY_API_KEY;
+  const serperKey = process.env.SERPER_API_KEY;
+  if (!tavilyKey && !serperKey) {
+    throw new Error("No search provider configured (TAVILY_API_KEY or SERPER_API_KEY)");
+  }
+
+  if (tavilyKey) {
+    try {
+      return await searchTavily(tavilyKey, query, preferredUrl);
+    } catch (error) {
+      if (!serperKey) throw error;
+      console.error("Tavily unavailable; falling back to Serper:", error);
+    }
+  }
+  return searchSerper(serperKey as string, query, preferredUrl);
 }

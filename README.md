@@ -7,10 +7,16 @@ answers in whatever language you ask your question in.
 
 ## Features
 
-- Game-name field with autocomplete from the IGDB game database, and a
+- Game-name field with autocomplete + box art from TheGamesDB, and a
   fuzzy, acronym-aware platform selector (a searchable custom combobox: type
   `n64`, `nds`, `psx`, `ps1`, `ps2`, `gba`, `xsx`, ... and it resolves the
   right console). Covers NES through Switch 2, PS5, Xbox Series, PC, and more.
+- **Game card + cover art**: once a chat starts, the input fields collapse into a
+  compact card (box art + game + platform); a sticky mini-header appears as you
+  scroll. Picking a game from autocomplete also auto-fills its box art, year, and
+  platform. Cover art is signed-in only; upload your own from your device (it
+  uploads only when you send, so nothing is stored for abandoned drafts) and it
+  falls back to a letter tile. Edit game details from the **⋮** menu in the sidebar.
 - Optional **preferred guide link**: paste the guide you trust and search sources
   from it first. The cascade is: (1) site-search the host for your question and
   extract the best-matching section page, else (2) use site-search snippets, else
@@ -25,6 +31,10 @@ answers in whatever language you ask your question in.
   or retry an assistant reply with the same question.
 - **Highlights**: assistant replies can include grouped, expandable callouts for
   key items, recruits, side quests, tips, and warnings alongside the main answer.
+- **Image & camera attachments** (signed-in): attach screenshots or snap a photo
+  next to the send button; images are compressed in-browser, stored in Supabase,
+  and sent to Gemini as visual context. **Library**: a 2-column cover-art grid of
+  your saved games. **Dark mode** follows your system preference automatically.
 - Multi-turn follow-up chat: up to the last 5 exchanges are sent as context, so
   follow-ups like "and after that boss?" are understood.
 - Tiered search: GameFAQs first, then trusted walkthrough providers, then forums,
@@ -55,30 +65,31 @@ Fill `.env.local` with real credentials:
 
 ```dotenv
 TAVILY_API_KEY=tvly-...
+SERPER_API_KEY=...
 REPLICATE_API_TOKEN=r8_...
 REPLICATE_MODEL=google/gemini-2.5-flash
-TWITCH_CLIENT_ID=...
-TWITCH_CLIENT_SECRET=...
+THEGAMESDB_API_KEY=...
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
 ```
 
 Only `REPLICATE_API_TOKEN` is required. `TAVILY_API_KEY` (web search),
-`REPLICATE_MODEL`, the Twitch pair (IGDB autocomplete), and the Supabase pair
-(accounts + cache) are all optional; each feature degrades gracefully when its
+`SERPER_API_KEY` (search fallback when Tavily is down/over quota), `REPLICATE_MODEL`,
+`THEGAMESDB_API_KEY` (autocomplete + box art), and the Supabase pair (accounts +
+saved chats + cache) are all optional; each feature degrades gracefully when its
 variables are absent.
 
 The model input fields (`system_instruction`, `max_output_tokens`,
 `thinking_budget`) are tuned for Gemini on Replicate; only swap `REPLICATE_MODEL`
 for a model with equivalent fields.
 
-### Game-name autocomplete (IGDB)
+### Game-name autocomplete + box art (TheGamesDB)
 
-Autocomplete uses [IGDB](https://api-docs.igdb.com/), authenticated via Twitch
-OAuth. Create an app at
-[dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps) for
-`TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET`. Without them the game field still
-works as free text (autocomplete silently turns off).
+Autocomplete and cover art use [TheGamesDB](https://thegamesdb.net). Request an
+API key from your account and set `THEGAMESDB_API_KEY`. Without it the game field
+still works as free text (autocomplete silently turns off) and covers fall back to
+a letter tile. IGDB has better coverage and is the intended eventual upgrade; the
+provider lives entirely in `app/api/games/route.ts` + `lib/games.js`.
 
 ### Accounts and saved chats (Supabase)
 
@@ -89,8 +100,12 @@ security and a public `search_cache` table) is managed as a migration on the
 `NEXT_PUBLIC_SUPABASE_ANON_KEY` (the publishable key) to enable it — both are
 safe to expose because access is protected by row-level security.
 
-Two manual dashboard steps in Supabase:
+Manual dashboard steps in Supabase:
 
+- **Cover metadata + uploads**: run [`db/cover-metadata.sql`](db/cover-metadata.sql)
+  in the SQL editor once. It adds `cover_url`/`release_year` to `chats` and creates
+  the public `covers` Storage bucket (owner-write, public-read) used by device
+  cover uploads. Until it runs, saving still works but covers/year are dropped.
 - **Google sign-in**: enable the Google provider under Authentication ->
   Providers, add your Google OAuth client ID/secret, and add your app origin(s)
   to the allowed redirect URLs.

@@ -27,6 +27,19 @@ function cleanUrl(value: unknown): string {
   }
 }
 
+const MAX_IMAGES = 10;
+
+// Accept up to 10 well-formed http(s) image URLs (Supabase Storage public URLs).
+function parseImages(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .flatMap((item): string[] => {
+      const url = cleanUrl(item);
+      return url ? [url] : [];
+    })
+    .slice(0, MAX_IMAGES);
+}
+
 function parseHistory(value: unknown): Turn[] {
   if (!Array.isArray(value)) return [];
 
@@ -61,6 +74,7 @@ export async function POST(request: Request) {
   const platform = cleanText(record.platform, 40);
   const preferredUrl = cleanUrl(record.preferredUrl);
   const history = parseHistory(record.history);
+  const images = parseImages(record.images);
 
   if (question.length < 2) {
     return NextResponse.json(
@@ -80,7 +94,7 @@ export async function POST(request: Request) {
     // Search is best-effort supporting evidence; the model can still answer from
     // its own knowledge if it returns nothing or fails.
     let sources: SearchResult[] = [];
-    if (process.env.TAVILY_API_KEY) {
+    if (process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY) {
       // Rewrite into a standalone English search query first (first messages
       // benefit from translation/normalisation; follow-ups need context resolved).
       const searchTopic = await resolveQuestion({ question, history });
@@ -109,6 +123,7 @@ export async function POST(request: Request) {
       question,
       sources,
       history,
+      images,
     });
 
     return NextResponse.json({

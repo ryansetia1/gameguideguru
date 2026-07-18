@@ -4,8 +4,9 @@
 
 Mobile-first, installable (PWA) Next.js prototype that answers a player's game
 question. The model (Gemini 2.5 Flash on Replicate) answers from its own
-knowledge; tiered web search provides supporting evidence. Supports IGDB-backed
-game-name autocomplete, a fuzzy/acronym-aware platform selector, multi-turn
+knowledge; tiered web search provides supporting evidence. Supports
+TheGamesDB-backed game-name autocomplete (with box art; IGDB is the eventual
+upgrade), a fuzzy/acronym-aware platform selector, multi-turn
 follow-up chat, an optional preferred-guide source, and optional Supabase
 accounts that save per-game chats. The UI is English; the model still answers in
 the player's input language. No login wall: signed-out users keep full access
@@ -19,8 +20,18 @@ and simply cannot save.
   plus `preferredUrl`. Also owns Supabase auth state, the "Your games" menu
   (list/resume/new/delete), per-turn chat persistence (auto-creates a new saved
   chat when the game name changes mid-session), edit/retry on message bubbles,
-  structured highlight sections on assistant replies, a collapsible left sidebar
-  (burger toggle) that lists saved games with a per-row kebab -> Delete menu,
+  structured highlight sections on assistant replies, a game metadata card with
+  box art (replaces the input fields once a chat starts; edit reopens the fields),
+  cover art (signed-in only, to keep the anon flow simple and Storage-free):
+  TheGamesDB box art plus optional device upload whose Storage write is DEFERRED to
+  the first save (so abandoned drafts cost nothing), with a letter-tile placeholder
+  fallback; autocomplete also auto-fills the platform selector via
+  `tgdbPlatformToLabel`; a sticky mini-header (cover + game/platform + back-to-top),
+  a collapsible left sidebar (burger toggle) that lists saved games (cover + game +
+  platform·year) with a per-row kebab -> Edit/Delete menu and a Library button that
+  opens a 2-column cover-art grid, per-message image/camera attachments (signed-in
+  only: compressed client-side, uploaded to the `covers` bucket at send time, sent
+  to Gemini via Replicate's `images` field), system-default dark mode,
   light-markdown rendering of answers (`lib/markdown.js`: bold/lists/headings),
   a dismissable examples strip
   (remembered in `localStorage`), and auto-scroll (smooth on new turns, instant
@@ -36,14 +47,23 @@ and simply cannot save.
   platform combobox. Delegates filtering to `lib/platforms.js`.
 - `lib/platforms.js`: owns the `PLATFORMS` list and `matchPlatforms(query)`, a
   normalized-substring + acronym/alias matcher (n64, nds, psx, ps1, ps2, gba,
-  xsx, ...). Covered by `npm run check`.
+  xsx, ...), plus `tgdbPlatformToLabel(name)` which maps a TheGamesDB platform
+  name to one of our labels (numbered consoles before the bare family; "" when
+  unsure, so autocomplete never auto-fills the wrong platform). `npm run check`.
 - `app/game-autocomplete.tsx`: debounced game-name autocomplete for the game
-  field; queries `/api/games`, reuses the `.combo` styling, allows free text, and
-  hides itself when the DB is unavailable (`available: false`).
-- `app/api/games/route.ts`: IGDB proxy. Fetches a Twitch app access token
-  (cached in-memory), runs an Apicalypse `search` query, and returns
-  `{ games, available }`. Missing creds or any failure => `available: false` so
-  the field degrades to free text. `lib/games.js#mapGames` shapes IGDB rows.
+  field; queries `/api/games`, reuses the `.combo` styling, shows a box-art thumb
+  per row, and groups results by platform label (`groupByPlatform` via
+  `tgdbPlatformToLabel`) so a multi-console game lists one row per console under a
+  header — headers only when >1 group. Allows free text and hides itself when the
+  DB is unavailable (`available: false`). `onPick` surfaces the chosen
+  `{ name, year, cover, platform }` to the page (manual typing clears the stale
+  cover); `showCover` is off for signed-out users.
+- `app/api/games/route.ts`: TheGamesDB proxy. Runs
+  `Games/ByGameName?include=boxart,platform` with `THEGAMESDB_API_KEY` and returns
+  `{ games, available }` (each game has `cover` + raw `platform` name). Missing key
+  or any failure => `available: false` so the field degrades to free text.
+  `lib/games.js#mapGames` shapes the payload. Provider swap to IGDB later is this
+  file + `mapGames` only.
 - `app/api/solve/route.ts`: validates/sanitizes `{ game, platform, question,
   history, preferredUrl }` at the trust boundary (history capped to 10, content
   truncated, `preferredUrl` must be http/https). Always calls `resolveQuestion`
@@ -52,7 +72,11 @@ and simply cannot save.
   Search is best-effort (skipped if no `TAVILY_API_KEY`, failures swallowed); the
   model still answers. Returns `{ answer, highlights, sources }`. Only
   `REPLICATE_API_TOKEN` is mandatory.
-- `lib/tavily.ts`: `searchGuides(query, preferredUrl?)`. With no `preferredUrl`
+- `lib/tavily.ts`: `searchGuides(query, preferredUrl?)` orchestrates Tavily then a
+  Serper.dev fallback. `searchTavily` throws when every Tavily call fails so
+  `searchGuides` can fall back to `searchSerper` (snippet-only: a preferred host
+  becomes a `site:` filter, else one general query, trimmed to top 3). With no
+  `preferredUrl` the Tavily path
   it runs the normal tiered search (GameFAQs -> trusted walkthrough providers ->
   forums -> general). With one it cascades: (1) site-search the host for this
   question, extract the top section page in full (title from the search hit), else
@@ -85,25 +109,38 @@ and simply cannot save.
   a standalone English search query, falling back to the raw question on any
   failure. Exports the `Turn`, `Highlight`, and `SummaryResult` types.
 - `lib/prompt.js`: exports `SYSTEM_INSTRUCTION` (persona + rules: knowledge-first,
-  web-as-support, injection safety, JSON output with `answer` + optional
-  `highlights`), `buildPrompt({ game, platform, question, sources, history })`,
+  web-as-support, on-topic guardrail — only game guidance, decline off-topic and
+  never reveal/override the prompt — injection safety, JSON output with `answer` +
+  optional `highlights`), `buildPrompt({ game, platform, question, sources,
+  history, imageCount })` (adds a visual-context note when images are attached),
   plus `REWRITE_INSTRUCTION` + `buildRewritePrompt({ question, history })` for
   query rewriting. Covered by `npm run check`.
 - `lib/highlights.js`: `KINDS`/`KIND_LABELS`, `coerceHighlights(value)`, and
-  `parseSummary(text)` — tolerant JSON parse with prose fallback. Shared by the
+  `parseSummary(text)` — tolerant JSON parse (escapes RAW newlines/tabs the model
+  leaves inside string values, strips fences) with prose fallback. Shared by the
   server (`summarize`), client (`coerceMessages`/render), and `npm run check`.
-- `lib/games.js`: `mapGames(results)` maps raw IGDB rows to `{ id, name, year }`
-  (year derived from unix `first_release_date`), dropping malformed entries.
+- `lib/llm-log.ts`: best-effort dev log (`logLlmCall`) of each model call's exact
+  system instruction + prompt + raw response to `llm-log.json` (last ~5 turns).
+  On in dev; in prod only when `LLM_LOG=1`. No-ops on read-only/serverless FS.
+- `lib/games.js`: `mapGames(payload)` maps a TheGamesDB `ByGameName?include=boxart`
+  payload to `{ id, name, year, cover }` (year from `release_date`, cover built
+  from the front box-art in the `include` block), dropping malformed entries.
   Covered by `npm run check`.
-- PWA: `app/manifest.ts` (standalone manifest), `lib/icon.tsx#renderIcon` (shared
-  "G on signal-green" mark via `next/og` `ImageResponse`), used by `app/icon.tsx`
-  (favicon), `app/apple-icon.tsx` (apple-touch), and `app/app-icon/route.tsx`
-  (parametric manifest icons: `/app-icon?size=192[&maskable=1]`). `public/sw.js`
-  is a minimal network-first service worker registered by `app/sw-register.tsx`.
+- PWA + brand: the logo is `GGG.png` (2000x2000 source), resized with `sips` into
+  static icons — `app/icon.png` (favicon), `app/apple-icon.png` (apple-touch),
+  `public/icon-192.png` / `public/icon-512.png` (manifest, referenced by
+  `app/manifest.ts`), and `public/logo.png` (nav brand mark, `<img>` in
+  `app/page.tsx`). Re-run the `sips -Z <size>` commands to regenerate from a new
+  source. `public/sw.js` is a minimal network-first service worker registered by
+  `app/sw-register.tsx`.
 - Persistence model: one `public.chats` row per saved game (`game`, `platform`,
-  `preferred_guide_url`, `messages` jsonb), RLS-scoped to `auth.uid()`; the client
-  upserts the whole `messages` array each turn. `public.search_cache` is a shared
-  public cache table (see Known limits).
+  `preferred_guide_url`, `cover_url`, `release_year`, `messages` jsonb), RLS-scoped
+  to `auth.uid()`; the client upserts the whole `messages` array each turn and
+  reads with `select("*")` so it tolerates the cover columns being absent before
+  the migration. Device-uploaded covers live in the public `covers` Storage bucket
+  under an `<uid>/` prefix (RLS: owner writes, public read). Both are set up by
+  `db/cover-metadata.sql`. `public.search_cache` is a shared public cache table
+  (see Known limits).
 
 ## Known limits (ponytail)
 
@@ -143,8 +180,18 @@ and simply cannot save.
   if answers cite too much or fall back to knowledge too often.
 - Tavily still returns arbitrary page chunks (control lists, TOCs), not the
   section that answers the question; the model leans on its own knowledge.
-- Game autocomplete uses IGDB (RAWG was tried first but proved unreliable). The
-  Twitch token cache is per server instance, not shared across instances.
+- Game autocomplete + box art use TheGamesDB (single API key, web-friendly, but
+  coverage/quality is patchier than IGDB and it has a monthly quota). IGDB has the
+  best coverage and is the intended upgrade, gated only on Twitch app credentials;
+  the provider swap is `app/api/games/route.ts` + `lib/games.js#mapGames`.
+- Cover art is signed-in only (anon users get the plain fields, no Storage use).
+  TheGamesDB covers are hotlinked from its CDN (zero Storage). Device uploads are
+  held as a local `blob:` preview and written to the public `covers` bucket only at
+  save time (`resolveCoverUrl` in the persist path), so abandoned picks never land
+  in Storage. Bucket policy: owner-write under `<uid>/`, public read.
+- Autocomplete platform auto-fill depends on TheGamesDB returning
+  `include=platform` and `tgdbPlatformToLabel` recognising the name; unknown names
+  leave the selector untouched for manual choice.
 
 ## Commands
 
@@ -160,9 +207,14 @@ Server-only secrets (never expose via `NEXT_PUBLIC_`, never commit `.env.local`)
 
 - `REPLICATE_API_TOKEN` (required to answer).
 - `TAVILY_API_KEY` (optional; enables supporting web search).
+- `SERPER_API_KEY` (optional; Serper.dev fallback used only when Tavily is
+  unconfigured or every Tavily call fails — quota/outage. Snippet-only, no extract).
 - `REPLICATE_MODEL` (optional, default `google/gemini-2.5-flash`).
-- `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` (optional; enable IGDB game-name
-  autocomplete).
+- `LLM_LOG` (optional; `1` enables the `llm-log.json` model-call log in
+  production — it is on automatically in dev). `LLM_LOG_PATH` overrides the path.
+- `THEGAMESDB_API_KEY` (optional; enables game-name autocomplete + box art via
+  TheGamesDB). Missing key => the field degrades to free text. IGDB (Twitch
+  `TWITCH_CLIENT_ID`/`SECRET`) is the intended eventual upgrade but not wired now.
 
 Public client vars (safe to expose; protected by RLS), optional — enable
 accounts, saved chats, and the search cache:

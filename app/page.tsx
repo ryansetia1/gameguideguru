@@ -13,6 +13,7 @@ import {
   type Highlight,
 } from "@/lib/highlights.js";
 import { parseBlocks } from "@/lib/markdown.js";
+import { tgdbPlatformToLabel } from "@/lib/platforms.js";
 import { getSupabase, type Chat } from "@/lib/supabase";
 
 type Source = {
@@ -25,9 +26,34 @@ type Message = {
   content: string;
   sources?: Source[];
   highlights?: Highlight[];
+  images?: string[];
 };
 
 const EXAMPLES_DISMISSED_KEY = "gg:examples-dismissed";
+const MAX_MESSAGE_IMAGES = 10;
+
+// Downscale + re-encode to JPEG in the browser so a phone photo (several MB)
+// becomes a Storage-friendly ~200-400KB before upload. Falls back to the original.
+async function compressImage(file: File, maxDim = 1280, quality = 0.8): Promise<Blob> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close?.();
+    return await new Promise<Blob>((resolve) =>
+      canvas.toBlob((blob) => resolve(blob ?? file), "image/jpeg", quality),
+    );
+  } catch {
+    return file;
+  }
+}
 
 const examples = [
   { game: "The Legend of Zelda: Link's Awakening", platform: "Game Boy", q: "How do I reach the first dungeon?" },
@@ -59,12 +85,17 @@ function coerceMessages(value: unknown): Message[] {
     const rawSources = (item as { sources?: unknown }).sources;
     const sources = Array.isArray(rawSources) ? (rawSources as Source[]) : undefined;
     const highlights = coerceHighlights((item as { highlights?: unknown }).highlights);
+    const rawImages = (item as { images?: unknown }).images;
+    const images = Array.isArray(rawImages)
+      ? rawImages.filter((url): url is string => typeof url === "string")
+      : [];
     return [
       {
         role,
         content,
         sources,
         ...(highlights.length ? { highlights } : {}),
+        ...(images.length ? { images } : {}),
       },
     ];
   });
@@ -109,6 +140,28 @@ function AnswerBody({ text }: { text: string }) {
   );
 }
 
+// Box art if we have a URL, otherwise a letter tile (matches the brand mark).
+function CoverThumb({
+  cover,
+  name,
+  className,
+}: {
+  cover: string;
+  name: string;
+  className?: string;
+}) {
+  const cls = `cover${className ? ` ${className}` : ""}`;
+  if (cover) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img className={cls} src={cover} alt={`${name || "Game"} cover`} />;
+  }
+  return (
+    <span className={`${cls} cover-placeholder`} aria-hidden="true">
+      {(name.trim()[0] || "?").toUpperCase()}
+    </span>
+  );
+}
+
 function groupHighlights(highlights: Highlight[]) {
   return KINDS.flatMap((kind) => {
     const items = highlights.filter((h) => h.kind === kind);
@@ -120,6 +173,13 @@ export default function Home() {
   const [game, setGame] = useState("");
   const [platform, setPlatform] = useState("");
   const [preferredUrl, setPreferredUrl] = useState("");
+  const [cover, setCover] = useState("");
+  const [pendingCover, setPendingCover] = useState<File | null>(null);
+  const [releaseYear, setReleaseYear] = useState("");
+  const [editingGame, setEditingGame] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [showSticky, setShowSticky] = useState(false);
+  const [pendingImages, setPendingImages] = useState<{ blob: Blob; preview: string }[]>([]);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState("");
@@ -130,17 +190,22 @@ export default function Home() {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [examplesDismissed, setExamplesDismissed] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingText, setEditingText] = useState("");
 
   const feedRef = useRef<HTMLDivElement>(null);
+  const topRef = useRef<HTMLElement>(null);
   const jumpRef = useRef(false);
   const conversationGame = useRef("");
   const activeChatIdRef = useRef<string | null>(null);
 
   const supabaseReady = Boolean(getSupabase());
+  // Cover art (TheGamesDB display + device upload) is a signed-in-only feature:
+  // keeps the signed-out flow simple and avoids any Storage use for anon users.
+  const coverEnabled = Boolean(user);
 
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
@@ -166,7 +231,9 @@ export default function Home() {
     if (!supabase) return;
     const { data, error: loadError } = await supabase
       .from("chats")
-      .select("id, game, platform, preferred_guide_url, messages, updated_at")
+      // select("*") tolerates the cover-metadata columns being absent before the
+      // migration is applied (a named select would error on a missing column).
+      .select("*")
       .order("updated_at", { ascending: false });
     if (!loadError && data) setChats(data as Chat[]);
   }, []);
@@ -205,6 +272,21 @@ export default function Home() {
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [menuOpenId]);
 
+  // Show the compact sticky header once the game card/fields scroll out of view.
+  useEffect(() => {
+    const element = topRef.current;
+    if (!element) {
+      setShowSticky(false);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => setShowSticky(!entry.isIntersecting),
+      { threshold: 0 },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [messages.length, editingGame]);
+
   function dismissExamples() {
     window.localStorage.setItem(EXAMPLES_DISMISSED_KEY, "1");
     setExamplesDismissed(true);
@@ -216,6 +298,12 @@ export default function Home() {
     setGame("");
     setPlatform("");
     setPreferredUrl("");
+    if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
+    setCover("");
+    setPendingCover(null);
+    clearPendingImages();
+    setReleaseYear("");
+    setEditingGame(false);
     setInput("");
     setError("");
     setEditingIndex(null);
@@ -234,6 +322,12 @@ export default function Home() {
     setGame(chat.game);
     setPlatform(chat.platform);
     setPreferredUrl(chat.preferred_guide_url);
+    if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
+    setCover(chat.cover_url ?? "");
+    setPendingCover(null);
+    clearPendingImages();
+    setReleaseYear(chat.release_year ?? "");
+    setEditingGame(false);
     setMessages(coerceMessages(chat.messages));
     conversationGame.current = chat.game;
     setInput("");
@@ -242,6 +336,181 @@ export default function Home() {
     setEditingText("");
     setSidebarOpen(false);
     setMenuOpenId(null);
+  }
+
+  // Autocomplete pick carries box art + year + platform; manual typing clears the
+  // stale cover. Platform is mapped to our label when confident (else left as-is).
+  function pickGame(picked: {
+    name: string;
+    year: string;
+    cover: string;
+    platform: string;
+  }) {
+    setGame(picked.name);
+    setReleaseYear(picked.year);
+    setPendingCover(null);
+    setCover(coverEnabled ? picked.cover : "");
+    const label = tgdbPlatformToLabel(picked.platform);
+    if (label) setPlatform(label);
+  }
+
+  function handleGameChange(value: string) {
+    setGame(value);
+    if (cover) setCover("");
+    if (pendingCover) setPendingCover(null);
+    if (releaseYear) setReleaseYear("");
+  }
+
+  // Hold the chosen file locally and preview it; the actual Storage upload is
+  // deferred to save time (first message / Done) so abandoned picks cost nothing.
+  function selectCover(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setError("Please choose an image file.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("Cover must be under 5 MB.");
+      return;
+    }
+    if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
+    setPendingCover(file);
+    setCover(URL.createObjectURL(file));
+  }
+
+  // Resolve the cover_url to persist: upload a pending file now, keep an existing
+  // real URL, or "" — never persists a local blob: preview. Best-effort.
+  async function resolveCoverUrl(): Promise<string> {
+    if (!pendingCover) return cover.startsWith("blob:") ? "" : cover;
+    const supabase = getSupabase();
+    if (!supabase || !user) return "";
+    setUploadingCover(true);
+    try {
+      const ext =
+        (pendingCover.name.split(".").pop() || "jpg")
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "") || "jpg";
+      const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("covers")
+        .upload(path, pendingCover, { upsert: true, contentType: pendingCover.type });
+      if (upErr) throw upErr;
+      const url = supabase.storage.from("covers").getPublicUrl(path).data.publicUrl;
+      if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
+      setPendingCover(null);
+      setCover(url);
+      return url;
+    } catch (caught) {
+      console.error("Cover upload failed:", caught);
+      setError("Cover upload failed. Make sure the 'covers' storage bucket exists.");
+      return "";
+    } finally {
+      setUploadingCover(false);
+    }
+  }
+
+  async function clearCover() {
+    if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
+    setCover("");
+    setPendingCover(null);
+    const supabase = getSupabase();
+    const id = activeChatIdRef.current;
+    if (supabase && id) {
+      await supabase.from("chats").update({ cover_url: "" }).eq("id", id);
+      void loadChats();
+    }
+  }
+
+  async function saveGameMeta() {
+    setEditingGame(false);
+    conversationGame.current = game;
+    const supabase = getSupabase();
+    const id = activeChatIdRef.current;
+    if (!supabase || !user || !id) return;
+    try {
+      const coverUrl = await resolveCoverUrl();
+      await supabase
+        .from("chats")
+        .update({
+          game,
+          platform,
+          preferred_guide_url: preferredUrl,
+          cover_url: coverUrl,
+          release_year: releaseYear,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id);
+      void loadChats();
+    } catch (caught) {
+      console.error("Failed to save game details:", caught);
+    }
+  }
+
+  function editGame(chat: Chat, event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    openChat(chat);
+    setEditingGame(true);
+  }
+
+  function scrollToTop() {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function openFromLibrary(chat: Chat) {
+    openChat(chat);
+    setLibraryOpen(false);
+  }
+
+  // Message image attachments: compress + preview locally now, upload to Storage
+  // at send time. Signed-in only (Storage RLS); anon users keep full text access.
+  async function selectMessageImages(files: FileList | null) {
+    if (!files || !user) return;
+    const room = MAX_MESSAGE_IMAGES - pendingImages.length;
+    const chosen = Array.from(files)
+      .filter((file) => file.type.startsWith("image/"))
+      .slice(0, Math.max(0, room));
+    if (!chosen.length) return;
+    const added = await Promise.all(
+      chosen.map(async (file) => {
+        const blob = await compressImage(file);
+        return { blob, preview: URL.createObjectURL(blob) };
+      }),
+    );
+    setPendingImages((prev) => [...prev, ...added].slice(0, MAX_MESSAGE_IMAGES));
+  }
+
+  function removePendingImage(index: number) {
+    setPendingImages((prev) => {
+      const target = prev[index];
+      if (target) URL.revokeObjectURL(target.preview);
+      return prev.filter((_, i) => i !== index);
+    });
+  }
+
+  function clearPendingImages() {
+    setPendingImages((prev) => {
+      for (const item of prev) URL.revokeObjectURL(item.preview);
+      return [];
+    });
+  }
+
+  async function uploadMessageImages(): Promise<string[]> {
+    if (!pendingImages.length) return [];
+    const supabase = getSupabase();
+    if (!supabase || !user) return [];
+    const urls: string[] = [];
+    for (const { blob } of pendingImages) {
+      try {
+        const path = `${user.id}/msg/${crypto.randomUUID()}.jpg`;
+        const { error: upErr } = await supabase.storage
+          .from("covers")
+          .upload(path, blob, { contentType: "image/jpeg", upsert: true });
+        if (upErr) throw upErr;
+        urls.push(supabase.storage.from("covers").getPublicUrl(path).data.publicUrl);
+      } catch (caught) {
+        console.error("Image upload failed:", caught);
+      }
+    }
+    return urls;
   }
 
   async function signOut() {
@@ -271,10 +540,15 @@ export default function Home() {
   async function persistChat(nextMessages: Message[], targetChatId: string | null) {
     const supabase = getSupabase();
     if (!supabase || !user) return null;
+    // Upload a pending device cover only now (message is being saved), so covers
+    // never land in Storage for abandoned drafts.
+    const coverUrl = await resolveCoverUrl();
     const payload = {
       game,
       platform,
       preferred_guide_url: preferredUrl,
+      cover_url: coverUrl,
+      release_year: releaseYear,
       messages: nextMessages,
       updated_at: new Date().toISOString(),
     };
@@ -305,6 +579,7 @@ export default function Home() {
     question: string,
     priorMessages: Message[],
     targetChatId: string | null,
+    images: string[] = [],
   ) {
     setError("");
     setLoading(true);
@@ -314,17 +589,19 @@ export default function Home() {
     const history = priorMessages
       .slice(-10)
       .map(({ role, content }) => ({ role, content }));
-    const optimistic: Message[] = [
-      ...priorMessages,
-      { role: "user", content: question },
-    ];
+    const userMessage: Message = {
+      role: "user",
+      content: question,
+      ...(images.length ? { images } : {}),
+    };
+    const optimistic: Message[] = [...priorMessages, userMessage];
     setMessages(optimistic);
 
     try {
       const response = await fetch("/api/solve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ game, platform, question, history, preferredUrl }),
+        body: JSON.stringify({ game, platform, question, history, preferredUrl, images }),
       });
       const data: unknown = await response.json();
 
@@ -354,7 +631,7 @@ export default function Home() {
       );
       const nextMessages: Message[] = [
         ...priorMessages,
-        { role: "user", content: question },
+        userMessage,
         {
           role: "assistant",
           content: data.answer as string,
@@ -389,7 +666,10 @@ export default function Home() {
     if (switching) setActiveChatId(null);
 
     setInput("");
-    await runTurn(question, priorMessages, targetChatId);
+    setLoading(true); // cover the upload gap before runTurn takes over
+    const images = await uploadMessageImages();
+    clearPendingImages();
+    await runTurn(question, priorMessages, targetChatId, images);
   }
 
   function startEdit(index: number) {
@@ -435,9 +715,8 @@ export default function Home() {
             </button>
           )}
           <a className="brand" href="#" aria-label="GameGuide Guru, home">
-            <span className="brand-mark" aria-hidden="true">
-              G
-            </span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="brand-mark" src="/logo.png" alt="" width={30} height={30} />
             <span>GAMEGUIDE GURU</span>
           </a>
         </div>
@@ -493,6 +772,17 @@ export default function Home() {
             <button type="button" className="sidebar-new" onClick={newGame}>
               + New game
             </button>
+            <button
+              type="button"
+              className="sidebar-library-btn"
+              onClick={() => {
+                setSidebarOpen(false);
+                setMenuOpenId(null);
+                setLibraryOpen(true);
+              }}
+            >
+              ▦ Library
+            </button>
             {chats.length === 0 ? (
               <p className="sidebar-empty">No saved games yet.</p>
             ) : (
@@ -507,8 +797,19 @@ export default function Home() {
                       className="sidebar-open"
                       onClick={() => openChat(chat)}
                     >
-                      <strong>{chat.game || "Untitled game"}</strong>
-                      {chat.platform && <small>{chat.platform}</small>}
+                      <CoverThumb
+                        cover={chat.cover_url ?? ""}
+                        name={chat.game}
+                        className="cover-sm"
+                      />
+                      <span className="sidebar-meta">
+                        <strong>{chat.game || "Untitled game"}</strong>
+                        {(chat.platform || chat.release_year) && (
+                          <small>
+                            {[chat.platform, chat.release_year].filter(Boolean).join(" · ")}
+                          </small>
+                        )}
+                      </span>
                     </button>
                     <div className="row-menu">
                       <button
@@ -524,7 +825,14 @@ export default function Home() {
                         <div className="row-menu-pop" role="menu">
                           <button
                             type="button"
-                            className="row-menu-delete"
+                            className="row-menu-item"
+                            onClick={(event) => editGame(chat, event)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="row-menu-item row-menu-delete"
                             onClick={(event) => void deleteChat(chat, event)}
                           >
                             Delete
@@ -537,7 +845,69 @@ export default function Home() {
               </ul>
             )}
           </aside>
+
+          {libraryOpen && (
+            <div className="library" role="dialog" aria-label="Library">
+              <div className="library-head">
+                <span>Library</span>
+                <button
+                  type="button"
+                  className="sidebar-close"
+                  aria-label="Close library"
+                  onClick={() => setLibraryOpen(false)}
+                >
+                  ×
+                </button>
+              </div>
+              {chats.length === 0 ? (
+                <p className="library-empty">No saved games yet.</p>
+              ) : (
+                <div className="library-grid">
+                  {chats.map((chat) => (
+                    <button
+                      key={chat.id}
+                      type="button"
+                      className="library-card"
+                      onClick={() => openFromLibrary(chat)}
+                    >
+                      <CoverThumb
+                        cover={chat.cover_url ?? ""}
+                        name={chat.game}
+                        className="cover-tile"
+                      />
+                      <strong>{chat.game || "Untitled game"}</strong>
+                      {(chat.platform || chat.release_year) && (
+                        <small>
+                          {[chat.platform, chat.release_year].filter(Boolean).join(" · ")}
+                        </small>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </>
+      )}
+
+      {started && showSticky && (
+        <div className="sticky-header">
+          <button
+            type="button"
+            className="sticky-back"
+            onClick={scrollToTop}
+            aria-label="Back to top"
+          >
+            ←
+          </button>
+          {coverEnabled && <CoverThumb cover={cover} name={game} className="cover-mini" />}
+          <div className="sticky-meta">
+            <strong>{game || "Untitled game"}</strong>
+            {(platform || releaseYear) && (
+              <small>{[platform, releaseYear].filter(Boolean).join(" · ")}</small>
+            )}
+          </div>
+        </div>
       )}
 
       {!started && (
@@ -554,32 +924,103 @@ export default function Home() {
         </section>
       )}
 
-      <section className="setup" aria-label="Game context">
-        <div className="field">
-          <label htmlFor="game">Game name</label>
-          <GameAutocomplete value={game} onChange={setGame} disabled={loading} />
-        </div>
-        <div className="field">
-          <span className="field-label" id="platform-label">
-            Platform
-          </span>
-          <PlatformSelect value={platform} onChange={setPlatform} />
-        </div>
-        <div className="field field-wide">
-          <label htmlFor="preferred-guide">Preferred guide link (optional)</label>
-          <input
-            id="preferred-guide"
-            type="url"
-            inputMode="url"
-            value={preferredUrl}
-            onChange={(event) => setPreferredUrl(event.target.value)}
-            placeholder="e.g. https://gamefaqs.gamespot.com/...  — we source from here first"
-            maxLength={300}
-            autoComplete="off"
-            disabled={loading}
-          />
-        </div>
-      </section>
+      {started && !editingGame ? (
+        <section className="game-card" aria-label="Game" ref={topRef}>
+          {coverEnabled && <CoverThumb cover={cover} name={game} className="cover-lg" />}
+          <div className="game-card-meta">
+            <h2>{game || "Untitled game"}</h2>
+            {(platform || releaseYear) && (
+              <p>{[platform, releaseYear].filter(Boolean).join(" · ")}</p>
+            )}
+            {preferredUrl && (
+              <a
+                className="game-card-link"
+                href={preferredUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Preferred guide ↗
+              </a>
+            )}
+            <span className="game-card-hint">Edit via ⋮ in Your games</span>
+          </div>
+        </section>
+      ) : (
+        <section className="setup" aria-label="Game context" ref={topRef}>
+          {coverEnabled && (
+            <div className="field field-cover">
+              <span className="field-label">Cover</span>
+              <div className="cover-edit">
+                <CoverThumb cover={cover} name={game} className="cover-md" />
+                <div className="cover-edit-actions">
+                  <label className="cover-upload">
+                    {cover ? "Replace" : "Upload cover"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      disabled={uploadingCover || loading}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = "";
+                        if (file) selectCover(file);
+                      }}
+                    />
+                  </label>
+                  {cover && (
+                    <button
+                      type="button"
+                      className="cover-clear"
+                      onClick={() => void clearCover()}
+                      disabled={uploadingCover || loading}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {pendingCover && <span className="cover-pending">Uploads when you send</span>}
+              </div>
+            </div>
+          )}
+          <div className="field">
+            <label htmlFor="game">Game name</label>
+            <GameAutocomplete
+              value={game}
+              onChange={handleGameChange}
+              onPick={pickGame}
+              showCover={coverEnabled}
+              disabled={loading}
+            />
+          </div>
+          <div className="field">
+            <span className="field-label" id="platform-label">
+              Platform
+            </span>
+            <PlatformSelect value={platform} onChange={setPlatform} />
+          </div>
+          <div className="field field-wide">
+            <label htmlFor="preferred-guide">Preferred guide link (optional)</label>
+            <input
+              id="preferred-guide"
+              type="url"
+              inputMode="url"
+              value={preferredUrl}
+              onChange={(event) => setPreferredUrl(event.target.value)}
+              placeholder="Paste a specific guide page (not a category/hub) for best results"
+              maxLength={300}
+              autoComplete="off"
+              disabled={loading}
+            />
+          </div>
+          {editingGame && (
+            <div className="field field-wide setup-done">
+              <button type="button" className="nav-button" onClick={() => void saveGameMeta()}>
+                Done
+              </button>
+            </div>
+          )}
+        </section>
+      )}
 
       {!started && !examplesDismissed && (
         <div className="examples-block" aria-label="Examples">
@@ -650,6 +1091,16 @@ export default function Home() {
                   </div>
                 ) : (
                   <>
+                    {message.images && message.images.length > 0 && (
+                      <div className="msg-images">
+                        {message.images.map((url, i) => (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <a key={i} href={url} target="_blank" rel="noreferrer">
+                            <img className="msg-image" src={url} alt="Attached" loading="lazy" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
                     <p>{message.content}</p>
                     <button
                       type="button"
@@ -752,7 +1203,57 @@ export default function Home() {
       )}
 
       <form className={`composer${started ? " docked" : ""}`} onSubmit={handleSubmit}>
+        {coverEnabled && pendingImages.length > 0 && (
+          <div className="composer-attachments">
+            {pendingImages.map((img, i) => (
+              <div key={i} className="attachment-thumb">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={img.preview} alt="Attachment preview" />
+                <button
+                  type="button"
+                  aria-label="Remove image"
+                  onClick={() => removePendingImage(i)}
+                  disabled={loading}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="composer-inner">
+          {coverEnabled && (
+            <>
+              <label className="composer-attach" title="Attach images" aria-label="Attach images">
+                <span aria-hidden="true">📎</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  hidden
+                  disabled={loading || pendingImages.length >= MAX_MESSAGE_IMAGES}
+                  onChange={(event) => {
+                    void selectMessageImages(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+              <label className="composer-attach" title="Take photo" aria-label="Take photo">
+                <span aria-hidden="true">📷</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  hidden
+                  disabled={loading || pendingImages.length >= MAX_MESSAGE_IMAGES}
+                  onChange={(event) => {
+                    void selectMessageImages(event.target.files);
+                    event.target.value = "";
+                  }}
+                />
+              </label>
+            </>
+          )}
           <textarea
             id="query"
             name="query"
