@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { cleanSnippet } from "../lib/clean.js";
 import { mapGames } from "../lib/games.js";
+import { PLATFORMS, matchPlatforms } from "../lib/platforms.js";
 import {
   REWRITE_INSTRUCTION,
   SYSTEM_INSTRUCTION,
@@ -112,5 +113,21 @@ assert.deepEqual(
 // answers from its own knowledge.
 assert.deepEqual(selectSources([src(0.49), src(0.3)]), []);
 assert.deepEqual(selectSources([]), []);
+
+// Platform matching: acronyms/shorthands resolve to the right console, an empty
+// query returns every group, and gibberish returns nothing.
+/** @param {string} q */
+const items = (q) => matchPlatforms(q).flatMap((section) => section.items);
+assert.ok(items("n64").includes("Nintendo 64"));
+assert.ok(items("nds").includes("Nintendo DS"));
+assert.ok(items("psx").includes("PlayStation (PS1)"));
+assert.ok(items("ps1").includes("PlayStation (PS1)"));
+assert.ok(items("ps2").includes("PlayStation 2"));
+assert.ok(items("gba").includes("Game Boy Advance"));
+assert.ok(items("xsx").includes("Xbox Series X|S"));
+// Case- and punctuation-insensitive name match still works.
+assert.ok(items("Switch").includes("Nintendo Switch"));
+assert.equal(matchPlatforms("").length, PLATFORMS.length);
+assert.deepEqual(matchPlatforms("zzzznope"), []);
 
 console.log("Self-check passed.");

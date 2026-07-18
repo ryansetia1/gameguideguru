@@ -2,6 +2,7 @@ import { cleanSnippet } from "@/lib/clean";
 import { selectSources } from "@/lib/rank";
 
 const TAVILY_URL = "https://api.tavily.com/search";
+const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
 
 export type SearchResult = {
   title: string;
@@ -49,6 +50,10 @@ const TIERS: string[][] = [
 // gating/trimming happens in selectSources.
 const MIN_RESULTS = 3;
 const CONTENT_CAP = 800;
+// The user's preferred page is a whole trusted walkthrough, so give it far more
+// room than a search snippet. ponytail: whole-page chunk, not the section that
+// answers the question; upgrade path is section-targeting/chunk re-ranking.
+const EXTRACT_CONTENT_CAP = 6000;
 // Snippets shorter than this after cleaning are almost always pure navigation.
 const MIN_CONTENT = 60;
 
@@ -128,10 +133,100 @@ async function runSearch(
   });
 }
 
-export async function searchGuides(query: string): Promise<SearchResult[]> {
+// Pull the full content of the user's preferred guide page directly. Returns a
+// single source or null (bad URL, unreachable page, or too little text). The
+// user explicitly trusts this page, so callers use it without a confidence gate.
+async function extractPreferred(
+  apiKey: string,
+  rawUrl: string,
+): Promise<SearchResult | null> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+
+  const response = await fetch(TAVILY_EXTRACT_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ urls: [parsed.toString()] }),
+    signal: AbortSignal.timeout(12_000),
+  });
+
+  if (!response.ok) return null;
+
+  const payload: unknown = await response.json();
+  const results =
+    payload && typeof payload === "object" && "results" in payload
+      ? (payload.results as unknown)
+      : null;
+  if (!Array.isArray(results) || results.length === 0) return null;
+
+  const first = results[0];
+  if (!first || typeof first !== "object" || !("raw_content" in first)) return null;
+  const raw = (first as { raw_content: unknown }).raw_content;
+  if (typeof raw !== "string") return null;
+
+  const content = cleanSnippet(raw).slice(0, EXTRACT_CONTENT_CAP);
+  if (content.length < MIN_CONTENT) return null;
+
+  return {
+    title: parsed.hostname.replace(/^www\./, ""),
+    url: parsed.toString(),
+    content,
+    score: 1,
+  };
+}
+
+/**
+ * Find supporting web sources for a query. When `preferredUrl` is set, cascade:
+ * (1) pull that exact page, else (2) search only that page's domain, else
+ * (3) fall back to the normal tiered search. Steps 1-2 return sources solely
+ * from the preferred site; step 3 uses the usual mix.
+ */
+export async function searchGuides(
+  query: string,
+  preferredUrl?: string,
+): Promise<SearchResult[]> {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) throw new Error("TAVILY_API_KEY is not configured");
 
+  const preferred = (preferredUrl ?? "").trim();
+  if (preferred) {
+    // 1. Exact page — trusted, so skip the confidence gate.
+    let exact: SearchResult | null = null;
+    try {
+      exact = await extractPreferred(apiKey, preferred);
+    } catch {
+      // ponytail: extract failures fall through to the domain step.
+    }
+    if (exact) return [exact];
+
+    // 2. Whole preferred site — keep only that domain's results when relevant.
+    let host = "";
+    try {
+      host = new URL(preferred).hostname;
+    } catch {
+      host = "";
+    }
+    if (host) {
+      let domainResults: SearchResult[] = [];
+      try {
+        domainResults = await runSearch(apiKey, query, [host]);
+      } catch {
+        domainResults = [];
+      }
+      const selected = selectSources(domainResults);
+      if (selected.length) return selected;
+    }
+  }
+
+  // 3. Normal tiered search.
   const seen = new Set<string>();
   const collected: SearchResult[] = [];
 

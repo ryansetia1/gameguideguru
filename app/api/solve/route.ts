@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getCachedSearch, setCachedSearch } from "@/lib/search-cache";
 import { resolveQuestion, summarize, type Turn } from "@/lib/replicate";
 import { searchGuides, type SearchResult } from "@/lib/tavily";
 
@@ -10,6 +11,20 @@ const MAX_HISTORY = 10;
 function cleanText(value: unknown, maxLength: number): string {
   if (typeof value !== "string") return "";
   return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+// Accept only well-formed http(s) URLs for the optional preferred guide.
+function cleanUrl(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim().slice(0, 300);
+  if (!trimmed) return "";
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
 }
 
 function parseHistory(value: unknown): Turn[] {
@@ -35,7 +50,7 @@ export async function POST(request: Request) {
     body = await request.json();
   } catch {
     return NextResponse.json(
-      { error: "Permintaan tidak dapat dibaca." },
+      { error: "Could not read the request." },
       { status: 400 },
     );
   }
@@ -44,18 +59,19 @@ export async function POST(request: Request) {
   const question = cleanText(record.question, 300);
   const game = cleanText(record.game, 120);
   const platform = cleanText(record.platform, 40);
+  const preferredUrl = cleanUrl(record.preferredUrl);
   const history = parseHistory(record.history);
 
   if (question.length < 2) {
     return NextResponse.json(
-      { error: "Tuliskan pertanyaanmu dulu ya." },
+      { error: "Please type your question first." },
       { status: 400 },
     );
   }
 
   if (!process.env.REPLICATE_API_TOKEN) {
     return NextResponse.json(
-      { error: "Server belum memiliki API key yang diperlukan." },
+      { error: "The server is missing a required API key." },
       { status: 503 },
     );
   }
@@ -65,7 +81,7 @@ export async function POST(request: Request) {
     // its own knowledge if it returns nothing or fails.
     let sources: SearchResult[] = [];
     if (process.env.TAVILY_API_KEY) {
-      // Follow-ups reference earlier turns ("after that", "poin 3"), which make
+      // Follow-ups reference earlier turns ("after that", "point 3"), which make
       // a poor search query. Rewrite them into a standalone query first; first
       // questions are already standalone, so skip the extra model call.
       const searchTopic =
@@ -75,10 +91,19 @@ export async function POST(request: Request) {
       const searchQuery = [game, platform, searchTopic, "walkthrough guide"]
         .filter(Boolean)
         .join(" ");
-      try {
-        sources = await searchGuides(searchQuery);
-      } catch (searchError) {
-        console.error("Search failed, continuing without sources:", searchError);
+      // Cache the final result per (query + preferred URL) so repeat/popular
+      // queries skip the tiered Tavily calls entirely. Best-effort both ways.
+      const cacheKey = `${searchQuery}::${preferredUrl}`;
+      const cached = await getCachedSearch(cacheKey);
+      if (Array.isArray(cached)) {
+        sources = cached as SearchResult[];
+      } else {
+        try {
+          sources = await searchGuides(searchQuery, preferredUrl);
+          void setCachedSearch(cacheKey, sources);
+        } catch (searchError) {
+          console.error("Search failed, continuing without sources:", searchError);
+        }
       }
     }
 
@@ -103,8 +128,8 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: timedOut
-          ? "Pencarian memakan waktu terlalu lama. Coba lagi."
-          : "Panduan belum dapat dibuat. Coba beberapa saat lagi.",
+          ? "The search took too long. Please try again."
+          : "Couldn't build a guide. Please try again shortly.",
       },
       { status: timedOut ? 504 : 502 },
     );

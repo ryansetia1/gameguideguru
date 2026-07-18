@@ -2,50 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
-const PLATFORMS: { group: string; items: string[] }[] = [
-  {
-    group: "Nintendo",
-    items: [
-      "NES",
-      "SNES",
-      "Nintendo 64",
-      "GameCube",
-      "Wii",
-      "Wii U",
-      "Nintendo Switch",
-      "Nintendo Switch 2",
-      "Game Boy",
-      "Game Boy Color",
-      "Game Boy Advance",
-      "Nintendo DS",
-      "Nintendo 3DS",
-    ],
-  },
-  {
-    group: "PlayStation",
-    items: [
-      "PlayStation (PS1)",
-      "PlayStation 2",
-      "PlayStation 3",
-      "PlayStation 4",
-      "PlayStation 5",
-      "PSP",
-      "PS Vita",
-    ],
-  },
-  {
-    group: "Xbox",
-    items: ["Xbox", "Xbox 360", "Xbox One", "Xbox Series X|S"],
-  },
-  {
-    group: "Sega",
-    items: ["Sega Genesis / Mega Drive", "Sega Saturn", "Dreamcast"],
-  },
-  {
-    group: "Lainnya",
-    items: ["PC", "Mobile (iOS/Android)", "Arcade"],
-  },
-];
+import { matchPlatforms } from "@/lib/platforms";
 
 type Props = {
   value: string;
@@ -61,16 +18,7 @@ export function PlatformSelect({ value, onChange, disabled }: Props) {
   const searchRef = useRef<HTMLInputElement>(null);
   const listId = useId();
 
-  const groups = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return PLATFORMS;
-    return PLATFORMS.map((section) => ({
-      group: section.group,
-      items: section.items.filter((item) =>
-        item.toLowerCase().includes(needle),
-      ),
-    })).filter((section) => section.items.length > 0);
-  }, [query]);
+  const groups = useMemo(() => matchPlatforms(query), [query]);
 
   const flat = useMemo(() => groups.flatMap((section) => section.items), [groups]);
 
@@ -125,14 +73,14 @@ export function PlatformSelect({ value, onChange, disabled }: Props) {
         onClick={() => setOpen((prev) => !prev)}
       >
         <span className={value ? "" : "placeholder"}>
-          {value || "Pilih platform (opsional)"}
+          {value || "Select platform (optional)"}
         </span>
         {value ? (
           <span
             className="combo-clear"
             role="button"
             tabIndex={-1}
-            aria-label="Kosongkan platform"
+            aria-label="Clear platform"
             onClick={(event) => {
               event.stopPropagation();
               commit("");
@@ -154,15 +102,15 @@ export function PlatformSelect({ value, onChange, disabled }: Props) {
             className="combo-search"
             type="text"
             value={query}
-            placeholder="Cari platform..."
+            placeholder="Search platform..."
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={onSearchKeyDown}
-            aria-label="Cari platform"
+            aria-label="Search platform"
             autoComplete="off"
           />
           <ul className="combo-list" id={listId} role="listbox">
             {flat.length === 0 && (
-              <li className="combo-empty">Tidak ada platform yang cocok</li>
+              <li className="combo-empty">No matching platforms</li>
             )}
             {groups.map((section) => (
               <li key={section.group} role="presentation">

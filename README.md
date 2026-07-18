@@ -1,39 +1,42 @@
 # GameGuide Guru
 
-Prototipe companion game mobile-first. Model AI di Replicate (default
-`google/gemini-2.5-flash`) menjawab dari pengetahuannya sendiri, dan hasil
-pencarian web Tavily dipakai sebagai bukti pendukung.
+A mobile-first, installable (PWA) game companion. An AI model on Replicate
+(default `google/gemini-2.5-flash`) answers from its own knowledge, and Tavily
+web search provides supporting evidence. The interface is English, but the model
+answers in whatever language you ask your question in.
 
-## Fitur
+## Features
 
-- Field nama game dengan autocomplete dari database game IGDB, dan selector
-  platform yang bisa dicari (custom combobox bertema, dari era NES sampai
-  Switch 2, PS5, Xbox Series, PC, dan lainnya).
-- Chat lanjutan multi-turn: konteks hingga 5 percakapan terakhir dikirim ke
-  model sehingga pertanyaan lanjutan seperti "lalu setelah bos itu ke mana?"
-  tetap dipahami.
-- Pencarian berjenjang: GameFAQs sebagai sumber utama, lalu penyedia walkthrough
-  tepercaya, lalu forum, baru pencarian umum. Domain video/sosial (YouTube,
-  Twitch, dll.) dikecualikan karena model teks tidak bisa membacanya.
-- Penyaringan noise: ekstraksi konten pakai Tavily `advanced`, hasil difilter
-  berdasarkan skor relevansi (membuang game lain yang tidak nyambung), snippet
-  dibersihkan dari link/menu/boilerplate, hasil didedup per judul+URL, dan hanya
-  3 sumber terkuat yang dikirim ke model.
-- Confidence gate: kalau tidak ada satu pun sumber yang jelas relevan, sumber
-  dikosongkan dan model menjawab dari pengetahuannya sendiri (atau jujur bilang
-  tidak tahu) daripada dipaksa memakai snippet yang setengah relevan.
-- Rewrite query follow-up: pertanyaan lanjutan (mis. "setelah itu", "poin 3")
-  ditulis ulang oleh LLM jadi query pencarian standalone berbahasa Inggris
-  sebelum search, supaya tetap tepat sasaran. Pertanyaan pertama yang sudah
-  mandiri tidak kena extra call ini.
-- Pengetahuan model sebagai sumber utama, web sebagai pendukung untuk info yang
-  mungkin di luar knowledge cutoff. Jika pencarian kosong, model tetap menjawab
-  dari pengetahuannya.
-- Setiap jawaban menampilkan tautan sumber yang dipakai.
+- Game-name field with autocomplete from the IGDB game database, and a
+  fuzzy, acronym-aware platform selector (a searchable custom combobox: type
+  `n64`, `nds`, `psx`, `ps1`, `ps2`, `gba`, `xsx`, ... and it resolves the
+  right console). Covers NES through Switch 2, PS5, Xbox Series, PC, and more.
+- Optional **preferred guide link**: paste the guide you trust and search sources
+  from it first. The cascade is: (1) pull that exact page, else (2) search only
+  that page's domain, else (3) fall back to the normal tiered search. When a
+  preferred source works, the Sources list shows only that site.
+- **Accounts (optional, no login wall)**: sign in with email/password or Google
+  (via Supabase) to save a separate chat per game and resume it later. Signed-out
+  visitors keep full access; they just cannot save.
+- Multi-turn follow-up chat: up to the last 5 exchanges are sent as context, so
+  follow-ups like "and after that boss?" are understood.
+- Tiered search: GameFAQs first, then trusted walkthrough providers, then forums,
+  then the open web. Video/social domains (YouTube, Twitch, etc.) are excluded
+  because the text model cannot read them.
+- Noise filtering: Tavily `advanced` extraction, relevance-score filtering
+  (drops unrelated same-series games), snippet cleaning, dedupe by title+URL, and
+  only the 3 strongest sources are sent to the model.
+- Confidence gate: if nothing is clearly relevant, sources are dropped and the
+  model answers from its own knowledge (or says it is unsure) rather than being
+  nudged by a half-relevant snippet.
+- Shared web-search cache (Supabase, 7-day TTL): repeat/popular queries skip the
+  Tavily calls entirely to save credits and latency.
+- Collapsible, sourced answers; a dismissable examples strip (remembered per
+  browser); and auto-scroll to the newest reply.
 
-## Menjalankan aplikasi
+## Running the app
 
-Persyaratan: Node.js 20.9 atau lebih baru.
+Requirements: Node.js 20.9 or newer.
 
 ```bash
 npm install
@@ -41,7 +44,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Isi `.env.local` dengan kredensial asli:
+Fill `.env.local` with real credentials:
 
 ```dotenv
 TAVILY_API_KEY=tvly-...
@@ -49,48 +52,71 @@ REPLICATE_API_TOKEN=r8_...
 REPLICATE_MODEL=google/gemini-2.5-flash
 TWITCH_CLIENT_ID=...
 TWITCH_CLIENT_SECRET=...
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
 ```
 
-`REPLICATE_MODEL` opsional (default `google/gemini-2.5-flash`). Field input model
-(`system_instruction`, `max_output_tokens`, `thinking_budget`) disetel untuk
-Gemini di Replicate; ganti model hanya ke model dengan field serupa.
-`TAVILY_API_KEY` juga opsional — tanpa itu, model menjawab dari pengetahuannya
-sendiri tanpa sumber web.
+Only `REPLICATE_API_TOKEN` is required. `TAVILY_API_KEY` (web search),
+`REPLICATE_MODEL`, the Twitch pair (IGDB autocomplete), and the Supabase pair
+(accounts + cache) are all optional; each feature degrades gracefully when its
+variables are absent.
 
-### Autocomplete nama game (IGDB)
+The model input fields (`system_instruction`, `max_output_tokens`,
+`thinking_budget`) are tuned for Gemini on Replicate; only swap `REPLICATE_MODEL`
+for a model with equivalent fields.
 
-Autocomplete nama game memakai [IGDB](https://api-docs.igdb.com/), yang
-diautentikasi lewat Twitch OAuth. Buat aplikasi di
-[dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps) untuk mendapat
-`TWITCH_CLIENT_ID` dan `TWITCH_CLIENT_SECRET`. Kredensial ini **opsional**: tanpa
-keduanya, field nama game tetap berfungsi sebagai input teks bebas (autocomplete
-mati diam-diam). RAWG sempat dipertimbangkan tetapi kurang andal, jadi IGDB
-dipakai sebagai sumber database game yang lebih lengkap.
+### Game-name autocomplete (IGDB)
 
-Buka [http://localhost:3000](http://localhost:3000), isi nama game dan platform,
-lalu ajukan pertanyaan dan tanyakan lanjutannya.
+Autocomplete uses [IGDB](https://api-docs.igdb.com/), authenticated via Twitch
+OAuth. Create an app at
+[dev.twitch.tv/console/apps](https://dev.twitch.tv/console/apps) for
+`TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET`. Without them the game field still
+works as free text (autocomplete silently turns off).
 
-## Alur
+### Accounts and saved chats (Supabase)
 
-1. Browser mengirim `{ game, platform, question, history }` ke `POST /api/solve`.
-2. Untuk pertanyaan lanjutan, route menulis ulang pertanyaan jadi query mandiri
-   berbahasa Inggris (pakai LLM) supaya konteks percakapan ("poin 3") ikut
-   terbawa; pertanyaan pertama dipakai apa adanya.
-3. Route menjalankan pencarian berjenjang Tavily (`advanced`, best-effort),
-   membersihkan snippet, memfilter berdasarkan skor relevansi, dan mengambil 3
-   sumber terkuat (atau nol kalau tidak ada yang jelas relevan).
-4. `system_instruction` (persona + aturan) dan `prompt` (game/platform, riwayat
-   percakapan, dan bukti web) dikirim terpisah ke model Gemini di Replicate.
-5. Browser menerima jawaban dan tautan sumber terpisah, lalu menambahkannya ke
-   riwayat chat.
+Accounts, per-game saved chats, and the shared search cache use
+[Supabase](https://supabase.com). The schema (a `chats` table with row-level
+security and a public `search_cache` table) is managed as a migration on the
+`GameGuideGuru` project. Set `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` (the publishable key) to enable it — both are
+safe to expose because access is protected by row-level security.
 
-API key hanya digunakan di server dan tidak dikirim ke browser. Teks sumber dan
-input game/platform diperlakukan sebagai data tidak tepercaya; model
-diperintahkan untuk tidak mengikuti instruksi di dalamnya.
+Two manual dashboard steps in Supabase:
 
-## Perintah
+- **Google sign-in**: enable the Google provider under Authentication ->
+  Providers, add your Google OAuth client ID/secret, and add your app origin(s)
+  to the allowed redirect URLs.
+- **Email sign-in**: for a frictionless flow, disable "Confirm email" under
+  Authentication -> Providers -> Email. If left on, new sign-ups see a
+  "check your email to confirm" message before they can sign in.
+
+Open [http://localhost:3000](http://localhost:3000), enter a game and platform,
+then ask your question and follow up.
+
+## Flow
+
+1. The browser sends `{ game, platform, question, history, preferredUrl }` to
+   `POST /api/solve`.
+2. For follow-ups, the route rewrites the question into a standalone English
+   query (via the LLM) so conversation context ("point 3") is carried; first
+   questions are used as-is.
+3. It checks the Supabase search cache; on a miss it runs the search (preferred
+   cascade or normal tiers), cleans snippets, filters by relevance score, keeps
+   the 3 strongest sources, and caches the result.
+4. `system_instruction` (persona + rules) and `prompt` (game/platform, history,
+   web evidence) are sent separately to the Gemini model on Replicate.
+5. The browser renders the answer and its sources, and (when signed in) saves the
+   whole chat to Supabase so it can be resumed later.
+
+Provider secrets stay on the server and are never sent to the browser. Source
+text and game/platform input are treated as untrusted; the model is instructed
+not to follow instructions embedded in them.
+
+## Commands
 
 - `npm run dev` — development server
 - `npm run build` — production build
-- `npm start` — menjalankan production build
-- `npm run check` — self-check kecil untuk prompt builder
+- `npm start` — run the production build
+- `npm run check` — small self-check for the prompt builder, snippet cleaner,
+  source selection, IGDB mapping, and platform matching

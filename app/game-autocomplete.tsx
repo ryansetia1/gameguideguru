@@ -117,7 +117,7 @@ export function GameAutocomplete({ value, onChange, disabled }: Props) {
           if (results.length > 0) setOpen(true);
         }}
         onKeyDown={onKeyDown}
-        placeholder="mis. The Legend of Zelda: Link's Awakening"
+        placeholder="e.g. The Legend of Zelda: Link's Awakening"
         maxLength={120}
         autoComplete="off"
         role="combobox"
@@ -129,10 +129,10 @@ export function GameAutocomplete({ value, onChange, disabled }: Props) {
         <div className="combo-panel">
           <ul className="combo-list" role="listbox">
             {loading && results.length === 0 && (
-              <li className="combo-empty">Mencari game...</li>
+              <li className="combo-empty">Searching games...</li>
             )}
             {!loading && results.length === 0 && (
-              <li className="combo-empty">Tidak ada game yang cocok</li>
+              <li className="combo-empty">No matching games</li>
             )}
             {results.map((game, index) => (
               <li
