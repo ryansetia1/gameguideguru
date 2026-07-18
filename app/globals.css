@@ -1122,12 +1122,21 @@ details.sources small {
   cursor: pointer;
 }
 
-.sidebar-new {
-  border: none;
+.sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--line);
-  background: var(--signal);
+}
+
+.sidebar-new,
+.sidebar-library-btn {
+  width: 100%;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
   color: var(--ink);
-  padding: 13px 14px;
+  padding: 11px 12px;
   font-family: var(--font-sans);
   font-size: 0.64rem;
   font-weight: 700;
@@ -1135,6 +1144,34 @@ details.sources small {
   text-transform: uppercase;
   text-align: left;
   cursor: pointer;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition:
+    transform 90ms ease,
+    box-shadow 90ms ease,
+    background 90ms ease;
+}
+
+.sidebar-new {
+  background: var(--signal);
+  color: var(--on-signal);
+}
+
+.sidebar-new:hover,
+.sidebar-library-btn:hover {
+  background: var(--signal);
+  color: var(--on-signal);
+}
+
+.sidebar-new:active,
+.sidebar-library-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+.sidebar-new:focus-visible,
+.sidebar-library-btn:focus-visible {
+  outline: 3px solid var(--signal-dark);
+  outline-offset: 2px;
 }
 
 .sidebar-empty {
@@ -1142,26 +1179,6 @@ details.sources small {
   padding: 16px 14px;
   color: var(--muted);
   font-size: 0.82rem;
-}
-
-.sidebar-library-btn {
-  border: none;
-  border-bottom: 1px solid var(--line);
-  background: var(--paper-strong);
-  color: var(--ink);
-  padding: 13px 14px;
-  font-family: var(--font-sans);
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  text-align: left;
-  cursor: pointer;
-}
-
-.sidebar-library-btn:hover {
-  background: var(--signal);
-  color: #17211f;
 }
 
 /* Library: full-screen cover-art grid */
@@ -2210,6 +2227,7 @@ details.sources small {
 .nav-button:hover,
 .burger:hover,
 .sidebar-new,
+.sidebar-new:hover,
 .sidebar-library-btn:hover,
 .theme-toggle-menu button:hover,
 .composer-attach:hover:not(:disabled),

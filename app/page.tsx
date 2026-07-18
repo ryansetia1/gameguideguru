@@ -935,20 +935,22 @@ export default function Home() {
                 ×
               </button>
             </div>
-            <button type="button" className="sidebar-new" onClick={newGame}>
-              + New game
-            </button>
-            <button
-              type="button"
-              className="sidebar-library-btn"
-              onClick={() => {
-                setSidebarOpen(false);
-                setMenuOpenId(null);
-                setLibraryOpen(true);
-              }}
-            >
-              ▦ Library
-            </button>
+            <div className="sidebar-actions">
+              <button type="button" className="sidebar-new" onClick={newGame}>
+                + New game
+              </button>
+              <button
+                type="button"
+                className="sidebar-library-btn"
+                onClick={() => {
+                  setSidebarOpen(false);
+                  setMenuOpenId(null);
+                  setLibraryOpen(true);
+                }}
+              >
+                ▦ Library
+              </button>
+            </div>
             {chats.length === 0 ? (
               <p className="sidebar-empty">No saved games yet.</p>
             ) : (
