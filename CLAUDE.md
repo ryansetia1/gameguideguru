@@ -62,6 +62,14 @@ and simply cannot save.
   DB is unavailable (`available: false`). `onPick` surfaces the chosen
   `{ name, year, cover, platform }` to the page (manual typing clears the stale
   cover); `showCover` is off for signed-out users.
+- `app/guide-link-field.tsx`: preferred-guide twin tabs — **Paste link** (URL
+  input) or **Search web** (queries `/api/guide-search` with game/platform +
+  optional keywords; **Use** fills `preferredUrl` and switches back to paste).
+  Auto-runs a search when the tab opens if a game name is set.
+- `app/api/guide-search/route.ts`: browse endpoint for the picker. Calls
+  `discoverGuideLinks` (tiered Tavily/Serper, no answer-time confidence gate).
+  Returns `{ results: [{ title, url, snippet }], available }`; `available: false`
+  when neither `TAVILY_API_KEY` nor `SERPER_API_KEY` is set.
 - `app/api/games/route.ts`: TheGamesDB proxy. Runs
   `Games/ByGameName?include=boxart,platform` with `THEGAMESDB_API_KEY` and returns
   `{ games, available }` (each game has `cover` + raw `platform` name). Missing key
@@ -77,7 +85,10 @@ and simply cannot save.
   model still answers. Returns `{ answer, highlights, sources }`. Only
   `REPLICATE_API_TOKEN` is mandatory.
 - `lib/tavily.ts`: `searchGuides(query, preferredUrl?)` orchestrates Tavily then a
-  Serper.dev fallback. `searchTavily` throws when every Tavily call fails so
+  Serper.dev fallback; `discoverGuideLinks(game, platform, query?)` powers the
+  guide picker (same providers, returns up to 8 hits without `selectSources`).
+  Query text is built by `lib/guide-search.js#buildGuideDiscoveryQuery`. `searchTavily`
+  throws when every Tavily call fails so
   `searchGuides` can fall back to `searchSerper` (snippet-only: a preferred host
   becomes a `site:` filter, else one general query, trimmed to top 3). With no
   `preferredUrl` the Tavily path

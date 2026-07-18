@@ -8,6 +8,7 @@
   --line: #c9cdc3;
   --signal: #d8ff4f;
   --signal-dark: #263900;
+  --on-signal: #17211f;
   --danger: #b83a2f;
   --disabled-bg: #e0e2d9;
   --disabled-text: #5f6762;
@@ -158,10 +159,8 @@ h1 em {
   animation: rise 480ms 60ms ease-out backwards;
 }
 
-.setup-primary {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.field-cover {
+  align-self: flex-start;
 }
 
 .field {
@@ -996,7 +995,7 @@ details.sources small {
 .theme-toggle-menu button:hover,
 .theme-toggle-menu button.active {
   background: var(--signal);
-  color: var(--ink);
+  color: var(--on-signal);
 }
 
 /* Nav actions + account menu */
@@ -1747,6 +1746,158 @@ details.sources small {
   align-items: flex-start;
 }
 
+/* Preferred guide: paste link or search the web */
+.guide-link-field {
+  gap: 8px;
+}
+
+.guide-link-modes {
+  display: flex;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+}
+
+.guide-link-modes button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 10px 12px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.guide-link-modes button + button {
+  border-left: 1.5px solid var(--ink);
+}
+
+.guide-link-modes button.active {
+  background: var(--signal);
+  color: var(--on-signal);
+}
+
+.guide-link-modes button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.guide-search-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guide-search-panel.is-inactive {
+  opacity: 0.42;
+  pointer-events: none;
+  user-select: none;
+}
+
+.guide-search-panel.is-inactive input {
+  cursor: not-allowed;
+}
+
+.guide-search-form {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.guide-search-form input {
+  flex: 1;
+  min-width: 0;
+}
+
+.guide-search-form .nav-button {
+  flex: none;
+  white-space: nowrap;
+}
+
+.guide-search-error {
+  margin: 0;
+  color: #b42318;
+  font-size: 0.78rem;
+}
+
+.guide-search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid var(--ink);
+  background: var(--paper-strong);
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.guide-search-hit {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.guide-search-hit:last-child {
+  border-bottom: none;
+}
+
+.guide-search-hit-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.guide-search-title {
+  display: block;
+  color: var(--signal-dark);
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.guide-search-host {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.guide-search-snippet {
+  margin: 6px 0 0;
+  color: var(--text-subtle);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.guide-search-use {
+  flex: none;
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+  padding: 6px 10px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.guide-search-use:hover:not(:disabled) {
+  background: var(--signal);
+}
+
+.guide-search-use:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* Compact sticky header once the card scrolls away. */
 .sticky-header {
   position: sticky;
@@ -2016,23 +2167,6 @@ details.sources small {
   }
 }
 
-@media (min-width: 640px) {
-  .setup-primary {
-    flex-direction: row;
-    align-items: flex-end;
-    gap: 16px;
-  }
-
-  .field-cover {
-    flex: none;
-  }
-
-  .field-game {
-    flex: 1;
-    min-width: 0;
-  }
-}
-
 @media (min-width: 700px) {
   main {
     padding-top: 30px;
@@ -2057,6 +2191,32 @@ details.sources small {
     padding-left: 28px;
     padding-right: 28px;
   }
+}
+
+/* ponytail: --signal is always a light lime; dark-mode --ink is light — never inherit it on signal fills. */
+.brand-mark,
+.combo-option.active,
+.turn.user,
+.turn.user p,
+.turn-action:hover:not(:disabled),
+.submit,
+.nav-button:hover,
+.burger:hover,
+.sidebar-new,
+.sidebar-library-btn:hover,
+.theme-toggle-menu button:hover,
+.composer-attach:hover:not(:disabled),
+.composer-attach-menu button:hover,
+.spoiler-toggle:has(input:checked),
+.cover-placeholder,
+.game-card-edit:hover:not(:disabled),
+.cover-upload:hover,
+.guide-link-modes button.active,
+.guide-search-use:hover:not(:disabled),
+.sticky-back:hover,
+.auth-google:hover:not(:disabled),
+.auth-submit {
+  color: var(--on-signal);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2090,24 +2250,6 @@ details.sources small {
     linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
     var(--paper);
   background-size: 24px 24px;
-}
-
-/* Lime accent stays light — text on it must stay dark. */
-:root[data-theme="dark"] .brand-mark,
-:root[data-theme="dark"] .combo-option.active,
-:root[data-theme="dark"] .turn.user,
-:root[data-theme="dark"] .turn.user p,
-:root[data-theme="dark"] .turn-action:hover:not(:disabled),
-:root[data-theme="dark"] .submit,
-:root[data-theme="dark"] .nav-button:hover,
-:root[data-theme="dark"] .game-card-edit:hover:not(:disabled),
-:root[data-theme="dark"] .sidebar-new,
-:root[data-theme="dark"] .cover-placeholder,
-:root[data-theme="dark"] .cover-upload:hover,
-:root[data-theme="dark"] .sticky-back:hover,
-:root[data-theme="dark"] .auth-google:hover:not(:disabled),
-:root[data-theme="dark"] .auth-submit {
-  color: #17211f;
 }
 
 :root[data-theme="dark"] .burger:hover span {
@@ -2148,6 +2290,7 @@ details.sources small {
 
 :root[data-theme="dark"] .theme-toggle-menu button.active {
   background: #2f383b;
+  color: var(--ink);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -2171,23 +2314,6 @@ details.sources small {
       linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
       var(--paper);
     background-size: 24px 24px;
-  }
-
-  :root:not([data-theme="light"]) .brand-mark,
-  :root:not([data-theme="light"]) .combo-option.active,
-  :root:not([data-theme="light"]) .turn.user,
-  :root:not([data-theme="light"]) .turn.user p,
-  :root:not([data-theme="light"]) .turn-action:hover:not(:disabled),
-  :root:not([data-theme="light"]) .submit,
-  :root:not([data-theme="light"]) .nav-button:hover,
-  :root:not([data-theme="light"]) .game-card-edit:hover:not(:disabled),
-  :root:not([data-theme="light"]) .sidebar-new,
-  :root:not([data-theme="light"]) .cover-placeholder,
-  :root:not([data-theme="light"]) .cover-upload:hover,
-  :root:not([data-theme="light"]) .sticky-back:hover,
-  :root:not([data-theme="light"]) .auth-google:hover:not(:disabled),
-  :root:not([data-theme="light"]) .auth-submit {
-    color: #17211f;
   }
 
   :root:not([data-theme="light"]) .burger:hover span {
@@ -2228,5 +2354,6 @@ details.sources small {
 
   :root:not([data-theme="light"]) .theme-toggle-menu button.active {
     background: #2f383b;
+    color: var(--ink);
   }
 }

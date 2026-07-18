@@ -5,6 +5,7 @@ import { FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } 
 
 import { AuthPanel } from "./auth-panel";
 import { GameAutocomplete } from "./game-autocomplete";
+import { GuideLinkField } from "./guide-link-field";
 import { PlatformSelect } from "./platform-select";
 import { ThemeToggle } from "./theme-toggle";
 import {
@@ -1137,52 +1138,50 @@ export default function Home() {
         </section>
       ) : (
         <section className="setup" aria-label="Game context" ref={topRef}>
-          <div className="setup-primary">
-            {coverEnabled && (
-              <div className="field field-cover">
-                <span className="field-label">Cover</span>
-                <div className="cover-edit">
-                  <CoverThumb cover={cover} name={game} className="cover-md" />
-                  <div className="cover-edit-actions">
-                    <label className="cover-upload">
-                      {cover ? "Replace" : "Upload cover"}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        hidden
-                        disabled={uploadingCover || loading}
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          event.target.value = "";
-                          if (file) selectCover(file);
-                        }}
-                      />
-                    </label>
-                    {cover && (
-                      <button
-                        type="button"
-                        className="cover-clear"
-                        onClick={() => void clearCover()}
-                        disabled={uploadingCover || loading}
-                      >
-                        Clear
-                      </button>
-                    )}
-                  </div>
-                  {pendingCover && <span className="cover-pending">Uploads when you send</span>}
+          {coverEnabled && (
+            <div className="field field-cover">
+              <span className="field-label">Cover</span>
+              <div className="cover-edit">
+                <CoverThumb cover={cover} name={game} className="cover-md" />
+                <div className="cover-edit-actions">
+                  <label className="cover-upload">
+                    {cover ? "Replace" : "Upload cover"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      disabled={uploadingCover || loading}
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = "";
+                        if (file) selectCover(file);
+                      }}
+                    />
+                  </label>
+                  {cover && (
+                    <button
+                      type="button"
+                      className="cover-clear"
+                      onClick={() => void clearCover()}
+                      disabled={uploadingCover || loading}
+                    >
+                      Clear
+                    </button>
+                  )}
                 </div>
+                {pendingCover && <span className="cover-pending">Uploads when you send</span>}
               </div>
-            )}
-            <div className="field field-game">
-              <label htmlFor="game">Game name</label>
-              <GameAutocomplete
-                value={game}
-                onChange={handleGameChange}
-                onPick={pickGame}
-                showCover={coverEnabled}
-                disabled={loading}
-              />
             </div>
+          )}
+          <div className="field field-game">
+            <label htmlFor="game">Game name</label>
+            <GameAutocomplete
+              value={game}
+              onChange={handleGameChange}
+              onPick={pickGame}
+              showCover={coverEnabled}
+              disabled={loading}
+            />
           </div>
           <div className="field field-platform">
             <span className="field-label" id="platform-label">
@@ -1190,20 +1189,13 @@ export default function Home() {
             </span>
             <PlatformSelect value={platform} onChange={setPlatform} />
           </div>
-          <div className="field field-wide">
-            <label htmlFor="preferred-guide">Preferred guide link (optional)</label>
-            <input
-              id="preferred-guide"
-              type="url"
-              inputMode="url"
-              value={preferredUrl}
-              onChange={(event) => setPreferredUrl(event.target.value)}
-              placeholder="Paste a specific guide page (not a category/hub) for best results"
-              maxLength={300}
-              autoComplete="off"
-              disabled={loading}
-            />
-          </div>
+          <GuideLinkField
+            value={preferredUrl}
+            onChange={setPreferredUrl}
+            game={game}
+            platform={platform}
+            disabled={loading}
+          />
           <div className="field field-wide spoiler-field">
             <span className="field-label">Spoilers</span>
             <p className="field-hint">

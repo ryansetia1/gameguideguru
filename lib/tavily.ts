@@ -1,4 +1,5 @@
 import { cleanSnippet, focusSection } from "@/lib/clean";
+import { buildGuideDiscoveryQuery } from "@/lib/guide-search.js";
 import { selectSources } from "@/lib/rank";
 
 const TAVILY_URL = "https://api.tavily.com/search";
@@ -289,6 +290,11 @@ async function searchTavily(
   }
 
   // 3. Normal tiered search.
+  return selectSources(await tieredSearch(apiKey, query));
+}
+
+/** Collect tiered Tavily results without the answer-time confidence gate. */
+async function tieredSearch(apiKey: string, query: string): Promise<SearchResult[]> {
   const seen = new Set<string>();
   const collected: SearchResult[] = [];
   let attempts = 0;
@@ -325,9 +331,7 @@ async function searchTavily(
     throw new Error("All Tavily searches failed");
   }
 
-  // Confidence gate + trim: returns [] when nothing is clearly relevant, so the
-  // model answers from its own knowledge instead of a weak snippet.
-  return selectSources(collected);
+  return collected;
 }
 
 const SERPER_URL = "https://google.serper.dev/search";
@@ -435,4 +439,37 @@ export async function searchGuides(
     }
   }
   return searchSerper(serperKey as string, query, preferredUrl);
+}
+
+const DISCOVER_MAX = 8;
+
+export { buildGuideDiscoveryQuery } from "@/lib/guide-search.js";
+
+/** Browse guide links for the preferred-guide picker (no confidence gate). */
+export async function discoverGuideLinks(
+  game: string,
+  platform: string,
+  query = "",
+): Promise<SearchResult[]> {
+  const searchQuery = buildGuideDiscoveryQuery(game, platform, query);
+  if (!searchQuery) return [];
+
+  const tavilyKey = process.env.TAVILY_API_KEY;
+  const serperKey = process.env.SERPER_API_KEY;
+  if (!tavilyKey && !serperKey) {
+    throw new Error("No search provider configured (TAVILY_API_KEY or SERPER_API_KEY)");
+  }
+
+  if (tavilyKey) {
+    try {
+      return (await tieredSearch(tavilyKey, searchQuery))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, DISCOVER_MAX);
+    } catch (error) {
+      if (!serperKey) throw error;
+      console.error("Tavily unavailable; falling back to Serper:", error);
+    }
+  }
+
+  return (await searchSerper(serperKey as string, searchQuery)).slice(0, DISCOVER_MAX);
 }

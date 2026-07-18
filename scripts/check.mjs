@@ -14,6 +14,7 @@ import { selectSources } from "../lib/rank.js";
 import { parseBlocks, parseInline } from "../lib/markdown.js";
 import { buildSpoilerBlock, coerceSpoilerPrefs } from "../lib/spoiler-prefs.js";
 import { coerceThemeMode, themeFromUserMetadata } from "../lib/theme.js";
+import { buildGuideDiscoveryQuery } from "../lib/guide-search.js";
 
 // System instruction carries the persona + safety rules.
 assert.match(SYSTEM_INSTRUCTION, /untrusted data/);
@@ -78,6 +79,12 @@ assert.equal(coerceThemeMode("dark"), "dark");
 assert.equal(coerceThemeMode("nope"), null);
 assert.equal(themeFromUserMetadata({ theme: "light" }), "light");
 assert.equal(themeFromUserMetadata({}), null);
+
+assert.equal(
+  buildGuideDiscoveryQuery("Suikoden", "PlayStation", ""),
+  "Suikoden PlayStation walkthrough guide",
+);
+assert.equal(buildGuideDiscoveryQuery("", "", "boss guide"), "boss guide");
 
 // Empty search must not crash and must tell the model to fall back to knowledge.
 const noSources = buildPrompt({ question: "What now?", sources: [] });
