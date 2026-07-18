@@ -97,9 +97,13 @@ export async function summarize(input: SummarizeInput): Promise<string> {
       // Gemini on Replicate: keep the persona/rules out of the prompt field.
       system_instruction: SYSTEM_INSTRUCTION,
       temperature: 0.35,
-      max_output_tokens: 1200,
-      // Flash is a reasoning model; disable thinking so the budget goes to the
-      // visible answer and short replies don't come back empty.
+      // Even with thinking_budget: 0, Flash on Replicate spends ~1k tokens of
+      // reasoning overhead that counts against this cap, so it must stay
+      // generous: at 1200 the visible answer got cut after ~100 tokens. This is
+      // a ceiling, not a target — "keep it concise" in the system prompt drives
+      // actual length. ponytail: bumped to 4096; raise toward Flash's 8192 max
+      // if long walkthroughs still truncate.
+      max_output_tokens: 4096,
       thinking_budget: 0,
     },
     signal: AbortSignal.timeout(50_000),

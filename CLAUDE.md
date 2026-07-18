@@ -62,6 +62,9 @@ searchable platform selector, and multi-turn follow-up chat.
 - Follow-ups add one extra Gemini call (`resolveQuestion`) before search, so
   they run two sequential model calls. `max_output_tokens` there must stay
   generous (~200); too tight a cap returns empty even with thinking off.
+- Flash on Replicate consumes ~1k tokens of reasoning overhead against
+  `max_output_tokens` even with `thinking_budget: 0`, so `summarize` uses 4096
+  to avoid truncated answers (1200 cut answers off after ~100 visible tokens).
 - Relevance filtering can't separate same-series wrong-game guides (RE0 vs RE
   Code: Veronica score alike); the top-3 trim plus the "ignore off-game
   snippets" system rule mitigate it rather than fully solving it.
