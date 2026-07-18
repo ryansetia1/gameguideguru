@@ -20,6 +20,7 @@ import {
   steamIdFromMetadata,
   steamLibraryCoverUrl,
 } from "../lib/steam.js";
+import { signSteamSession, verifySteamSession } from "../lib/steam-session.js";
 
 // System instruction carries the persona + safety rules.
 assert.match(SYSTEM_INSTRUCTION, /untrusted data/);
@@ -101,6 +102,10 @@ assert.equal(
 assert.equal(steamIdFromMetadata({ steam_id: "76561198000000000" }), "76561198000000000");
 assert.equal(steamIdFromMetadata({ steam_id: 76561198000000000 }), "76561198000000000");
 assert.match(steamLibraryCoverUrl(570), /\/570\/library_600x900\.jpg$/);
+
+const signed = signSteamSession("76561198000000000");
+assert.equal(verifySteamSession(signed), "76561198000000000");
+assert.equal(verifySteamSession("tampered.token"), null);
 
 // Empty search must not crash and must tell the model to fall back to knowledge.
 const noSources = buildPrompt({ question: "What now?", sources: [] });

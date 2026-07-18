@@ -2,8 +2,8 @@ import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { getAuthOrigin } from "@/lib/origin";
-import { PENDING_STEAM_COOKIE } from "@/lib/steam.js";
+import { steamIdFromMetadata } from "@/lib/steam.js";
+import { STEAM_SESSION_COOKIE, verifySteamSession } from "@/lib/steam-session.js";
 
 export const runtime = "nodejs";
 
@@ -14,13 +14,10 @@ function bearerToken(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const origin = getAuthOrigin(request);
-  const secure = origin.startsWith("https");
-
   const jar = await cookies();
-  const steamId = jar.get(PENDING_STEAM_COOKIE)?.value ?? "";
-  if (!/^\d{5,}$/.test(steamId)) {
-    return NextResponse.json({ ok: false, error: "no_pending" }, { status: 400 });
+  const steamId = verifySteamSession(jar.get(STEAM_SESSION_COOKIE)?.value);
+  if (!steamId) {
+    return NextResponse.json({ ok: false, error: "no_steam_session" }, { status: 400 });
   }
 
   const token = bearerToken(request);
@@ -38,6 +35,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
 
+  if (steamIdFromMetadata(data.user.user_metadata) === steamId) {
+    return NextResponse.json({ ok: true, steamId, alreadyLinked: true });
+  }
+
   const { error: linkError } = await supabase.auth.updateUser({
     data: { steam_id: steamId },
   });
@@ -47,12 +48,5 @@ export async function POST(request: Request) {
   }
 
   const response = NextResponse.json({ ok: true, steamId });
-  response.cookies.set(PENDING_STEAM_COOKIE, "", {
-    httpOnly: true,
-    secure,
-    sameSite: "lax",
-    maxAge: 0,
-    path: "/",
-  });
   return response;
 }

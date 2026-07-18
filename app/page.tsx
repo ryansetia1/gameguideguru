@@ -29,7 +29,20 @@ import {
 import { getSupabase, type Chat } from "@/lib/supabase";
 import { steamIdFromMetadata } from "@/lib/steam.js";
 
-const STEAM_LINK_PENDING_KEY = "gg:steam-link-pending";
+async function fetchSteamStatus(token?: string) {
+  const headers: HeadersInit = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch("/api/steam/me", {
+    credentials: "include",
+    headers,
+  });
+  if (!response.ok) return { steamId: null as string | null, connected: false };
+  const payload: { steamId?: string | null; connected?: boolean } = await response.json();
+  return {
+    steamId: payload.steamId ?? null,
+    connected: Boolean(payload.connected),
+  };
+}
 
 type Source = {
   title: string;
@@ -262,6 +275,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [steamLibraryOpen, setSteamLibraryOpen] = useState(false);
+  const [steamId, setSteamId] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [examplesDismissed, setExamplesDismissed] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -286,7 +300,49 @@ export default function Home() {
   // Cover art (TheGamesDB display + device upload) is a signed-in-only feature:
   // keeps the signed-out flow simple and avoids any Storage use for anon users.
   const coverEnabled = Boolean(user);
-  const steamConnected = Boolean(user && steamIdFromMetadata(user.user_metadata));
+  const steamConnected = Boolean(
+    user && (steamId || steamIdFromMetadata(user.user_metadata)),
+  );
+
+  const refreshSteamStatus = useCallback(async (token?: string) => {
+    const status = await fetchSteamStatus(token);
+    setSteamId(status.steamId);
+    return status;
+  }, []);
+
+  const linkSteamToAccount = useCallback(async () => {
+    const supabase = getSupabase();
+    if (!supabase || !user) return false;
+    if (steamIdFromMetadata(user.user_metadata)) {
+      setSteamId(steamIdFromMetadata(user.user_metadata));
+      return true;
+    }
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) return false;
+
+    const status = await refreshSteamStatus(token);
+    if (!status.steamId) return false;
+
+    const linkResponse = await fetch("/api/steam/link", {
+      method: "POST",
+      credentials: "include",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const linkPayload: { ok?: boolean; error?: string } = await linkResponse.json();
+    if (!linkResponse.ok || !linkPayload.ok) {
+      if (linkPayload.error !== "no_steam_session") {
+        setError("Could not save Steam to your account. Your library still works on this device.");
+      }
+      return Boolean(status.connected);
+    }
+
+    const { data } = await supabase.auth.refreshSession();
+    if (data.session?.user) setUser(data.session.user);
+    setSteamId(status.steamId);
+    return true;
+  }, [refreshSteamStatus, user]);
 
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
@@ -345,6 +401,10 @@ export default function Home() {
   }, [user, loadChats]);
 
   useEffect(() => {
+    void refreshSteamStatus();
+  }, [refreshSteamStatus]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const steam = params.get("steam");
@@ -363,76 +423,22 @@ export default function Home() {
       return;
     }
     if (steam === "linked") {
-      try {
-        window.sessionStorage.setItem(STEAM_LINK_PENDING_KEY, "1");
-      } catch {
-        // private mode
-      }
+      void (async () => {
+        await refreshSteamStatus();
+        await linkSteamToAccount();
+      })();
     }
-  }, []);
+  }, [linkSteamToAccount, refreshSteamStatus]);
 
   useEffect(() => {
     if (!user) return;
-
-    const supabase = getSupabase();
-    if (!supabase) return;
-
     void (async () => {
-      if (steamIdFromMetadata(user.user_metadata)) {
-        try {
-          window.sessionStorage.removeItem(STEAM_LINK_PENDING_KEY);
-        } catch {
-          // ignore
-        }
-        return;
-      }
-
-      let pending = false;
-      try {
-        pending = window.sessionStorage.getItem(STEAM_LINK_PENDING_KEY) === "1";
-      } catch {
-        // ignore
-      }
-
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) {
-        setError("Sign in to link Steam.");
-        return;
-      }
-
-      const linkResponse = await fetch("/api/steam/link", {
-        method: "POST",
-        credentials: "include",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const linkPayload: { ok?: boolean; steamId?: string; error?: string } =
-        await linkResponse.json();
-
-      if (!linkResponse.ok || !linkPayload.ok) {
-        if (pending && linkPayload.error === "no_pending") {
-          setError("Steam connected, but the link expired. Click Connect Steam again.");
-        } else {
-          setError("Could not link Steam to your account.");
-        }
-        try {
-          window.sessionStorage.removeItem(STEAM_LINK_PENDING_KEY);
-        } catch {
-          // ignore
-        }
-        return;
-      }
-
-      try {
-        window.sessionStorage.removeItem(STEAM_LINK_PENDING_KEY);
-      } catch {
-        // ignore
-      }
-
-      const { data } = await supabase.auth.getUser();
-      if (data.user) setUser(data.user);
+      const supabase = getSupabase();
+      const token = (await supabase?.auth.getSession())?.data.session?.access_token;
+      await refreshSteamStatus(token);
+      await linkSteamToAccount();
     })();
-  }, [user]);
+  }, [linkSteamToAccount, refreshSteamStatus, user]);
 
   useEffect(() => {
     if (!menuOpenId) return;

@@ -1,7 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { fetchOwnedGames, steamIdFromMetadata } from "@/lib/steam.js";
+import { STEAM_SESSION_COOKIE, verifySteamSession } from "@/lib/steam-session.js";
 
 export const runtime = "nodejs";
 
@@ -16,26 +18,35 @@ export async function GET(request: Request) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const steamKey = process.env.STEAM_API_KEY;
-
-  if (!token || !url || !anonKey) {
-    return NextResponse.json({ games: [], connected: false, available: false }, { status: 401 });
-  }
+  const jar = await cookies();
+  const cookieSteamId = verifySteamSession(jar.get(STEAM_SESSION_COOKIE)?.value);
 
   if (!steamKey) {
     return NextResponse.json({ games: [], connected: false, available: false });
   }
 
-  const supabase = createClient(url, anonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) {
-    return NextResponse.json({ games: [], connected: false, available: true }, { status: 401 });
+  let accountSteamId: string | null = null;
+  if (token && url && anonKey) {
+    const supabase = createClient(url, anonKey, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    const { data, error } = await supabase.auth.getUser();
+    if (!error && data.user) {
+      accountSteamId = steamIdFromMetadata(data.user.user_metadata);
+    }
   }
 
-  const steamId = steamIdFromMetadata(data.user.user_metadata);
+  const steamId = accountSteamId ?? cookieSteamId;
   if (!steamId) {
-    return NextResponse.json({ games: [], connected: false, available: true });
+    return NextResponse.json({
+      games: [],
+      connected: false,
+      available: true,
+    });
+  }
+
+  if (!token) {
+    return NextResponse.json({ games: [], connected: Boolean(cookieSteamId), available: true }, { status: 401 });
   }
 
   try {

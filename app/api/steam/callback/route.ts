@@ -4,10 +4,14 @@ import { NextResponse } from "next/server";
 import { getAuthOrigin } from "@/lib/origin";
 import {
   OPENID_STATE_COOKIE,
-  PENDING_STEAM_COOKIE,
   safeEqual,
   verifySteamOpenId,
 } from "@/lib/steam.js";
+import {
+  signSteamSession,
+  STEAM_SESSION_COOKIE,
+  STEAM_SESSION_MAX_AGE,
+} from "@/lib/steam-session.js";
 
 export const runtime = "nodejs";
 
@@ -62,11 +66,11 @@ export async function GET(request: Request) {
 
   const response = NextResponse.redirect(`${origin}/?steam=linked`);
   clearOpenIdState(response, secure);
-  response.cookies.set(PENDING_STEAM_COOKIE, steamId, {
+  response.cookies.set(STEAM_SESSION_COOKIE, signSteamSession(steamId), {
     httpOnly: true,
     secure,
     sameSite: "lax",
-    maxAge: 600,
+    maxAge: STEAM_SESSION_MAX_AGE,
     path: "/",
   });
 
