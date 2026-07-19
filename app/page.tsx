@@ -1646,16 +1646,14 @@ export default function Home() {
   const hasGame = Boolean(game.trim());
   const composerLocked = loading || !hasGame;
   // Home layout states:
-  // - Empty account (no saved games): the marketing hero + setup form (classic home).
-  // - Has saved games: the recent-games carousel is always shown; below it sits
-  //   the "+ New game" button, which reveals the setup form IN PLACE (form drops
-  //   in under the carousel). The carousel yields to a plain setup view only when
-  //   a game is pre-filled outside new-game mode (Steam pick / autocomplete).
+  // - Empty account: marketing hero + setup form (+ examples).
+  // - Has saved games (quick home): hero + carousel + CTAs; "+ New game" collapses
+  //   the hero and reveals the setup form below the carousel (push-up motion).
   const homeMode = !started && !editingGame;
   const hasRecent = homeMode && chats.length > 0;
   const showCarousel = hasRecent && (newGameOpen || !hasGame);
-  const quickIdle = showCarousel && !newGameOpen; // carousel + button, form hidden
-  const showHero = homeMode && !hasRecent; // only a truly empty account sees home
+  const quickIdle = showCarousel && !newGameOpen;
+  const showHero = homeMode;
   const showSetupForm = homeMode && !quickIdle;
   const QUICK_LIMIT = 4;
   const recentGames = chats.slice(0, QUICK_LIMIT);
@@ -2017,22 +2015,31 @@ export default function Home() {
       )}
 
       {showHero && (
-        <section className="hero">
-          <p className="eyebrow">
-            Companion for <RotatingWord />
-          </p>
-          <h1>
-            Stuck? <em>Keep playing.</em>
-          </h1>
-          <p className="intro">
-            Say the game and where you&apos;re stuck. We turn web guides into steps
-            you can act on.
-          </p>
-        </section>
+        <div
+          className={`hero-shell${newGameOpen && hasRecent ? " hero-shell--exit" : ""}`}
+          aria-hidden={newGameOpen && hasRecent}
+        >
+          <section className={`hero${hasRecent ? " hero--quick" : ""}`}>
+            <p className="eyebrow">
+              Companion for <RotatingWord />
+            </p>
+            <h1>
+              Stuck? <em>Keep playing.</em>
+            </h1>
+            <p className="intro">
+              Say the game and where you&apos;re stuck. We turn web guides into steps
+              you can act on.
+            </p>
+          </section>
+        </div>
       )}
 
       {showCarousel && (
-        <section className="quick-home" aria-label="Recent games" ref={topRef}>
+        <section
+          className={`quick-home${newGameOpen ? " quick-home--form-open" : ""}`}
+          aria-label="Recent games"
+          ref={topRef}
+        >
           <div className="quick-head">
             <h2>Jump back in</h2>
           </div>
@@ -2175,7 +2182,11 @@ export default function Home() {
       ) : showSetupForm ? (
         // Mounting fresh when "+ New game" is tapped replays .setup's `rise`
         // animation, so revealing the form (below the carousel) is animated.
-        <section className="setup" aria-label="Game context" ref={topRef}>
+        <section
+          className={`setup${newGameOpen && hasRecent ? " setup--from-quick" : ""}`}
+          aria-label="Game context"
+          ref={topRef}
+        >
           <div className="setup-main">
           {/* Cover column only mounts once a cover exists (upload or autocomplete);
               its reveal animation gives the "fill in" effect. No cover = no noisy
@@ -2312,7 +2323,7 @@ export default function Home() {
         </section>
       ) : null}
 
-      {showHero && !examplesDismissed && (
+      {!hasRecent && homeMode && !examplesDismissed && (
         <div className="examples-block" aria-label="Examples">
           <div className="examples-head">
             <span className="examples-label">Try an example</span>

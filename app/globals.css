@@ -214,6 +214,50 @@ main {
   animation: rise 480ms ease-out backwards;
 }
 
+/* Collapsible wrapper so quick-home "+ New game" can animate the hero away. */
+.hero-shell {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition:
+    grid-template-rows 320ms cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 280ms ease,
+    margin 320ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.hero-shell > .hero {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.hero-shell--exit {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-top: 0;
+  pointer-events: none;
+}
+
+/* Returning users: tighter hero so carousel + CTAs stay in thumb reach. */
+.hero--quick {
+  margin-top: 8px;
+}
+
+.hero--quick h1 {
+  font-size: clamp(2.35rem, 11vw, 3.6rem);
+  line-height: 0.9;
+}
+
+.hero--quick .intro {
+  margin-top: 14px;
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-shell--exit {
+    transition-duration: 0.01ms;
+  }
+}
+
 .eyebrow {
   margin: 0 0 14px;
   color: var(--muted);
@@ -304,6 +348,24 @@ h1 em {
   gap: 12px;
   margin-top: 30px;
   animation: rise 480ms 60ms ease-out backwards;
+}
+
+.setup--from-quick {
+  margin-top: 16px;
+  animation: setup-enter 360ms cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+
+@keyframes setup-enter {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .setup--from-quick {
+    animation: none;
+  }
 }
 
 /* Setup: cover column (tile + upload beneath) on the left, the required fields
@@ -2355,8 +2417,13 @@ details.sources small {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  margin-top: 24px;
+  margin-top: 20px;
   animation: rise 480ms 60ms ease-out backwards;
+  transition: margin-top 320ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.quick-home--form-open {
+  margin-top: 12px;
 }
 
 .quick-head h2 {

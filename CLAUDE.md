@@ -67,12 +67,13 @@ and simply cannot save.
   `saveGameMeta`/`deleteChat` in `page.tsx` branch on `userRef` (Supabase when
   signed-in, this when anon). Anon has no Storage, so these rows are text +
   metadata only (cover is a CDN URL or ""). **Home layout:** empty account →
-  marketing hero + setup form; has saved games → a recent-games **carousel**
-  (`.quick-home`, native scroll-snap, uniform cards, up to 4 + a "+N more" tile
-  that opens the saved library) with a green **"+ New game"** button that reveals
-  the setup form in place below it, plus **Saved library** / **Steam library**
-  (when connected) shortcut buttons. Sidebar + library are ungated for anon
-  (Steam/profile controls stay `user`-only).
+  marketing hero + setup form (+ examples); has saved games → compact hero +
+  **Jump back in** carousel (`.quick-home`, native scroll-snap, uniform cards,
+  up to 4 + a "+N more" tile that opens the saved library) + **"+ New game"** /
+  **Saved library** / **Steam library** (when connected) buttons. "+ New game"
+  collapses the hero (`.hero-shell--exit`) and reveals the setup form below the
+  carousel with a push-up entrance (`.setup--from-quick`). Sidebar + library are
+  ungated for anon (Steam/profile controls stay `user`-only).
 - `app/platform-select.tsx`: custom themed, searchable, keyboard-accessible
   platform combobox. Delegates filtering to `lib/platforms.js`.
 - `lib/platforms.js`: owns the `PLATFORMS` list and `matchPlatforms(query)`, a
