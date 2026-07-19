@@ -330,6 +330,54 @@ Not blocking. Ledger so nothing rots into "later means never".
    `guide_url` filter), URL 300-char truncation, low-confidence branch feeding one
    sub-`GUIDE_HIT` chunk (arguably intended — the user chose the guide).
 
+## Bundle discovery/state audit — deferred (Tier 2/3)
+
+Three-agent audit (2026-07-19). Verdict: **fix, not rewrite** — architecture is
+sound. **Tier 1 shipped** (raw-markdown TOC parse, bundle-aware indexed probes,
+per-page resilient embed, no more freezing at 2 pages). These remain:
+
+**Post-Tier-1 heal:** clear `guide_bundle_cache` once — bundles cached as partial
+(2-page) before the raw-TOC fix still short-circuit to the stale list until
+refreshed. New caches from the fixed path are complete.
+
+**Tier 2 — reliability hardening**
+- **Client selection must reach the server reliably.** The ingest/solve body reads
+  `localStorage` only (`buildBundlePrefsBody` → `getBundlePrefs`) while the panel
+  reads `guideBundleMeta`+`bundleIndexStatus`. A failed/lagged localStorage write
+  (private mode, quota) → panel shows "3 of 12 picked" but server ingests all or
+  nothing, silently. Surface `setBundlePrefs` write failures, or send selection
+  from UI state. (client audit F2/F7)
+- **Raise/remove the 12-part discovery cap** (`maxPart`,
+  `PART_QUERY_PAGE_THRESHOLD` in gamefaqs-bundle.js / gamefaqs-discover.ts) — now
+  that raw-TOC extract is the primary source, the search fan-out is rare, so the
+  cap that hides parts 13+ is no longer needed. (discovery A#3)
+- **Honest polling finish.** `pollBundleIndexingProgress` ties "done" to the ingest
+  promise resolving, not to pages actually reaching indexed — shows complete even
+  when pages failed. Base "done" on `targets ⊆ indexed` from a final status read.
+  (client F11)
+- **Widen `isGuideIndexed` for bundles** OR ensure callers re-enter ingest while
+  `discoveryPages > pagesIndexed` (solve already re-enters; this is belt-and-braces).
+  (state F3)
+
+**Tier 3 — cleanup / known ceilings (self-heal, low priority)**
+- **Delete the `guideBundleMeta` derived cache** (client) — it's a third source of
+  truth between server status and localStorage prefs and causes ~5 drift classes
+  (F1/F3/F4/F9/F10). Compute panel props on the fly from `bundleIndexStatus` +
+  `getBundlePrefs`. This is the "mini-rewrite" of one client layer — discuss before
+  doing.
+- Cross-account pref bleed: clear `gg:bundle-prefs` + reset `lastSyncedPayload` on
+  sign-out. (client F5)
+- Dead-page pruning: union-only merge never drops 404'd pages; add periodic
+  re-discovery or a prune. (state F11)
+- Cache write atomicity: `setCachedBundleDiscovery` is read-modify-write, last
+  writer wins under concurrency; move to a `security definer` jsonb-merge RPC if it
+  matters. (state F9)
+- Blocked-content detection only checks 3 Cloudflare marker strings; a challenge
+  variant without them passes as "content" → empty TOC read as single-page guide.
+  (discovery A#4)
+- Unify the two slug parsers (`getIndexedBundlePagesFromDb` inline regex vs
+  `slugFromGamefaqsPageUrl`). (state F4)
+
 ## Known ceilings (`ponytail:`)
 
 - `GUIDE_HIT` similarity threshold is hand-tuned, one constant.

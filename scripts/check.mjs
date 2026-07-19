@@ -487,6 +487,23 @@ assert.equal(searchPages[0].slug, "introduction");
 
 const parsed80674 = parseGamefaqsFaqUrl(suikodenBundle);
 assert.ok(parsed80674);
+
+// Discovery must parse the TOC from RAW extract markdown, not cleanSnippet output.
+// Tavily returns the sidebar TOC as [label](…/faqs/id/slug) links; cleanSnippet
+// strips every URL, so parsing cleaned text silently finds nothing (the "hit or
+// miss" root cause). This guards that regression.
+const mdToc =
+  "Table of Contents\n" +
+  `- [Introduction](${suikodenBundle}/introduction)\n` +
+  `- [Walkthrough Part 1](${suikodenBundle}/walkthrough-part-1)\n` +
+  `- [Walkthrough Part 2](${suikodenBundle}/walkthrough-part-2)\n`;
+const rawTocPages = parseGamefaqsTocFromHtml(mdToc, parsed80674);
+const cleanedTocPages = parseGamefaqsTocFromHtml(cleanSnippet(mdToc), parsed80674);
+assert.ok(rawTocPages.length >= 3, "TOC parse from RAW markdown finds every page");
+assert.ok(
+  cleanedTocPages.length < rawTocPages.length,
+  "cleanSnippet strips TOC URLs — discovery must parse RAW extract, not cleaned text",
+);
 assert.equal(
   parseGamefaqsGuideTitle(
     "Guide and Walkthrough (PS) by [Cyril](https://gamefaqs.gamespot.com/ps/198843-suikoden/faqs/80674/credit)",

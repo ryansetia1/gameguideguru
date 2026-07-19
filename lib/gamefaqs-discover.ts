@@ -56,7 +56,7 @@ async function enrichGamefaqsBundleTitle(
   ];
 
   for (const url of candidates) {
-    const extracted = await extractGuidePage(url, signal);
+    const extracted = await extractGuidePage(url, signal, true);
     if (!extracted?.content || isBlockedGuideContent(extracted.content)) continue;
     const title = parseGamefaqsGuideTitle(extracted.content, parsed);
     if (!isGenericGamefaqsBundleTitle(title)) return title;
@@ -90,7 +90,7 @@ async function enrichBundlePagesFromExtracts(
   );
 
   for (const page of seeds.slice(0, 6)) {
-    const extracted = await extractGuidePage(page.url, signal);
+    const extracted = await extractGuidePage(page.url, signal, true);
     if (!extracted?.content || isBlockedGuideContent(extracted.content)) continue;
     const found = parseGamefaqsTocFromHtml(extracted.content, parsed);
     if (found.length) merged.push(...found);
@@ -214,7 +214,7 @@ async function discoverGamefaqsBundleViaExtract(
   let bestTitle = "GameFAQs guide";
 
   for (const url of buildExtractCandidates(parsed, rawUrl)) {
-    const extracted = await extractGuidePage(url, signal);
+    const extracted = await extractGuidePage(url, signal, true);
     if (!extracted?.content || isBlockedGuideContent(extracted.content)) continue;
 
     const title = parseGamefaqsGuideTitle(extracted.content, parsed);
@@ -306,11 +306,13 @@ async function discoverGamefaqsBundleCacheFirst(
     }
   }
 
-  // ponytail: Tavily extract often drops GameFAQs sidebar TOC — one quick site search.
+  // Extract failed to yield a TOC — run all base site-search queries (no early
+  // exit at 2) so we don't cache a truncated 2-page list as the complete bundle,
+  // which would freeze until a manual refresh.
   const fromSearch = await discoverGamefaqsBundleViaSearch(parsed, signal, seedPages, {
     partQueries: false,
     enrich: false,
-    earlyExitMinPages: 2,
+    earlyExitMinPages: 0,
   });
   if (fromSearch.length > 1) {
     const searchTitle = await resolveDiscoveryTitle(parsed, extracted.title, signal);

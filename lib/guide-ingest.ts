@@ -221,10 +221,15 @@ async function insertGuideChunks(input: {
   try {
     const { error } = await input.supabase.from("guide_chunks").insert(rows);
     if (error) {
-      const { count } = await input.supabase
+      // Recount within the SAME bundle namespace, so a standalone null-bundle row
+      // for this URL doesn't get mistaken for a successful bundle insert.
+      const recount = input.supabase
         .from("guide_chunks")
         .select("*", { count: "exact", head: true })
         .eq("guide_url", guideUrl);
+      const { count } = await (input.guideBundle
+        ? recount.eq("guide_bundle", input.guideBundle)
+        : recount.is("guide_bundle", null));
       if ((count ?? 0) > 0) {
         return { indexed: true, chunkCount: count ?? input.chunks.length };
       }
@@ -331,8 +336,37 @@ async function storePendingPages(input: {
       ...input.embedLog,
     });
   } catch (error) {
-    console.error("Guide ingest batch embed failed:", error);
-    return { pagesIndexed: 0, chunkCount: 0, indexedSlugs: [] };
+    // One 429/abort must not drop the whole batch (up to EXTRACT_BATCH_SIZE pages).
+    // Fall back to embedding + storing each page on its own, best-effort per page.
+    console.error("Guide ingest batch embed failed, retrying per page:", error);
+    let pagesIndexed = 0;
+    let chunkCount = 0;
+    const indexedSlugs: string[] = [];
+    for (const page of input.pages) {
+      try {
+        const pageEmbeddings = await embedTexts(page.chunks, input.signal, {
+          purpose: "ingest",
+          guideUrl: page.guideUrl,
+          bundleKey: page.guideBundle ?? undefined,
+          ...input.embedLog,
+        });
+        const stored = await insertGuideChunks({
+          supabase: input.supabase,
+          guideUrl: page.guideUrl,
+          guideBundle: page.guideBundle,
+          chunks: page.chunks,
+          embeddings: pageEmbeddings,
+        });
+        if (stored.indexed) {
+          pagesIndexed += 1;
+          chunkCount += stored.chunkCount;
+          indexedSlugs.push(page.slug);
+        }
+      } catch (pageError) {
+        console.error("Guide ingest per-page embed failed:", pageError);
+      }
+    }
+    return { pagesIndexed, chunkCount, indexedSlugs };
   }
 
   let pagesIndexed = 0;
@@ -467,10 +501,14 @@ async function ingestGamefaqsBundle(
         content = solo?.content;
       }
       const normalized = normalizeGuideUrl(page.url);
+      // Scope to THIS bundle: a page indexed standalone (guide_bundle=null) must
+      // not count as "already in the bundle" — that left it invisible to the panel
+      // and to bundle retrieval (match_guide_chunks filters by guide_bundle).
       const { count: dbCountBefore } = await supabase
         .from("guide_chunks")
         .select("*", { count: "exact", head: true })
-        .eq("guide_url", normalized);
+        .eq("guide_url", normalized)
+        .eq("guide_bundle", bundleKey);
       const chunksPreview = content ? chunkGuide(content) : [];
       if (!content) continue;
 

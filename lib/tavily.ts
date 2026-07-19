@@ -201,13 +201,17 @@ type TavilyExtractDepth = "basic" | "advanced";
 function mergeExtractResults(
   target: Map<string, string>,
   results: unknown,
+  // Discovery needs RAW markdown: the GameFAQs sidebar TOC is a set of
+  // [label](…/faqs/id/slug) links, and cleanSnippet strips every URL — so parsing
+  // the TOC out of cleaned text silently finds nothing. Ingest keeps cleaned text.
+  raw = false,
 ): void {
   if (!Array.isArray(results)) return;
   for (const item of results) {
     if (!item || typeof item !== "object") continue;
     const record = item as { url?: unknown; raw_content?: unknown };
     if (typeof record.url !== "string" || typeof record.raw_content !== "string") continue;
-    const content = cleanSnippet(record.raw_content);
+    const content = raw ? record.raw_content : cleanSnippet(record.raw_content);
     if (content.length < MIN_CONTENT) continue;
     try {
       target.set(new URL(record.url).toString(), content);
@@ -222,6 +226,7 @@ async function runTavilyExtract(
   apiKey: string,
   signal: AbortSignal | undefined,
   depth: TavilyExtractDepth,
+  raw = false,
 ): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   if (!urls.length) return out;
@@ -263,7 +268,7 @@ async function runTavilyExtract(
     payload && typeof payload === "object" && "results" in payload
       ? (payload.results as unknown)
       : null;
-  mergeExtractResults(out, results);
+  mergeExtractResults(out, results, raw);
   return out;
 }
 
@@ -288,12 +293,13 @@ async function extractWithAdvancedFallback(
   urls: string[],
   apiKey: string,
   signal?: AbortSignal,
+  raw = false,
 ): Promise<Map<string, string>> {
-  const out = await runTavilyExtract(urls, apiKey, signal, "basic");
+  const out = await runTavilyExtract(urls, apiKey, signal, "basic", raw);
   const missing = urls.filter((url) => !out.has(url));
   if (!missing.length) return out;
 
-  const advanced = await runTavilyExtract(missing, apiKey, signal, "advanced");
+  const advanced = await runTavilyExtract(missing, apiKey, signal, "advanced", raw);
   for (const [url, content] of advanced) out.set(url, content);
   if (advanced.size) {
     logTavily("extract", "advanced extract filled basic misses", {
@@ -311,6 +317,9 @@ async function extractWithAdvancedFallback(
 export async function extractGuidePage(
   rawUrl: string,
   signal?: AbortSignal,
+  // Pass true for bundle discovery (needs raw markdown with TOC URLs intact);
+  // leave false for RAG ingest (wants cleaned prose).
+  raw = false,
 ): Promise<{ url: string; content: string } | null> {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) {
@@ -330,7 +339,7 @@ export async function extractGuidePage(
     return null;
   }
 
-  const map = await extractWithAdvancedFallback([parsed.toString()], apiKey, signal);
+  const map = await extractWithAdvancedFallback([parsed.toString()], apiKey, signal, raw);
   const content = map.get(parsed.toString());
   if (!content) {
     logTavily("extract", "no content after basic + advanced extract", {
