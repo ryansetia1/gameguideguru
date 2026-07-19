@@ -79,7 +79,10 @@ function guideUrlNeedsIngest(
   url: string,
   meta: GuideBundleMeta | undefined,
   indexStatus: { pages: { slug: string }[] } | undefined,
+  indexState: string | undefined,
 ) {
+  if (indexState === "indexed") return false;
+  
   const bundlePages = meta?.pageCount && meta.pageCount > 1;
   const discovered = meta?.pages ?? [];
   const indexedSlugs = indexStatus?.pages?.map((page) => page.slug) ?? [];
@@ -2332,7 +2335,7 @@ export default function Home() {
     abortRef.current = controller;
 
     const urlsNeedingIngest = guideUrls.filter((url) =>
-      guideUrlNeedsIngest(url, guideBundleMeta[url], bundleIndexStatus[url]),
+      guideUrlNeedsIngest(url, guideBundleMeta[url], bundleIndexStatus[url], guideIndexState[url]),
     );
     // T2-3: hoist so the finally block can do a final status check.
     let ingestBundleUrl: string | undefined;

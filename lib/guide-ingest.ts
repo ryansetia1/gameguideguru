@@ -192,7 +192,23 @@ export async function isGuideIndexed(guideUrl: string): Promise<boolean> {
       .from("guide_chunks")
       .select("*", { count: "exact", head: true })
       .eq("guide_url", normalized);
-    return !error && (count ?? 0) > 0;
+    
+    if (!error && (count ?? 0) > 0) return true;
+
+    // Fallback: if they pasted a GameFAQs root URL with query params (e.g. ?page=1)
+    // but the DB has the clean canonical URL, check the canonical URL too.
+    if (parsed && isGamefaqsBundleUrl(guideUrl)) {
+      const canonical = normalizeGuideUrl(parsed.canonicalUrl);
+      if (canonical !== normalized) {
+        const { count: cCount, error: cError } = await supabase
+          .from("guide_chunks")
+          .select("*", { count: "exact", head: true })
+          .eq("guide_url", canonical);
+        if (!cError && (cCount ?? 0) > 0) return true;
+      }
+    }
+    
+    return false;
   } catch {
     return false;
   }
