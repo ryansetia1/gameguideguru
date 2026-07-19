@@ -577,8 +577,31 @@ export default function Home() {
 
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
-  const [chats, setChats] = useState<Chat[]>([]);
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => setIsMounted(true), []);
+
+  const [chats, setChats] = useState<Chat[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = window.localStorage.getItem("gg:recent-chats-cache");
+        if (cached) return JSON.parse(cached);
+      } catch {}
+    }
+    return [];
+  });
   const [chatsLoaded, setChatsLoaded] = useState(false);
+
+  useEffect(() => {
+    if (isMounted && chatsLoaded) {
+      try {
+        if (chats.length > 0) {
+          window.localStorage.setItem("gg:recent-chats-cache", JSON.stringify(chats));
+        } else {
+          window.localStorage.removeItem("gg:recent-chats-cache");
+        }
+      } catch {}
+    }
+  }, [chats, isMounted, chatsLoaded]);
   // Home quick-access: hide the setup form behind a "+ New game" reveal when the
   // user already has saved games (signed-in or anon local). Reset on newGame().
   const [newGameOpen, setNewGameOpen] = useState(false);
@@ -2161,6 +2184,7 @@ export default function Home() {
     setSteamId(null);
     // Prevent cross-account bundle-pref bleed on shared devices.
     clearBundlePrefs();
+    try { window.localStorage.removeItem("gg:recent-chats-cache"); } catch {}
     // Reset the open thread (it referenced a signed-in chat); loadChats then
     // repopulates from anon localStorage. Previously handled by the !user effect.
     newGame();
@@ -2635,10 +2659,10 @@ export default function Home() {
   //   the hero and reveals the setup form below the carousel (push-up motion).
   const homeMode = !started && !editingGame;
   const hasRecent = homeMode && chats.length > 0;
-  const showCarousel = hasRecent && (newGameOpen || !hasGame);
+  const showCarousel = isMounted && hasRecent && (newGameOpen || !hasGame);
   const quickIdle = showCarousel && !newGameOpen;
-  const showHero = homeMode;
-  const showSetupForm = (homeMode && !quickIdle) || (started && editingGame);
+  const showHero = isMounted && homeMode;
+  const showSetupForm = (isMounted && homeMode && !quickIdle) || (started && editingGame);
   const QUICK_LIMIT = 4;
   const recentGames = chats.slice(0, QUICK_LIMIT);
   const moreGamesCount = chats.length - recentGames.length;
