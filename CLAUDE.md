@@ -501,6 +501,22 @@ Panel when loaded:
 - `retrieveFromPreferredGuides` ingests (with `bundlePrefs`), embeds query
   (`embed_query` in `llm_calls`), `match_guide_chunks` with `GUIDE_HIT` threshold.
 - High hit → `skipWebSearch: true`; else tiered Tavily + one chunk fallback.
+- **DO NOT add an ANN index (ivfflat/hnsw) on `guide_chunks.embedding`.**
+  Retrieval always filters by `guide_url`/`guide_bundle` first (btree), then does an
+  EXACT cosine sort on that ≤~dozens-of-rows subset — fast + 100% recall. A prior
+  ivfflat index (`lists=100`, default `probes=1`) made the planner use it for the
+  ORDER BY and return only ~1 (approximate, often WRONG) chunk per query on the tiny
+  per-guide set — which surfaced as a preferred-guide answer drifting off the guide
+  even though `hit=true`. Removed in `db/guide-chunks.sql`; re-add hnsw only for
+  unfiltered global KNN over 100k+ chunks.
+- Debug retrieval with `RAG_DEBUG=1` → logs `[rag-calibrate] hit=… top=… scores=[…]
+  top_chunk=…` per query (scores should have several entries, not one; top_chunk
+  should match the question). This is the fastest way to tell a retrieval miss
+  (wrong/too-few chunks) from a generation miss (right chunk, model ignored it).
+- `EMBED_QUERY_INSTRUCTION` (default empty = OFF): Qwen3 supports an asymmetric
+  query instruction, but documents are embedded WITHOUT one, so enabling it without
+  recalibrating `GUIDE_HIT` misaligns query vs document vectors and tanks relevance.
+  Keep OFF until calibrated.
 
 ### Self-heal cheat sheet
 
