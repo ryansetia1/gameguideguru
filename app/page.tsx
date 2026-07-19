@@ -2227,7 +2227,12 @@ export default function Home() {
     const ingestPromise = urlsNeedingIngest.length ? runGuideIngest() : null;
 
     try {
-      let ingestHint: string | null = null;
+      // Finish indexing BEFORE asking solve. solve runs its own safety
+      // ensureGuideIngested, so firing both concurrently double-ingests a fresh
+      // guide (2x Tavily extract + 2x embed, racing each other). Awaiting first
+      // makes solve's ingest a no-op skip while keeping the answer grounded in
+      // the guide (and the indexing progress UI runs during this await).
+      const ingestHint: string | null = ingestPromise ? await ingestPromise : null;
       const response = await fetch("/api/solve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2299,11 +2304,7 @@ export default function Home() {
       // Storage instead of leaving them orphaned.
       if (temporary && images.length) void deleteMessageImages([userMessage]);
       succeeded = true;
-      if (ingestPromise) {
-        void ingestPromise.then((hint) => {
-          if (hint) setToast(hint);
-        });
-      }
+      if (ingestHint) setToast(ingestHint);
     } catch (caught) {
       setMessages(priorMessages);
       // A user-triggered Stop aborts the fetch — treat it as a silent cancel,

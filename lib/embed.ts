@@ -16,9 +16,11 @@ const QUERY_INSTRUCTION =
   "Given a video game player's question, retrieve the walkthrough guide passages that answer it.";
 const EMBED_DIM = 1024;
 const BATCH_SIZE = 32;
-// ponytail: keep low for Replicate accounts under ~$5 credit (throttles concurrency).
-const CONCURRENCY = parsePositiveInt(process.env.EMBED_CONCURRENCY, 3, 8);
-const BATCH_DELAY_MS = parsePositiveInt(process.env.EMBED_BATCH_DELAY_MS, 400, 5_000);
+// Defaults tuned for a funded account (withReplicateRetry backs off on 429, so
+// these degrade gracefully). Lower EMBED_CONCURRENCY / raise EMBED_BATCH_DELAY_MS
+// via env if a low-balance account gets throttled.
+const CONCURRENCY = parsePositiveInt(process.env.EMBED_CONCURRENCY, 5, 8);
+const BATCH_DELAY_MS = parsePositiveInt(process.env.EMBED_BATCH_DELAY_MS, 150, 5_000);
 
 type ModelName = `${string}/${string}` | `${string}/${string}:${string}`;
 

@@ -24,9 +24,11 @@ const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 const MIN_GUIDE_CHARS = 400;
-// Smaller Tavily batches + pauses keep low-balance Replicate accounts from throttling.
-const EXTRACT_BATCH_SIZE = parsePositiveInt(process.env.INGEST_EXTRACT_BATCH_SIZE, 5, 10);
-const INGEST_BATCH_DELAY_MS = parsePositiveInt(process.env.INGEST_BATCH_DELAY_MS, 800, 10_000);
+// Bigger extract batches + shorter pauses for a funded account (retry backs off on
+// throttle). Tune down via INGEST_EXTRACT_BATCH_SIZE / up via INGEST_BATCH_DELAY_MS
+// if a low-balance Replicate account starts 429ing.
+const EXTRACT_BATCH_SIZE = parsePositiveInt(process.env.INGEST_EXTRACT_BATCH_SIZE, 8, 10);
+const INGEST_BATCH_DELAY_MS = parsePositiveInt(process.env.INGEST_BATCH_DELAY_MS, 300, 10_000);
 
 let client: SupabaseClient | null = null;
 
