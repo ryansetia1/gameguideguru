@@ -2001,9 +2001,9 @@ export default function Home() {
 
   function scrollToLatest() {
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    feedRef.current?.scrollIntoView({
+    window.scrollTo({
+      top: document.documentElement.scrollHeight,
       behavior: reduceMotion ? "auto" : "smooth",
-      block: "end",
     });
   }
 
