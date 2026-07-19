@@ -2003,9 +2003,10 @@ export default function Home() {
   function scrollToLatest() {
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
     window.scrollTo({
-      top: document.documentElement.scrollHeight,
+      top: document.documentElement.scrollHeight + 9999,
       behavior: reduceMotion ? "auto" : "smooth",
     });
+    setShowScrollFab(false);
   }
 
   // Return to the empty home view. Pop the pushed chat entry so the history stack

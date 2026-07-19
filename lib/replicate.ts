@@ -96,6 +96,7 @@ async function runModel(
   input: Record<string, unknown>,
   timeoutMs: number,
   signal?: AbortSignal,
+  onProgress?: (logs: string) => void,
 ): Promise<RunModelResult> {
   const started = Date.now();
   let metrics: PredictionMetrics["metrics"];
@@ -105,10 +106,20 @@ async function runModel(
     {
       input,
       signal: withTimeout(timeoutMs, signal),
+      wait: { mode: "poll", interval: 500 },
     },
-    (prediction: PredictionMetrics) => {
+    (prediction: PredictionMetrics & { status?: string }) => {
       metrics = prediction.metrics;
-      if (prediction.logs) logs = prediction.logs;
+      if (prediction.status && onProgress) {
+        let msg = "Processing...";
+        if (prediction.status === "starting") msg = "Starting AI engine...";
+        else if (prediction.status === "processing") msg = "Generating answer...";
+        else if (prediction.status === "succeeded") msg = "Formatting answer...";
+        onProgress(msg);
+      }
+      if (prediction.logs) {
+        logs = prediction.logs;
+      }
     },
   );
   const predictTimeMs =
@@ -201,6 +212,7 @@ export type SummarizeInput = {
   playerName?: string;
   userId?: string | null;
   signal?: AbortSignal;
+  onProgress?: (msg: string) => void;
 };
 
 export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
@@ -239,6 +251,12 @@ export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
     },
     50_000,
     input.signal,
+    (logs) => {
+      if (input.onProgress) {
+        const lines = logs.split("\n").map(l => l.trim()).filter(Boolean);
+        if (lines.length) input.onProgress(lines[lines.length - 1]);
+      }
+    }
   );
 
   const trimmed = rawOutput.trim();

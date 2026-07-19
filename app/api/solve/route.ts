@@ -212,6 +212,9 @@ export async function POST(request: Request) {
           playerName,
           userId,
           signal,
+          onProgress: (msg: string) => {
+            sendEvent("status", { text: msg });
+          },
         });
 
         if (!spoilerPrefs.major && spoilerRisk) {

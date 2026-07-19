@@ -184,7 +184,8 @@ export async function isGuideIndexed(guideUrl: string): Promise<boolean> {
   try {
     const parsed = parseGamefaqsFaqUrl(guideUrl);
     if (parsed && isGamefaqsBundleUrl(guideUrl)) {
-      return (await countBundleChunks(supabase, parsed.bundleKey)) > 0;
+      const bundleCount = await countBundleChunks(supabase, parsed.bundleKey);
+      if (bundleCount > 0) return true;
     }
     const normalized = normalizeGuideUrl(guideUrl);
     const { count, error } = await supabase
