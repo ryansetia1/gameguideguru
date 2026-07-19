@@ -4,13 +4,21 @@ import { useEffect, useRef, useState } from "react";
 
 import { tgdbPlatformToLabel } from "@/lib/platforms.js";
 
-type Game = { id: number; name: string; year: string; cover: string; platform: string };
+type Game = {
+  id: number;
+  name: string;
+  year: string;
+  releaseDate?: string;
+  cover: string;
+  platform: string;
+  hint?: string;
+};
 
 // Best-effort client cache of autocomplete results (24h) so repeat lookups don't
 // spend TheGamesDB's monthly quota. In-memory Map mirrored to localStorage; any
 // failure just falls through to the network. Only successful (available) results
 // are cached, so a missing/broken key retries once fixed.
-const CACHE_KEY = "gg:games-cache";
+const CACHE_KEY = "gg:games-cache-v2";
 const CACHE_TTL = 24 * 60 * 60 * 1000;
 const CACHE_MAX = 200;
 
@@ -264,8 +272,11 @@ export function GameAutocomplete({
                         <span className="combo-cover combo-cover-empty" aria-hidden="true" />
                       ))}
                     <span className="combo-name">
-                      {game.name}
-                      {game.year && <span className="combo-year"> ({game.year})</span>}
+                      <span className="combo-title">
+                        {game.name}
+                        {game.year && <span className="combo-year"> ({game.year})</span>}
+                      </span>
+                      {game.hint && <span className="combo-hint">{game.hint}</span>}
                     </span>
                   </li>
                 )),

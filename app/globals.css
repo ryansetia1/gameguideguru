@@ -393,14 +393,15 @@ h1 em {
 
 .field input:not([type="checkbox"]):not([type="radio"]),
 .field select,
-.guide-link-field input {
+.guide-link-field input,
+.combo-input {
   width: 100%;
   min-height: 48px;
   border: 1.5px solid var(--ink);
   border-radius: 0;
   background: var(--paper-strong);
   color: var(--ink);
-  padding: 0 13px;
+  padding: 0 16px;
   font-size: 0.95rem;
 }
 
@@ -486,7 +487,7 @@ h1 em {
   border-bottom: 1px solid var(--line);
   background: var(--paper-strong);
   color: var(--ink);
-  padding: 12px 13px;
+  padding: 12px 16px;
   font-size: 0.9rem;
 }
 
@@ -508,7 +509,7 @@ h1 em {
 }
 
 .combo-list > li {
-  padding: 0;
+  list-style: none;
 }
 
 .combo-list ul {
@@ -519,7 +520,7 @@ h1 em {
 
 .combo-group-label {
   margin: 0;
-  padding: 10px 13px 4px;
+  padding: 10px 16px 4px;
   font-family: var(--font-sans);
   font-size: 0.58rem;
   font-weight: 700;
@@ -529,7 +530,10 @@ h1 em {
 }
 
 .combo-option {
-  padding: 9px 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
   font-size: 0.92rem;
   cursor: pointer;
 }
@@ -548,7 +552,7 @@ h1 em {
 }
 
 .combo-empty {
-  padding: 14px 13px;
+  padding: 14px 16px;
   color: var(--muted);
   font-size: 0.85rem;
 }
@@ -566,12 +570,23 @@ h1 em {
 .combo-spinner {
   position: absolute;
   top: 50%;
-  right: 14px;
+  right: 16px;
   width: 16px;
   height: 16px;
   transform: translateY(-50%);
   color: var(--muted);
   pointer-events: none;
+}
+
+/* spin overrides transform, so keep vertical centering inside the keyframes. */
+.combo-spinner.loader {
+  animation: combo-spin 700ms linear infinite;
+}
+
+@keyframes combo-spin {
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
 }
 
 .combo-year {
@@ -2036,12 +2051,6 @@ details.sources small {
 /* --- Game cover + metadata card, editable setup, sticky header --- */
 
 /* Autocomplete option now carries a box-art thumbnail. */
-.combo-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .combo-cover {
   flex-shrink: 0;
   width: 28px;
@@ -2056,11 +2065,25 @@ details.sources small {
 }
 
 .combo-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 
+.combo-title {
+  min-width: 0;
+}
+
+.combo-hint {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
 .combo-group-label {
-  padding: 9px 13px;
+  padding: 9px 16px;
   color: var(--muted);
   font-family: var(--font-sans);
   font-size: 0.66rem;
@@ -2558,6 +2581,45 @@ details.sources small {
   text-transform: uppercase;
 }
 
+.game-card-hltb {
+  text-transform: none;
+  letter-spacing: normal;
+  line-height: 1.35;
+}
+
+.hltb-hours {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.game-card-hltb-loading {
+  display: flex;
+  gap: 8px;
+  min-height: 1rem;
+}
+
+.game-card-hltb-skel {
+  display: block;
+  width: 4.5rem;
+  height: 0.65rem;
+  background: color-mix(in srgb, var(--muted) 35%, transparent);
+  animation: hltb-pulse 1.2s ease-in-out infinite;
+}
+
+.game-card-hltb-skel.short {
+  width: 3rem;
+}
+
+@keyframes hltb-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .game-card-link {
   font-size: 0.82rem;
   color: var(--signal-dark);
@@ -2998,6 +3060,30 @@ details.sources small {
 .sticky-meta small {
   color: var(--muted);
   font-size: 0.68rem;
+}
+
+/* Platform · year · HLTB on the sticky header — chunks wrap when horizontal
+   space runs out instead of clipping or overflowing. */
+.meta-subline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 0.35em;
+  row-gap: 0.12em;
+  line-height: 1.3;
+}
+
+.meta-chunk {
+  white-space: nowrap;
+}
+
+.meta-dot {
+  opacity: 0.75;
+  user-select: none;
+}
+
+.hltb-chunk {
+  text-transform: none;
 }
 
 /* Examples header + dismiss */

@@ -20,6 +20,7 @@ import {
   IconX,
 } from "./icons";
 import { GuideLinkField } from "./guide-link-field";
+import { HltbRow } from "./hltb-row";
 import { PlatformSelect } from "./platform-select";
 import { SteamLibrary, type SteamGame } from "./steam-library";
 import { ProfileMenu } from "./profile-menu";
@@ -1992,8 +1993,24 @@ export default function Home() {
           {coverEnabled && <CoverThumb cover={cover} name={game} className="cover-mini" />}
           <div className="sticky-meta">
             <strong>{game || "Untitled game"}</strong>
-            {(platform || releaseYear) && (
-              <small>{[displayPlatform(platform, cover), releaseYear].filter(Boolean).join(" · ")}</small>
+            {(platform || releaseYear || game) && (
+              <small className="meta-subline">
+                {displayPlatform(platform, cover) && (
+                  <span className="meta-chunk">{displayPlatform(platform, cover)}</span>
+                )}
+                {displayPlatform(platform, cover) && releaseYear && (
+                  <span className="meta-dot" aria-hidden>
+                    ·
+                  </span>
+                )}
+                {releaseYear && <span className="meta-chunk">{releaseYear}</span>}
+                <HltbRow
+                  title={game}
+                  appId={steamAppIdFromCoverUrl(cover) || undefined}
+                  variant="inline"
+                  sep={Boolean(displayPlatform(platform, cover) || releaseYear)}
+                />
+              </small>
             )}
           </div>
         </div>
@@ -2133,6 +2150,7 @@ export default function Home() {
             {(platform || releaseYear) && (
               <p>{[displayPlatform(platform, cover), releaseYear].filter(Boolean).join(" · ")}</p>
             )}
+            <HltbRow title={game} appId={steamAppIdFromCoverUrl(cover) || undefined} />
             {preferredUrl && (
               <a
                 className="game-card-link"

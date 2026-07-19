@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 
 import { cleanSnippet, focusSection } from "../lib/clean.js";
-import { mapGames } from "../lib/games.js";
+import { mapGames, formatReleaseHint, prepareAutocompleteGames } from "../lib/games.js";
 import { coerceHighlights, coerceSpoilers, parseSummary } from "../lib/highlights.js";
 import { PLATFORMS, matchPlatforms, tgdbPlatformToLabel } from "../lib/platforms.js";
 import {
@@ -40,6 +40,15 @@ import {
   getChatIdFromUrl,
   isChatId,
 } from "../lib/chat-session.js";
+import {
+  buildHltbData,
+  formatHltbHours,
+  hasHltbData,
+  hltbCacheKey,
+  normalizeTitle,
+  parseHltbSearch,
+  pickBestMatch,
+} from "../lib/hltb.js";
 
 // System instruction carries the persona + safety rules.
 assert.match(SYSTEM_INSTRUCTION, /untrusted data/);
@@ -212,14 +221,43 @@ assert.deepEqual(games[0], {
   id: 1,
   name: "Final Fantasy VII",
   year: "1997",
+  releaseDate: "1997-01-31",
   cover: "https://cdn.thegamesdb.net/images/medium/boxart/front/1.jpg",
   platform: "Sony Playstation",
 });
 assert.equal(games[1].year, "");
+assert.equal(games[1].releaseDate, "");
 assert.equal(games[1].cover, ""); // no boxart -> empty
 assert.equal(games[1].platform, ""); // no platform id -> empty
 assert.deepEqual(mapGames("not-an-array"), []);
 assert.deepEqual(mapGames({ data: {} }), []);
+
+// Autocomplete dedupe: identical TGDB rows under one console collapse to one;
+// real regional/date variants stay with a release-date hint.
+const mario = {
+  id: 10,
+  name: "Super Mario Odyssey",
+  year: "2017",
+  releaseDate: "2017-10-27",
+  cover: "https://cdn/cover.jpg",
+  platform: "Nintendo Switch",
+};
+const dupes = prepareAutocompleteGames([
+  mario,
+  { ...mario, id: 11 },
+  { ...mario, id: 12 },
+  { ...mario, id: 13, releaseDate: "2017-10-27" },
+  {
+    ...mario,
+    id: 20,
+    releaseDate: "2017-03-03",
+    cover: "https://cdn/cover-jp.jpg",
+  },
+]);
+assert.equal(dupes.length, 2, "identical rows collapse; different release dates stay");
+assert.equal(dupes.filter((g) => g.id === 10).length, 1);
+assert.equal(dupes.find((g) => g.id === 20)?.hint, formatReleaseHint("2017-03-03"));
+assert.equal(dupes.find((g) => g.id === 10)?.hint, formatReleaseHint("2017-10-27"));
 
 // TheGamesDB platform names map to our labels, numbered before bare family name.
 assert.equal(tgdbPlatformToLabel("Sony Playstation"), "PlayStation (PS1)");
@@ -452,5 +490,61 @@ assert.equal(mergeSpeechParts(["  ", "", "ok"]), "ok");
   assert.deepEqual(removeLocalGame("a").map((r) => r.id), ["b"]);
   /** @type {any} */ (globalThis).window = undefined;
 }
+
+// HowLongToBeat helpers (title normalize, fuzzy match, hours format).
+assert.equal(normalizeTitle("Assassin's Creed"), "assassin s creed");
+assert.equal(hltbCacheKey("Hollow Knight"), "hollow knight");
+const hltbRows = [
+  {
+    game_id: 1,
+    game_name: "Hades",
+    profile_steam: 1145360,
+    comp_main: 18 * 3600,
+    comp_plus: 45 * 3600,
+    comp_100: 80 * 3600,
+    comp_all: 25 * 3600,
+    comp_all_count: 50000,
+  },
+  {
+    game_id: 2,
+    game_name: "Hades II",
+    profile_steam: null,
+    comp_main: 20 * 3600,
+    comp_plus: 0,
+    comp_100: 0,
+    comp_all: 0,
+    comp_all_count: 100,
+  },
+  {
+    game_id: 3,
+    game_name: "Totally Different Game",
+    profile_steam: 504230,
+    comp_main: 3600,
+    comp_plus: 0,
+    comp_100: 0,
+    comp_all: 0,
+    comp_all_count: 1,
+  },
+];
+assert.equal(pickBestMatch(hltbRows, "Hades", "1145360")?.game_id, 1);
+assert.equal(pickBestMatch(hltbRows, "totally wrong name", 504230)?.game_id, 3);
+assert.equal(pickBestMatch(hltbRows, "Grand Theft Auto V", "111"), null);
+const hadesData = buildHltbData(hltbRows[0]);
+assert.equal(hadesData.main, 18);
+assert.equal(buildHltbData(hltbRows[1]).mainPlus, null);
+assert.equal(formatHltbHours(5.4), "5.5");
+assert.equal(formatHltbHours(8), "8");
+assert.equal(formatHltbHours(23.4), "23");
+assert.equal(formatHltbHours(0), null);
+assert.equal(formatHltbHours(null), null);
+assert.deepEqual(parseHltbSearch(null), []);
+assert.deepEqual(parseHltbSearch({ data: "nope" }), []);
+assert.equal(parseHltbSearch({ data: [{ game_name: "X", comp_main: 3600 }] }).length, 1);
+assert.equal(hasHltbData(null), false);
+assert.equal(
+  hasHltbData({ hltbId: null, main: null, mainPlus: null, complete: null, allStyles: null }),
+  false,
+);
+assert.equal(hasHltbData(hadesData), true);
 
 console.log("Self-check passed.");

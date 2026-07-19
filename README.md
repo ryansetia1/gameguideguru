@@ -111,6 +111,9 @@ Manual dashboard steps in Supabase:
   in the SQL editor once. It adds `cover_url`/`release_year` to `chats` and creates
   the public `covers` Storage bucket (owner-write, public-read) used by device
   cover uploads. Until it runs, saving still works but covers/year are dropped.
+- **HLTB playtime cache**: run [`db/hltb-cache.sql`](db/hltb-cache.sql) once to
+  enable the shared HowLongToBeat cache for the game card. Without it, playtime
+  still works but every miss re-hits HLTB upstream.
 - **Google sign-in**: enable the Google provider under Authentication ->
   Providers, add your Google OAuth client ID/secret, and add your app origin(s)
   to the allowed redirect URLs.

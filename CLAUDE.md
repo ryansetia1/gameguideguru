@@ -84,7 +84,9 @@ and simply cannot save.
   field; queries `/api/games`, reuses the `.combo` styling, shows a box-art thumb
   per row, and groups results by platform label (`groupByPlatform` via
   `tgdbPlatformToLabel`) so a multi-console game lists one row per console under a
-  header — headers only when >1 group. Allows free text and hides itself when the
+  header — headers only when >1 group. `prepareAutocompleteGames` (in
+  `lib/games.js`) collapses identical TGDB rows under the same name · platform ·
+  year and shows a release-date hint when real variants remain. Allows free text and hides itself when the
   DB is unavailable (`available: false`). `onPick` surfaces the chosen
   `{ name, year, cover, platform }` to the page (manual typing clears the stale
   cover); `showCover` is off for signed-out users.
@@ -128,6 +130,12 @@ and simply cannot save.
   `user_metadata.steam_sort` + `localStorage` `gg:steam-sort` so it syncs across
   devices — and square in-theme loading
   skeletons); each card shows **platform · release year** (not playtime).
+  The active **game card** (cover + title + platform · year) also shows optional
+  HowLongToBeat playtime (`27h main story`) for any game title via
+  `app/hltb-row.tsx` + `GET /api/hltb?title=` (optional `appId` when the cover
+  is a Steam CDN URL). The sticky header shows the same main-story figure inline
+  after platform · year (flex-wrap when space is tight). Server read-through cache in
+  `public.hltb_cache` keyed by normalized title (30d TTL — see `db/hltb-cache.sql`).
   Existing pre-year Steam chats are backfilled once per mount by an effect in
   `page.tsx` that reads the appId from the chat's Steam cover URL
   (`steamAppIdFromCoverUrl`) and fills the empty `release_year`. The `/api/steam/library` route enriches owned-games with release
@@ -140,6 +148,14 @@ and simply cannot save.
   reopen while revalidating in the background (stale-while-revalidate) — no more
   full reload every open. Requires `STEAM_API_KEY`; user's Steam **Game details**
   must be Public.
+- `lib/hltb.js` + `lib/hltb-cache.js` + `app/api/hltb/route.ts` + `app/hltb-row.tsx`:
+  HowLongToBeat playtime on the game card (any platform). HLTB has no public API;
+  the server fetches a per-visit token from HLTB's rotating internal search
+  endpoint (`SEARCH_SEG` in `lib/hltb-cache.js`), searches by normalized title
+  tokens, and matches via `pickBestMatch` (optional Steam appId → exact name →
+  fuzzy). Results are cached in `public.hltb_cache` (`cache_key` = normalized
+  title, nullable `data` jsonb, 30d TTL). No login required. Fail-open when
+  Supabase is unset (direct upstream search).
 - `app/api/games/route.ts`: TheGamesDB proxy. Runs
   `Games/ByGameName?include=boxart,platform` with `THEGAMESDB_API_KEY` and returns
   `{ games, available }` (each game has `cover` + raw `platform` name). Missing key
@@ -230,8 +246,10 @@ and simply cannot save.
   (`db/llm-calls.sql`) when `NEXT_PUBLIC_SUPABASE_*` are set (`LLM_DB_LOG=0`
   disables). Insert-only RLS — no client reads.
 - `lib/games.js`: `mapGames(payload)` maps a TheGamesDB `ByGameName?include=boxart`
-  payload to `{ id, name, year, cover }` (year from `release_date`, cover built
-  from the front box-art in the `include` block), dropping malformed entries.
+  payload to `{ id, name, year, releaseDate, cover, platform }` (year from
+  `release_date`, cover from the front box-art in the `include` block), dropping
+  malformed entries. `prepareAutocompleteGames` dedupes noisy same-console
+  duplicates and attaches a release-date hint when rows still differ.
   Covered by `npm run check`.
 - PWA + brand: UI font is **Rubik** via `next/font` in `app/layout.tsx`. The logo is `GGG.png` (2000x2000 source, `#00FFAA` bg), resized with `sips` into
   static icons — `app/icon.png` (favicon), `app/apple-icon.png` (apple-touch),
@@ -288,6 +306,11 @@ and simply cannot save.
   non-sensitive public web results the model already treats as untrusted, and the
   TTL self-heals; the ceiling is cache pollution, not a data leak. Upgrade path:
   move writes behind the service-role key or a `security definer` RPC.
+- HLTB playtime uses the same permissive `hltb_cache` pattern (30d TTL). No
+  single-flight lease or outbound token bucket yet — concurrent first-time misses
+  for the same app can duplicate upstream searches; upgrade path: `claim_hltb_lease`
+  + rate bucket like steamAntiFomo. HLTB's search path segment can rotate; update
+  `SEARCH_SEG` in `lib/hltb-cache.js` when init/search starts 404ing.
 - Preferred-guide site-search + extract feeds the model the `focusSection` window
   (capped at `EXTRACT_CONTENT_CAP`) of the picked page, targeted by query-term
   density — better than a fixed head slice for huge single-page guides, but still

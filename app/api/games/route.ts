@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { mapGames } from "@/lib/games";
+import { mapGames, prepareAutocompleteGames } from "@/lib/games";
 
 export const runtime = "nodejs";
 
@@ -41,7 +41,7 @@ export async function GET(request: Request) {
 
     const payload: unknown = await response.json();
     return NextResponse.json({
-      games: mapGames(payload).slice(0, MAX_RESULTS),
+      games: prepareAutocompleteGames(mapGames(payload)).slice(0, MAX_RESULTS),
       available: true,
     });
   } catch (error) {
