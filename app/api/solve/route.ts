@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCachedSearch, setCachedSearch } from "@/lib/search-cache";
 import { censorSpoilers, resolveQuestion, summarize, type Turn } from "@/lib/replicate";
+import { guideIngestHint } from "@/lib/guide-hints.js";
 import { retrieveFromPreferredGuide } from "@/lib/guide-rag";
 import { coerceSpoilerPrefs } from "@/lib/spoiler-prefs";
 import { coerceDisplayName } from "@/lib/profile.js";
@@ -151,8 +152,10 @@ export async function POST(request: Request) {
       });
 
       if (rag?.hubWarning) {
+        guideHint = guideIngestHint({ hubWarning: true }) ?? undefined;
+      } else if (rag && !rag.skipWebSearch && !rag.sources.length) {
         guideHint =
-          "That link looks like an index page. Paste the page with the full walkthrough.";
+          guideIngestHint({ available: true, indexed: false }) ?? undefined;
       }
 
       if (rag?.skipWebSearch) {

@@ -20,6 +20,7 @@ import {
   IconX,
 } from "./icons";
 import { FUN_ROLES, HERO_LINES } from "@/lib/hero-copy.js";
+import { guideIngestHint } from "@/lib/guide-hints.js";
 import { compressImage } from "@/lib/image.js";
 import { GuideLinkField } from "./guide-link-field";
 import { HltbRow } from "./hltb-row";
@@ -1621,18 +1622,54 @@ export default function Home() {
     abortRef.current = controller;
 
     try {
+      let ingestHint: string | null = null;
       if (preferredUrl) {
         setIndexingGuide(true);
         try {
-          await fetch("/api/guide-ingest", {
+          const ingestResponse = await fetch("/api/guide-ingest", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             signal: controller.signal,
             body: JSON.stringify({ preferredUrl }),
           });
+          if (ingestResponse.ok) {
+            const ingestData: unknown = await ingestResponse.json();
+            if (ingestData && typeof ingestData === "object") {
+              const record = ingestData as Record<string, unknown>;
+              ingestHint = guideIngestHint({
+                available:
+                  "available" in record ? Boolean(record.available) : true,
+                indexed:
+                  "indexed" in record ? Boolean(record.indexed) : undefined,
+                hubWarning:
+                  "hubWarning" in record ? Boolean(record.hubWarning) : false,
+              });
+              if (ingestHint) setToast(ingestHint);
+            }
+          } else if (!controller.signal.aborted) {
+            let message: string | null = null;
+            try {
+              const errData: unknown = await ingestResponse.json();
+              if (
+                errData &&
+                typeof errData === "object" &&
+                "error" in errData &&
+                typeof errData.error === "string"
+              ) {
+                message = errData.error;
+              }
+            } catch {
+              // ignore parse errors
+            }
+            ingestHint =
+              message ?? guideIngestHint({ available: true, indexed: false });
+            if (ingestHint) setToast(ingestHint);
+          }
         } catch (ingestError) {
           if (!(ingestError instanceof DOMException && ingestError.name === "AbortError")) {
             console.error("Guide ingest failed:", ingestError);
+            ingestHint = guideIngestHint({ available: true, indexed: false });
+            if (ingestHint) setToast(ingestHint);
           }
         } finally {
           setIndexingGuide(false);
@@ -1681,7 +1718,8 @@ export default function Home() {
       if (
         "guideHint" in data &&
         typeof data.guideHint === "string" &&
-        data.guideHint
+        data.guideHint &&
+        data.guideHint !== ingestHint
       ) {
         setToast(data.guideHint);
       }

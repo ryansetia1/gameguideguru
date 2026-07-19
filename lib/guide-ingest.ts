@@ -85,6 +85,8 @@ export async function ensureGuideIngested(
 
   const extracted = await extractGuidePage(guideUrl, signal);
   if (!extracted) {
+    // extractGuidePage logs the specific Tavily failure; add ingest context here.
+    console.error("Guide ingest skipped: could not extract guide page", { guideUrl });
     return { indexed: false, chunkCount: 0, hubWarning: looksLikeHub(guideUrl) };
   }
 

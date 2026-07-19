@@ -5,6 +5,31 @@ import { selectSources } from "@/lib/rank";
 const TAVILY_URL = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
 
+/** Server log prefix — grep-friendly when Tavily quota/outage breaks search or ingest. */
+function logTavily(
+  operation: "search" | "extract",
+  message: string,
+  extra?: Record<string, unknown>,
+): void {
+  console.error(`Tavily ${operation} failed: ${message}`, extra ?? "");
+}
+
+async function tavilyResponseDetail(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    return text.replace(/\s+/g, " ").trim().slice(0, 240);
+  } catch {
+    return "";
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.name === "TimeoutError")
+  );
+}
+
 // Per-call timeout combined with an optional caller signal (client Stop), so a
 // Stop mid-search aborts the outstanding provider request instead of waiting it out.
 function combineSignal(ms: number, signal?: AbortSignal): AbortSignal {
@@ -88,6 +113,12 @@ async function runSearch(
   });
 
   if (!response.ok) {
+    const detail = await tavilyResponseDetail(response);
+    const message = `HTTP ${response.status}${detail ? `: ${detail}` : ""}`;
+    logTavily("search", message, {
+      query: query.slice(0, 120),
+      domains: includeDomains.length ? includeDomains : ["open web"],
+    });
     throw new Error(`Tavily search failed with status ${response.status}`);
   }
 
@@ -171,42 +202,82 @@ export async function extractGuidePage(
   signal?: AbortSignal,
 ): Promise<{ url: string; content: string } | null> {
   const apiKey = process.env.TAVILY_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) {
+    logTavily("extract", "TAVILY_API_KEY is not set");
+    return null;
+  }
 
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
   } catch {
+    logTavily("extract", "invalid URL", { url: rawUrl.slice(0, 120) });
     return null;
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    logTavily("extract", "URL must be http or https", { url: parsed.toString() });
+    return null;
+  }
 
-  const response = await fetch(TAVILY_EXTRACT_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ urls: [parsed.toString()] }),
-    signal: combineSignal(30_000, signal),
-  });
+  let response: Response;
+  try {
+    response = await fetch(TAVILY_EXTRACT_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ urls: [parsed.toString()] }),
+      signal: combineSignal(30_000, signal),
+    });
+  } catch (error) {
+    if (!isAbortError(error)) {
+      logTavily("extract", "request error", {
+        url: parsed.toString(),
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return null;
+  }
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    const detail = await tavilyResponseDetail(response);
+    logTavily("extract", `HTTP ${response.status}${detail ? `: ${detail}` : ""}`, {
+      url: parsed.toString(),
+    });
+    return null;
+  }
 
   const payload: unknown = await response.json();
   const results =
     payload && typeof payload === "object" && "results" in payload
       ? (payload.results as unknown)
       : null;
-  if (!Array.isArray(results) || results.length === 0) return null;
+  if (!Array.isArray(results) || results.length === 0) {
+    logTavily("extract", "response had no results", { url: parsed.toString() });
+    return null;
+  }
 
   const first = results[0];
-  if (!first || typeof first !== "object" || !("raw_content" in first)) return null;
+  if (!first || typeof first !== "object" || !("raw_content" in first)) {
+    logTavily("extract", "result missing raw_content", { url: parsed.toString() });
+    return null;
+  }
   const raw = (first as { raw_content: unknown }).raw_content;
-  if (typeof raw !== "string") return null;
+  if (typeof raw !== "string") {
+    logTavily("extract", "raw_content was not a string", { url: parsed.toString() });
+    return null;
+  }
 
   const content = cleanSnippet(raw);
-  if (content.length < MIN_CONTENT) return null;
+  if (content.length < MIN_CONTENT) {
+    logTavily("extract", "extracted text too short after cleaning", {
+      url: parsed.toString(),
+      chars: content.length,
+      min: MIN_CONTENT,
+    });
+    return null;
+  }
 
   return { url: parsed.toString(), content };
 }
@@ -239,9 +310,15 @@ async function tieredSearch(
     attempts += 1;
     try {
       tier = await runSearch(apiKey, query, includeDomains, signal);
-    } catch {
+    } catch (error) {
       // ponytail: per-tier failures are non-fatal; search is supporting evidence.
       failures += 1;
+      if (!isAbortError(error)) {
+        logTavily("search", "tier request failed", {
+          tier: includeDomains.length ? includeDomains.join(", ") : "open web",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       continue;
     }
 
@@ -262,6 +339,9 @@ async function tieredSearch(
   // Every Tavily call failed (quota/outage) — signal the caller to try a fallback
   // instead of masking it as "no relevant results".
   if (attempts > 0 && failures === attempts) {
+    logTavily("search", `all ${attempts} tier(s) failed`, {
+      query: query.slice(0, 120),
+    });
     throw new Error("All Tavily searches failed");
   }
 
@@ -360,7 +440,10 @@ export async function searchGuides(
       return await searchTavily(tavilyKey, query, signal);
     } catch (error) {
       if (!serperKey) throw error;
-      console.error("Tavily unavailable; falling back to Serper:", error);
+      console.error(
+        "Tavily search unavailable; falling back to Serper:",
+        error instanceof Error ? error.message : error,
+      );
     }
   }
   return searchSerper(serperKey as string, query, signal);
@@ -392,7 +475,10 @@ export async function discoverGuideLinks(
         .slice(0, DISCOVER_MAX);
     } catch (error) {
       if (!serperKey) throw error;
-      console.error("Tavily unavailable; falling back to Serper:", error);
+      console.error(
+        "Tavily search unavailable; falling back to Serper:",
+        error instanceof Error ? error.message : error,
+      );
     }
   }
 

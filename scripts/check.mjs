@@ -31,6 +31,7 @@ import {
 import { warmUpMicrophone } from "../lib/voice-meter.js";
 import { buildGuideDiscoveryQuery } from "../lib/guide-search.js";
 import { chunkGuide } from "../lib/chunk-guide.js";
+import { guideIngestHint } from "../lib/guide-hints.js";
 import {
   steamIdFromClaimedId,
   steamIdFromMetadata,
@@ -243,6 +244,17 @@ assert.ok(
   guideChunks.some((chunk) => chunk.includes("Golem")),
   "chunkGuide should keep section content",
 );
+
+assert.match(
+  guideIngestHint({ hubWarning: true }) ?? "",
+  /index page/i,
+);
+assert.match(
+  guideIngestHint({ available: true, indexed: false }) ?? "",
+  /web search/i,
+);
+assert.equal(guideIngestHint({ available: false, indexed: false }), null);
+assert.equal(guideIngestHint({ available: true, indexed: true }), null);
 
 // TheGamesDB payload mapping: keep valid entries, derive year from release_date,
 // build a front-boxart URL from the include block, and drop malformed/empty ones.

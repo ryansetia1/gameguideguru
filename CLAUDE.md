@@ -232,15 +232,10 @@ do not sync to the cloud or use Storage uploads.
   TTL). Fail-open to tiered web search when Supabase/pgvector/Replicate embed is unset.
   Full design: [`docs/preferred-guide.md`](docs/preferred-guide.md).
 - `lib/tavily.ts`: `searchGuides(query)` orchestrates Tavily tiered search then a
-  Serper.dev fallback; `extractGuidePage(url)` pulls full page text for RAG ingest;
-  `discoverGuideLinks(game, platform, query?)` powers the guide picker (same
-  providers, returns up to 8 hits without `selectSources`). Query text for the
-  picker is built by `lib/guide-search.js#buildGuideDiscoveryQuery`. `searchTavily`
-  throws when every Tavily call fails so `searchGuides` can fall back to
-  `searchSerper` (snippet-only, trimmed to top 3). Tiered path: GameFAQs ->
-  trusted walkthrough providers -> forums -> general. All paths use
-  `search_depth: "advanced"`, exclude video/social domains, dedupe by URL+title,
-  clean via `cleanSnippet`, and gate/trim via `selectSources`.
+  Serper.dev fallback; `extractGuidePage(url)` pulls full page text for RAG ingest
+  (**Tavily Extract only** — Serper cannot replace this); `discoverGuideLinks(...)`
+  powers the guide picker (Tavily then Serper fallback). See provider fallback
+  notes under Known limits.
 - `lib/search-cache.ts`: best-effort Supabase-backed cache of `searchGuides`
   output (`getCachedSearch`/`setCachedSearch`, 7-day TTL). Uses a server client
   built from the `NEXT_PUBLIC_SUPABASE_*` vars (no session); no-ops when unset or
@@ -396,7 +391,8 @@ do not sync to the cloud or use Storage uploads.
   index guards dup rows; concurrent first-time ingests of the same URL can
   duplicate upstream embed work). Query-embed cache is best-effort (`embed_cache`).
   Given page only; hub/multi-page guides rely on the user pasting the real page
-  (surfaced via optional `guideHint` toast).
+  (surfaced via optional `guideHint` toast; ingest failures toast from
+  `POST /api/guide-ingest` before solve, with solve as fallback).
 - **Preferred-guide RAG cost ceiling (cannot blow up per turn):** retrieval uses
   `match_guide_chunks` with `LIMIT` (`RETRIEVE_K = 5` in `lib/guide-rag.ts`) —
   the full ingested guide never goes to Gemini, only up to five stored chunks.
@@ -428,6 +424,22 @@ do not sync to the cloud or use Storage uploads.
   if answers cite too much or fall back to knowledge too often.
 - Tavily still returns arbitrary page chunks (control lists, TOCs), not the
   section that answers the question; the model leans on its own knowledge.
+- **Search/extract provider fallback (important):** not all Tavily uses share the
+  same backup. **Answer-time search** (`searchGuides`, `discoverGuideLinks`):
+  Tavily Search → Serper.dev fallback (snippet-only). **Preferred-guide ingest**
+  (`extractGuidePage` in `lib/tavily.ts`): **Tavily Extract only** — Serper has no
+  page-extract API, so a **new** guide URL cannot be indexed when `TAVILY_API_KEY`
+  is missing or Extract is down/quota-blocked (already-indexed URLs in
+  `guide_chunks` keep working). Upgrade path for ingest resilience: (1) direct
+  fetch + `cleanSnippet`/`readability` fallback (fragile on JS sites); (2) a
+  dedicated extract provider wired beside Tavily in `extractGuidePage`. **Brave
+  Search API (not wired):** standard `/web/search` is another snippet search —
+  could back up Serper/Tavily Search, not Extract. Brave **LLM Context**
+  (`/llm/context`) is query→ranked web chunks for grounding/RAG-style answers,
+  not “extract this pasted URL in full” for one-time `guide_chunks` ingest; wrong
+  shape unless we redesign ingest around search+`site:` (would miss off-page
+  structure and still wouldn't mirror full-book chunking). Evaluate Brave for
+  answer-time search before ingest.
 - Game autocomplete + box art use TheGamesDB (single API key, web-friendly, but
   coverage/quality is patchier than IGDB and it has a monthly quota). IGDB has the
   best coverage and is the intended upgrade, gated only on Twitch app credentials;
@@ -464,9 +476,10 @@ npm run build
 Server-only secrets (never expose via `NEXT_PUBLIC_`, never commit `.env.local`):
 
 - `REPLICATE_API_TOKEN` (required to answer).
-- `TAVILY_API_KEY` (optional; enables supporting web search).
-- `SERPER_API_KEY` (optional; Serper.dev fallback used only when Tavily is
-  unconfigured or every Tavily call fails — quota/outage. Snippet-only, no extract).
+- `TAVILY_API_KEY` (optional for chat; **required to index new preferred guides**
+  via Extract. Enables supporting web search + guide picker).
+- `SERPER_API_KEY` (optional; Serper.dev fallback when Tavily **Search** fails or
+  is unconfigured — snippet-only, **does not** replace Tavily Extract for ingest).
 - `REPLICATE_MODEL` (optional, default `google/gemini-2.5-flash`).
 - `EMBED_MODEL` (optional, default pinned `lucataco/qwen3-embedding-8b:42d96848…`; preferred-guide
   RAG embedder. Swapping dims requires re-ingest).
