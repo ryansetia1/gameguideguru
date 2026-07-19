@@ -1910,7 +1910,7 @@ export default function Home() {
   const showCarousel = hasRecent && (newGameOpen || !hasGame);
   const quickIdle = showCarousel && !newGameOpen;
   const showHero = homeMode;
-  const showSetupForm = homeMode && !quickIdle;
+  const showSetupForm = (homeMode && !quickIdle) || (started && editingGame);
   const QUICK_LIMIT = 4;
   const recentGames = chats.slice(0, QUICK_LIMIT);
   const moreGamesCount = chats.length - recentGames.length;
