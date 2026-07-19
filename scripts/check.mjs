@@ -28,6 +28,7 @@ import { buildGuideDiscoveryQuery } from "../lib/guide-search.js";
 import {
   steamIdFromClaimedId,
   steamIdFromMetadata,
+  steamAppIdFromCoverUrl,
   steamLibraryCoverUrl,
   yearFromSteamReleaseDate,
   yearFromUnixSeconds,
@@ -164,9 +165,13 @@ assert.equal(steamIdFromMetadata({ steam_id: 76561198000000000 }), "765611980000
 assert.match(steamLibraryCoverUrl(570), /\/570\/library_600x900\.jpg$/);
 assert.equal(yearFromSteamReleaseDate("Nov 1, 2004"), "2004");
 assert.equal(yearFromSteamReleaseDate("2020"), "2020");
+assert.equal(yearFromSteamReleaseDate("24 Feb, 2022"), "2022");
 assert.equal(yearFromSteamReleaseDate(""), "");
-assert.equal(yearFromUnixSeconds(1373389200), "2013");
+assert.equal(yearFromUnixSeconds(1645744078), "2022");
 assert.equal(yearFromUnixSeconds(0), "");
+assert.equal(steamAppIdFromCoverUrl(steamLibraryCoverUrl(1245620)), 1245620);
+assert.equal(steamAppIdFromCoverUrl("https://cdn.thegamesdb.net/x/boxart.jpg"), null);
+assert.equal(steamAppIdFromCoverUrl(""), null);
 
 const signed = signSteamSession("76561198000000000");
 assert.equal(verifySteamSession(signed), "76561198000000000");
@@ -406,5 +411,46 @@ assert.equal(
   "hello world",
 );
 assert.equal(mergeSpeechParts(["  ", "", "ok"]), "ok");
+
+// local-games: anon recent-games persistence. Stub a minimal window.localStorage.
+{
+  const store = new Map();
+  /** @type {any} */ (globalThis).window = {
+    localStorage: {
+      /** @param {string} k */
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      /** @param {string} k @param {string} v */
+      setItem: (k, v) => store.set(k, v),
+      /** @param {string} k */
+      removeItem: (k) => store.delete(k),
+    },
+  };
+  const { loadLocalGames, upsertLocalGame, removeLocalGame } = await import(
+    "../lib/local-games.js"
+  );
+  /** @param {string} id @param {string} name @param {string} at */
+  const game = (id, name, at) => ({
+    id,
+    game: name,
+    platform: "PC",
+    preferred_guide_url: "",
+    updated_at: at,
+    messages: [],
+  });
+  assert.deepEqual(loadLocalGames(), []);
+  upsertLocalGame(game("a", "A", "2024-01-01T00:00:00Z"));
+  upsertLocalGame(game("b", "B", "2024-02-01T00:00:00Z"));
+  const list = loadLocalGames();
+  assert.equal(list.length, 2);
+  assert.equal(list[0].id, "b", "newest updated_at first");
+  // Upsert same id updates in place (no duplicate) and re-sorts by updated_at.
+  upsertLocalGame(game("a", "A2", "2024-03-01T00:00:00Z"));
+  const bumped = loadLocalGames();
+  assert.equal(bumped.length, 2, "upsert same id does not duplicate");
+  assert.equal(bumped[0].id, "a", "bumped entry sorts to front");
+  assert.equal(bumped[0].game, "A2");
+  assert.deepEqual(removeLocalGame("a").map((r) => r.id), ["b"]);
+  /** @type {any} */ (globalThis).window = undefined;
+}
 
 console.log("Self-check passed.");

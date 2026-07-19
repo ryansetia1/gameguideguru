@@ -169,6 +169,14 @@ export function IconRefresh(props: IconProps) {
   );
 }
 
+export function IconSort(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path {...base} d="M7 4v16M7 20l-3-3M7 4l3 3M17 4v16M17 4l-3 3M17 20l3-3" />
+    </Svg>
+  );
+}
+
 export function IconDiamond(props: IconProps) {
   const { size = 20, className, ...rest } = props;
   return (

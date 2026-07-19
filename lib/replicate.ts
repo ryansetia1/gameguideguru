@@ -69,13 +69,24 @@ function readText(output: unknown): string {
 
 type PredictionMetrics = {
   metrics?: { predict_time?: number; total_time?: number };
+  logs?: string;
 };
 
 type RunModelResult = {
   output: string;
   durationMs: number;
   predictTimeMs: number | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
 };
+
+// Gemini on Replicate reports usage only in the prediction `logs` text, e.g.
+// "Input token count: 3621\nOutput token count: 1242" — not in `metrics`.
+function parseTokenCount(logs: string | undefined, label: string): number | null {
+  if (!logs) return null;
+  const match = logs.match(new RegExp(`${label} token count:\\s*(\\d+)`, "i"));
+  return match ? Number(match[1]) : null;
+}
 
 /** Run a Replicate model and capture wall-clock + predict_time metrics. */
 async function runModel(
@@ -87,6 +98,7 @@ async function runModel(
 ): Promise<RunModelResult> {
   const started = Date.now();
   let metrics: PredictionMetrics["metrics"];
+  let logs: string | undefined;
   const raw = await replicate.run(
     model,
     {
@@ -95,6 +107,7 @@ async function runModel(
     },
     (prediction: PredictionMetrics) => {
       metrics = prediction.metrics;
+      if (prediction.logs) logs = prediction.logs;
     },
   );
   const predictTimeMs =
@@ -103,6 +116,8 @@ async function runModel(
     output: readText(raw),
     durationMs: Date.now() - started,
     predictTimeMs,
+    inputTokens: parseTokenCount(logs, "Input"),
+    outputTokens: parseTokenCount(logs, "Output"),
   };
 }
 
@@ -114,6 +129,9 @@ async function runModel(
 export async function resolveQuestion(input: {
   question: string;
   history?: Turn[];
+  game?: string;
+  platform?: string;
+  userId?: string | null;
   signal?: AbortSignal;
 }): Promise<string> {
   const token = process.env.REPLICATE_API_TOKEN;
@@ -123,7 +141,8 @@ export async function resolveQuestion(input: {
   try {
     const replicate = new Replicate({ auth: token });
     const prompt = buildRewritePrompt(input);
-    const { output: rawOutput, durationMs, predictTimeMs } = await runModel(
+    const { output: rawOutput, durationMs, predictTimeMs, inputTokens, outputTokens } =
+      await runModel(
       replicate,
       model,
       {
@@ -145,6 +164,11 @@ export async function resolveQuestion(input: {
       response: rawOutput,
       durationMs,
       predictTimeMs,
+      inputTokens,
+      outputTokens,
+      game: input.game,
+      platform: input.platform,
+      userId: input.userId,
     });
     const rewritten = rawOutput
       .replace(/\s+/g, " ")
@@ -167,6 +191,7 @@ export type SummarizeInput = {
   images?: string[];
   spoilerPrefs?: SpoilerPrefs;
   playerName?: string;
+  userId?: string | null;
   signal?: AbortSignal;
 };
 
@@ -184,7 +209,8 @@ export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
   const images = (input.images ?? []).filter((url) => typeof url === "string" && url);
   const replicate = new Replicate({ auth: token });
   const prompt = buildPrompt({ ...input, imageCount: images.length });
-  const { output: rawOutput, durationMs, predictTimeMs } = await runModel(
+  const { output: rawOutput, durationMs, predictTimeMs, inputTokens, outputTokens } =
+    await runModel(
     replicate,
     model,
     {
@@ -208,8 +234,11 @@ export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
     response: trimmed,
     durationMs,
     predictTimeMs,
+    inputTokens,
+    outputTokens,
     game: input.game,
     platform: input.platform,
+    userId: input.userId,
   });
   const parsed = parseSummary(trimmed);
   if (!parsed.answer) {
@@ -231,6 +260,9 @@ export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
 export async function censorSpoilers(input: {
   answer: string;
   highlights: Highlight[];
+  game?: string;
+  platform?: string;
+  userId?: string | null;
   signal?: AbortSignal;
 }): Promise<{ answer: string; highlights: Highlight[] } | null> {
   const token = process.env.REPLICATE_API_TOKEN;
@@ -240,7 +272,8 @@ export async function censorSpoilers(input: {
   try {
     const replicate = new Replicate({ auth: token });
     const prompt = buildSpoilerCensorPrompt(input);
-    const { output: rawOutput, durationMs, predictTimeMs } = await runModel(
+    const { output: rawOutput, durationMs, predictTimeMs, inputTokens, outputTokens } =
+      await runModel(
       replicate,
       model,
       {
@@ -263,6 +296,11 @@ export async function censorSpoilers(input: {
       response: trimmed,
       durationMs,
       predictTimeMs,
+      inputTokens,
+      outputTokens,
+      game: input.game,
+      platform: input.platform,
+      userId: input.userId,
     });
     const parsed = parseSummary(trimmed);
     if (!parsed.answer) return null;

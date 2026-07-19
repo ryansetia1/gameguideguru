@@ -29,6 +29,13 @@ function cleanUrl(value: unknown): string {
   }
 }
 
+// llm_calls.user_id has an FK to auth.users; a garbage value would fail the
+// insert, so accept only a well-formed UUID (else null).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function cleanUuid(value: unknown): string | null {
+  return typeof value === "string" && UUID_RE.test(value) ? value : null;
+}
+
 const MAX_IMAGES = 10;
 
 // Accept up to 10 well-formed http(s) image URLs (Supabase Storage public URLs).
@@ -79,6 +86,11 @@ export async function POST(request: Request) {
   const images = parseImages(record.images);
   const spoilerPrefs = coerceSpoilerPrefs(record.spoilerPrefs);
   const playerName = coerceDisplayName(record.playerName);
+  // Client-sent for the debug log only (llm_calls.user_id). ponytail: trusted
+  // from the body — spoofable, but it's an insert-only debug table, low stakes.
+  // Upgrade path: verify the Authorization bearer server-side. Non-UUID => null
+  // so a bad value can't FK-fail the whole log insert.
+  const userId = cleanUuid(record.userId);
   // Client Stop aborts the fetch; this fires so we cancel the Replicate
   // prediction / Tavily search instead of finishing (and billing) them.
   const signal = request.signal;
@@ -104,7 +116,14 @@ export async function POST(request: Request) {
     if (process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY) {
       // Rewrite into a standalone English search query first (first messages
       // benefit from translation/normalisation; follow-ups need context resolved).
-      const searchTopic = await resolveQuestion({ question, history, signal });
+      const searchTopic = await resolveQuestion({
+        question,
+        history,
+        game,
+        platform,
+        userId,
+        signal,
+      });
       const searchQuery = [game, platform, searchTopic, "walkthrough guide"]
         .filter(Boolean)
         .join(" ");
@@ -133,6 +152,7 @@ export async function POST(request: Request) {
       images,
       spoilerPrefs,
       playerName,
+      userId,
       signal,
     });
 
@@ -141,7 +161,14 @@ export async function POST(request: Request) {
     // Best-effort: on failure censorSpoilers returns null and we keep the
     // (prompt-guarded) original. Most turns never reach this branch.
     if (!spoilerPrefs.major && spoilerRisk) {
-      const cleaned = await censorSpoilers({ answer, highlights, signal });
+      const cleaned = await censorSpoilers({
+        answer,
+        highlights,
+        game,
+        platform,
+        userId,
+        signal,
+      });
       if (cleaned) {
         answer = cleaned.answer;
         highlights = cleaned.highlights;

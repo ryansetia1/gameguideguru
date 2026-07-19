@@ -61,6 +61,18 @@ and simply cannot save.
 - `lib/supabase.ts`: `getSupabase()` singleton browser client from the
   `NEXT_PUBLIC_SUPABASE_*` vars; returns `null` when unset so the app degrades to
   anonymous-only. Exports the `Chat` row type.
+- `lib/local-games.js`: anon "recent games" list in `localStorage`
+  (`gg:local-games`, `Chat`-shaped, cap 20) so signed-out users also get the
+  home quick-access carousel, sidebar, and library. `loadChats`/`persistChat`/
+  `saveGameMeta`/`deleteChat` in `page.tsx` branch on `userRef` (Supabase when
+  signed-in, this when anon). Anon has no Storage, so these rows are text +
+  metadata only (cover is a CDN URL or ""). **Home layout:** empty account →
+  marketing hero + setup form; has saved games → a recent-games **carousel**
+  (`.quick-home`, native scroll-snap, uniform cards, up to 4 + a "+N more" tile
+  that opens the saved library) with a green **"+ New game"** button that reveals
+  the setup form in place below it, plus **Saved library** / **Steam library**
+  (when connected) shortcut buttons. Sidebar + library are ungated for anon
+  (Steam/profile controls stay `user`-only).
 - `app/platform-select.tsx`: custom themed, searchable, keyboard-accessible
   platform combobox. Delegates filtering to `lib/platforms.js`.
 - `lib/platforms.js`: owns the `PLATFORMS` list and `matchPlatforms(query)`, a
@@ -86,8 +98,9 @@ and simply cannot save.
   when neither `TAVILY_API_KEY` nor `SERPER_API_KEY` is set.
 - `lib/steam.js`: Steam OpenID login URL + verification, owned-games fetch
   (`IPlayerService/GetOwnedGames`), Steam CDN library cover URLs,
-  `fetchSteamReleaseYear` (`IStoreBrowseService/GetItems` + `include_release` —
-  owned-games has no release date; Store appdetails `filters=basic` omits it), and
+  `fetchSteamReleaseYear` (keyless Store `appdetails` — no `filters=basic`, which
+  omits `release_date`; owned-games has no release date. Keyless on purpose so the
+  year works even when `STEAM_API_KEY` is unset; IP rate-limited ~200/5min), and
   `steamIdFromMetadata` (reads the linked `steam_id` from Supabase `user_metadata`).
   Steam is **not a sign-in method** — it is a *link* action on an already
   signed-in Supabase account, so there is no "Continue with Steam" in the
@@ -107,9 +120,22 @@ and simply cannot save.
   and `GET /api/steam/library` (Bearer token) trust **only** the account's linked
   Steam when authenticated — the cookie is used solely in the token-less transient
   right after the OpenID return — so a shared browser can't leak one user's
-  library to another. `app/steam-library.tsx` grid UI (with search filter and
-  square in-theme loading skeletons); picking a game opens/resumes a PC chat with
-  Steam cover art. It caches the fetched list in `localStorage` (`gg:steam-library`,
+  library to another. `app/steam-library.tsx` grid UI (with search filter, a
+  **sort control** — icon button beside the search bar; options Recently played /
+  Most played / Name / Release year, each toggling asc/desc (↑/↓ on the active
+  option, menu reveal animated), default Recently played (desc) since Steam
+  exposes no "date added"; persisted as `"<key>:<dir>"` in
+  `user_metadata.steam_sort` + `localStorage` `gg:steam-sort` so it syncs across
+  devices — and square in-theme loading
+  skeletons); each card shows **platform · release year** (not playtime).
+  Existing pre-year Steam chats are backfilled once per mount by an effect in
+  `page.tsx` that reads the appId from the chat's Steam cover URL
+  (`steamAppIdFromCoverUrl`) and fills the empty `release_year`. The `/api/steam/library` route enriches owned-games with release
+  years via `fetchSteamReleaseYears` (batch `IStoreBrowseService/GetItems`, one
+  call per 50-id chunk) so the year is on the `SteamGame` when picked — no per-game
+  fetch. Picking a game opens/resumes a PC chat with Steam cover art (year set
+  immediately from the shelf; `/api/steam/release-year` is only a fallback for
+  games GetItems omits). It caches the fetched list in `localStorage` (`gg:steam-library`,
   keyed per account via the `cacheKey` prop, 6h TTL) and renders it instantly on
   reopen while revalidating in the background (stale-while-revalidate) — no more
   full reload every open. Requires `STEAM_API_KEY`; user's Steam **Game details**
@@ -195,8 +221,11 @@ and simply cannot save.
   leaves inside string values, strips fences) with prose fallback. Shared by the
   server (`summarize`), client (`coerceMessages`/render), and `npm run check`.
 - `lib/llm-log.ts` + `lib/llm-db-log.ts`: best-effort log of each model call's system
-  instruction, prompt, raw response, `duration_ms`, and Replicate `predict_time_ms`
-  (token counts null — Replicate does not expose Gemini usage). File tail in
+  instruction, prompt, raw response, `duration_ms`, Replicate `predict_time_ms`, and
+  input/output token counts (parsed from the Gemini prediction `logs` text in
+  `lib/replicate.ts#runModel` — Gemini reports usage there, not in `metrics`).
+  `game`/`platform`/`user_id` are logged on every call (client sends `userId`;
+  validated as a UUID in `/api/solve`). File tail in
   `llm-log.json` (dev / `LLM_LOG=1`); Supabase table `public.llm_calls`
   (`db/llm-calls.sql`) when `NEXT_PUBLIC_SUPABASE_*` are set (`LLM_DB_LOG=0`
   disables). Insert-only RLS — no client reads.

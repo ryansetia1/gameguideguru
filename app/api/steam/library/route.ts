@@ -2,7 +2,11 @@ import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { fetchOwnedGames, steamIdFromMetadata } from "@/lib/steam.js";
+import {
+  fetchOwnedGames,
+  fetchSteamReleaseYears,
+  steamIdFromMetadata,
+} from "@/lib/steam.js";
 import { STEAM_SESSION_COOKIE, verifySteamSession } from "@/lib/steam-session.js";
 
 export const runtime = "nodejs";
@@ -55,7 +59,18 @@ export async function GET(request: Request) {
 
   try {
     const games = await fetchOwnedGames(steamId, steamKey);
-    return NextResponse.json({ games, connected: true, available: true });
+    // Owned-games has no release date; enrich with a batch GetItems lookup so the
+    // shelf can show platform · year. Best-effort — years just stay absent on
+    // failure. (`games` is typed loosely from the JS helper.)
+    const years = await fetchSteamReleaseYears(
+      games.map((game: { appId: number }) => game.appId),
+      steamKey,
+    );
+    const enriched = games.map((game: { appId: number }) => ({
+      ...game,
+      releaseYear: years[game.appId] ?? "",
+    }));
+    return NextResponse.json({ games: enriched, connected: true, available: true });
   } catch (caught) {
     console.error("Steam library fetch failed:", caught);
     return NextResponse.json({

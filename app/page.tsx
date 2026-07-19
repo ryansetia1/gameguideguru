@@ -48,7 +48,12 @@ import {
 } from "@/lib/spoiler-prefs.js";
 import { displayNameFromMetadata } from "@/lib/profile.js";
 import { getSupabase, type Chat } from "@/lib/supabase";
-import { steamIdFromMetadata } from "@/lib/steam.js";
+import {
+  loadLocalGames,
+  removeLocalGame,
+  upsertLocalGame,
+} from "@/lib/local-games.js";
+import { steamAppIdFromCoverUrl, steamIdFromMetadata } from "@/lib/steam.js";
 import { getSpeechRecognition } from "@/lib/voice.js";
 import {
   clearSessionDraft,
@@ -255,6 +260,14 @@ function CoverThumb({
   );
 }
 
+// Cosmetic platform label: a Steam-sourced game (its cover is a Steam CDN URL)
+// shows "Steam" instead of "PC" so users can tell it apart from Epic/GOG/etc.
+// The stored `platform` stays "PC" — search (Tavily/Serper) still treats it as a
+// PC game; this is display-only.
+function displayPlatform(platform: string, coverUrl?: string | null): string {
+  return steamAppIdFromCoverUrl(coverUrl ?? "") ? "Steam" : platform;
+}
+
 // Fun rotating roles for the "Companion for ___" eyebrow. First stays the
 // original word so the initial paint matches the design (and SSR is stable).
 const FUN_ROLES = [
@@ -383,6 +396,9 @@ export default function Home() {
   const [authReady, setAuthReady] = useState(false);
   const [chats, setChats] = useState<Chat[]>([]);
   const [chatsLoaded, setChatsLoaded] = useState(false);
+  // Home quick-access: hide the setup form behind a "+ New game" reveal when the
+  // user already has saved games (signed-in or anon local). Reset on newGame().
+  const [newGameOpen, setNewGameOpen] = useState(false);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -416,6 +432,11 @@ export default function Home() {
   const abortRef = useRef<AbortController | null>(null);
   const conversationGame = useRef("");
   const activeChatIdRef = useRef<string | null>(null);
+  // Mirror `user` in a ref so the stable loadChats/persist callbacks can branch
+  // signed-in (Supabase) vs anon (localStorage) without stale-closure bugs.
+  const userRef = useRef<User | null>(null);
+  // Guard so the Steam release-year backfill runs at most once per mount.
+  const steamBackfillRef = useRef(false);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const attachRef = useRef<HTMLDivElement>(null);
@@ -547,6 +568,10 @@ export default function Home() {
   }, [activeChatId]);
 
   useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  useEffect(() => {
     // Opening a saved chat jumps to the newest message; a live turn instead pins
     // the latest question to the top so the answer reads top-down (no scroll-up).
     if (jumpRef.current) {
@@ -566,7 +591,11 @@ export default function Home() {
 
   const loadChats = useCallback(async () => {
     const supabase = getSupabase();
-    if (!supabase) return;
+    // Signed-out (or Supabase-less): recent games live in localStorage.
+    if (!supabase || !userRef.current) {
+      setChats(loadLocalGames());
+      return;
+    }
     const { data, error: loadError } = await supabase
       .from("chats")
       // select("*") tolerates the cover-metadata columns being absent before the
@@ -600,14 +629,10 @@ export default function Home() {
 
   useEffect(() => {
     if (!authReady) return;
-    if (user) {
-      setChatsLoaded(false);
-      void loadChats().finally(() => setChatsLoaded(true));
-    } else {
-      setChats([]);
-      setActiveChatId(null);
-      setChatsLoaded(true);
-    }
+    setChatsLoaded(false);
+    // Anon users read their recent games from localStorage; loadChats branches
+    // on userRef, so this covers both signed-in and signed-out.
+    void loadChats().finally(() => setChatsLoaded(true));
   }, [user, loadChats, authReady]);
 
   // After auth + chat list load, reopen the thread from ?chat= or sessionStorage.
@@ -644,13 +669,51 @@ export default function Home() {
       setError("");
       setEditingIndex(null);
       setEditingText("");
-      if (draft.activeChatId) setChatUrl(draft.activeChatId);
+      // ?chat= restore is signed-in only; anon relies on this draft, so don't
+      // push a local id into the URL.
+      if (draft.activeChatId && user) setChatUrl(draft.activeChatId);
       sessionHydratedRef.current = true;
       return;
     }
 
     sessionHydratedRef.current = true;
   }, [authReady, chatsLoaded, user, chats]);
+
+  // One-shot backfill: older Steam chats were saved before release-year existed.
+  // Spot them by the Steam appId in their cover URL, fetch the year (keyless
+  // appdetails endpoint), and fill the empty column. Best-effort, capped, runs
+  // once per mount; self-heals so later loads find nothing to do.
+  useEffect(() => {
+    if (!chatsLoaded || !user || steamBackfillRef.current) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const pending = chats
+      .filter((chat) => !chat.release_year)
+      .map((chat) => ({ chat, appId: steamAppIdFromCoverUrl(chat.cover_url ?? "") }))
+      .filter((row): row is { chat: Chat; appId: number } => row.appId != null)
+      .slice(0, 25); // cap to stay well under appdetails rate limits
+    if (!pending.length) return;
+    steamBackfillRef.current = true;
+    void (async () => {
+      let filled = 0;
+      for (const { chat, appId } of pending) {
+        try {
+          const res = await fetch(`/api/steam/release-year?appId=${appId}`);
+          if (!res.ok) continue;
+          const data: { year?: unknown } = await res.json();
+          if (typeof data.year !== "string" || !data.year) continue;
+          await supabase
+            .from("chats")
+            .update({ release_year: data.year })
+            .eq("id", chat.id);
+          filled += 1;
+        } catch {
+          // best-effort — skip this one
+        }
+      }
+      if (filled) void loadChats();
+    })();
+  }, [chatsLoaded, user, chats, loadChats]);
 
   // Keep the URL / session draft in sync so a refresh returns to this thread.
   useEffect(() => {
@@ -660,7 +723,9 @@ export default function Home() {
       setChatUrl(null);
       return;
     }
-    if (activeChatId) {
+    // Signed-in saved chats restore via ?chat=; anon local games have an id too
+    // but must fall through to the sessionStorage draft (no ?chat= for anon).
+    if (activeChatId && user) {
       setChatUrl(activeChatId);
       clearSessionDraft();
       return;
@@ -672,10 +737,12 @@ export default function Home() {
       preferredUrl,
       cover: cover.startsWith("blob:") ? "" : cover,
       releaseYear,
-      activeChatId: null,
+      // Anon: keep the local game id so a refresh resumes the same entry and
+      // later turns update it rather than forking a new one.
+      activeChatId,
       messages,
     });
-  }, [messages, activeChatId, game, platform, preferredUrl, cover, releaseYear]);
+  }, [messages, activeChatId, game, platform, preferredUrl, cover, releaseYear, user]);
 
   useEffect(() => {
     void refreshSteamStatus();
@@ -921,6 +988,15 @@ export default function Home() {
     conversationGame.current = "";
     setSidebarOpen(false);
     setMenuOpenId(null);
+    // Back to quick-access home; the setup form re-hides behind "+ New game".
+    setNewGameOpen(false);
+  }
+
+  // Explicit "+ New game": reset, then reveal the setup form (with animation)
+  // and focus the game field. newGame() alone returns to the quick-access view.
+  function startNewGame() {
+    newGame();
+    setNewGameOpen(true);
     requestAnimationFrame(() => {
       document.getElementById("game")?.focus();
     });
@@ -1064,7 +1140,23 @@ export default function Home() {
     conversationGame.current = game;
     const supabase = getSupabase();
     const id = activeChatIdRef.current;
-    if (!supabase || !user || !id) return;
+    if (!id) return;
+    // Anon: update the local entry's metadata in place.
+    if (!supabase || !user) {
+      const existing = loadLocalGames().find((row) => row.id === id);
+      if (existing) {
+        upsertLocalGame({
+          ...existing,
+          game,
+          platform,
+          preferred_guide_url: preferredUrl,
+          release_year: releaseYear,
+          updated_at: new Date().toISOString(),
+        });
+        setChats(loadLocalGames());
+      }
+      return;
+    }
     try {
       const coverUrl = await resolveCoverUrl();
       await supabase
@@ -1176,7 +1268,9 @@ export default function Home() {
     setPendingCover(null);
     replacedCoverRef.current = null;
     clearPendingImages();
-    setReleaseYear("");
+    // Year already came with the library shelf (batch GetItems) — set it now so
+    // the card shows "PC · year" immediately and it persists on first save.
+    setReleaseYear(game.releaseYear ?? "");
     setEditingGame(false);
     setInput("");
     setError("");
@@ -1184,6 +1278,8 @@ export default function Home() {
     setEditingText("");
     conversationGame.current = game.name;
 
+    // Fallback only when the shelf had no year (game missing from GetItems).
+    if (game.releaseYear) return;
     void (async () => {
       try {
         const response = await fetch(`/api/steam/release-year?appId=${game.appId}`);
@@ -1269,8 +1365,9 @@ export default function Home() {
       () => {},
     );
     setSteamId(null);
-    setSidebarOpen(false);
-    setMenuOpenId(null);
+    // Reset the open thread (it referenced a signed-in chat); loadChats then
+    // repopulates from anon localStorage. Previously handled by the !user effect.
+    newGame();
   }
 
   function toggleRowMenu(id: string, event: MouseEvent<HTMLButtonElement>) {
@@ -1289,7 +1386,13 @@ export default function Home() {
       return;
     }
     const supabase = getSupabase();
-    if (!supabase) return;
+    // Anon: no Storage files to clean up — just drop the local entry.
+    if (!supabase || !user) {
+      removeLocalGame(chat.id);
+      if (chat.id === activeChatId) newGame();
+      setChats(loadLocalGames());
+      return;
+    }
     // Collect this chat's own Storage files (cover + message images) so deleting
     // the chat doesn't orphan them in the bucket.
     const urls = [
@@ -1325,7 +1428,23 @@ export default function Home() {
 
   async function persistChat(nextMessages: Message[], targetChatId: string | null) {
     const supabase = getSupabase();
-    if (!supabase || !user) return null;
+    // Anon: persist to localStorage (Chat-shaped, no Storage — cover is CDN/"").
+    if (!supabase || !user) {
+      const id = targetChatId ?? crypto.randomUUID();
+      upsertLocalGame({
+        id,
+        game,
+        platform,
+        preferred_guide_url: preferredUrl,
+        cover_url: cover.startsWith("blob:") ? "" : cover,
+        release_year: releaseYear,
+        messages: nextMessages,
+        updated_at: new Date().toISOString(),
+      });
+      if (!targetChatId) setActiveChatId(id);
+      setChats(loadLocalGames());
+      return id;
+    }
     // Upload a pending device cover only now (message is being saved), so covers
     // never land in Storage for abandoned drafts.
     const coverUrl = await resolveCoverUrl();
@@ -1400,6 +1519,7 @@ export default function Home() {
           images,
           spoilerPrefs,
           playerName: user ? displayNameFromMetadata(user.user_metadata) : "",
+          userId: user?.id ?? null,
         }),
       });
       const data: unknown = await response.json();
@@ -1524,6 +1644,21 @@ export default function Home() {
   const started = messages.length > 0;
   const hasGame = Boolean(game.trim());
   const composerLocked = loading || !hasGame;
+  // Home layout states:
+  // - Empty account (no saved games): the marketing hero + setup form (classic home).
+  // - Has saved games: the recent-games carousel is always shown; below it sits
+  //   the "+ New game" button, which reveals the setup form IN PLACE (form drops
+  //   in under the carousel). The carousel yields to a plain setup view only when
+  //   a game is pre-filled outside new-game mode (Steam pick / autocomplete).
+  const homeMode = !started && !editingGame;
+  const hasRecent = homeMode && chats.length > 0;
+  const showCarousel = hasRecent && (newGameOpen || !hasGame);
+  const quickIdle = showCarousel && !newGameOpen; // carousel + button, form hidden
+  const showHero = homeMode && !hasRecent; // only a truly empty account sees home
+  const showSetupForm = homeMode && !quickIdle;
+  const QUICK_LIMIT = 4;
+  const recentGames = chats.slice(0, QUICK_LIMIT);
+  const moreGamesCount = chats.length - recentGames.length;
   const showCombinedExtras = compactComposer && coverEnabled && voiceSupported;
   const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
 
@@ -1531,7 +1666,7 @@ export default function Home() {
     <main>
       <nav className="nav" aria-label="Brand">
         <div className="nav-left">
-          {user && (
+          {(user || chats.length > 0) && (
             <button
               type="button"
               className="nav-icon-btn burger"
@@ -1575,7 +1710,10 @@ export default function Home() {
         </div>
       </nav>
 
-      {user && (
+      {/* Anon users now have local recent games too, so the sidebar list + saved
+          library must render for them (the "+N more" tile opens the library).
+          Steam/profile controls inside stay individually gated on `user`. */}
+      {(user || chats.length > 0) && (
         <>
           <div
             className={`sidebar-backdrop${sidebarOpen ? " open" : ""}`}
@@ -1652,7 +1790,9 @@ export default function Home() {
                         <strong>{chat.game || "Untitled game"}</strong>
                         {(chat.platform || chat.release_year) && (
                           <small>
-                            {[chat.platform, chat.release_year].filter(Boolean).join(" · ")}
+                            {[displayPlatform(chat.platform, chat.cover_url), chat.release_year]
+                              .filter(Boolean)
+                              .join(" · ")}
                           </small>
                         )}
                       </span>
@@ -1691,7 +1831,7 @@ export default function Home() {
               </ul>
             )}
             <div className="sidebar-footer">
-              <button type="button" className="sidebar-new icon-inline" onClick={newGame}>
+              <button type="button" className="sidebar-new icon-inline" onClick={startNewGame}>
                 <IconPlus /> New game
               </button>
             </div>
@@ -1732,9 +1872,6 @@ export default function Home() {
                       return (
                         <>
                           <div className="library-search-wrap">
-                            <label className="library-search-label" htmlFor="saved-library-search">
-                              Search
-                            </label>
                             <input
                               id="saved-library-search"
                               type="search"
@@ -1767,7 +1904,10 @@ export default function Home() {
                                     <strong>{chat.game || "Untitled game"}</strong>
                                     {(chat.platform || chat.release_year) && (
                                       <small>
-                                        {[chat.platform, chat.release_year]
+                                        {[
+                                          displayPlatform(chat.platform, chat.cover_url),
+                                          chat.release_year,
+                                        ]
                                           .filter(Boolean)
                                           .join(" · ")}
                                       </small>
@@ -1853,13 +1993,13 @@ export default function Home() {
           <div className="sticky-meta">
             <strong>{game || "Untitled game"}</strong>
             {(platform || releaseYear) && (
-              <small>{[platform, releaseYear].filter(Boolean).join(" · ")}</small>
+              <small>{[displayPlatform(platform, cover), releaseYear].filter(Boolean).join(" · ")}</small>
             )}
           </div>
         </div>
       )}
 
-      {!started && (
+      {showHero && (
         <section className="hero">
           <p className="eyebrow">
             Companion for <RotatingWord />
@@ -1871,6 +2011,83 @@ export default function Home() {
             Say the game and where you&apos;re stuck. We turn web guides into steps
             you can act on.
           </p>
+        </section>
+      )}
+
+      {showCarousel && (
+        <section className="quick-home" aria-label="Recent games" ref={topRef}>
+          <div className="quick-head">
+            <h2>Jump back in</h2>
+          </div>
+          <div className="quick-rail">
+            {recentGames.map((chat) => (
+              <button
+                key={chat.id}
+                type="button"
+                className="quick-card"
+                onClick={() => openChat(chat)}
+              >
+                <CoverThumb
+                  cover={chat.cover_url ?? ""}
+                  name={chat.game}
+                  className="cover-lg"
+                />
+                <span className="quick-card-meta">
+                  <strong>{chat.game || "Untitled game"}</strong>
+                  {(chat.platform || chat.release_year) && (
+                    <small>
+                      {[displayPlatform(chat.platform, chat.cover_url), chat.release_year]
+                              .filter(Boolean)
+                              .join(" · ")}
+                    </small>
+                  )}
+                </span>
+              </button>
+            ))}
+            {moreGamesCount > 0 && (
+              <button
+                type="button"
+                className="quick-card quick-more"
+                onClick={openSavedLibrary}
+                aria-label={`See ${moreGamesCount} more saved games`}
+              >
+                <span className="quick-more-count">+{moreGamesCount}</span>
+                <span className="quick-card-meta">
+                  <strong>more</strong>
+                  <small>Open library</small>
+                </span>
+              </button>
+            )}
+          </div>
+          {/* Button reveals the setup form below (it renders next, since
+              showSetupForm is now true); hidden once the form is open. */}
+          {!newGameOpen && (
+            <>
+              <button type="button" className="quick-new icon-inline" onClick={startNewGame}>
+                <IconPlus /> New game
+              </button>
+              {/* Library shortcuts. Steam shares the row only when connected;
+                  otherwise Saved library fills the width. */}
+              <div className="quick-libs">
+                <button
+                  type="button"
+                  className="quick-lib-btn icon-inline"
+                  onClick={openSavedLibrary}
+                >
+                  <IconGrid /> Saved library
+                </button>
+                {steamConnected && (
+                  <button
+                    type="button"
+                    className="quick-lib-btn icon-inline"
+                    onClick={openSteamLibrary}
+                  >
+                    <SteamIcon /> Steam library
+                  </button>
+                )}
+              </div>
+            </>
+          )}
         </section>
       )}
 
@@ -1914,7 +2131,7 @@ export default function Home() {
           <div className="game-card-meta">
             <h2>{game || "Untitled game"}</h2>
             {(platform || releaseYear) && (
-              <p>{[platform, releaseYear].filter(Boolean).join(" · ")}</p>
+              <p>{[displayPlatform(platform, cover), releaseYear].filter(Boolean).join(" · ")}</p>
             )}
             {preferredUrl && (
               <a
@@ -1937,7 +2154,9 @@ export default function Home() {
             </div>
           </div>
         </section>
-      ) : (
+      ) : showSetupForm ? (
+        // Mounting fresh when "+ New game" is tapped replays .setup's `rise`
+        // animation, so revealing the form (below the carousel) is animated.
         <section className="setup" aria-label="Game context" ref={topRef}>
           <div className="setup-main">
           {/* Cover column only mounts once a cover exists (upload or autocomplete);
@@ -2073,9 +2292,9 @@ export default function Home() {
             </div>
           )}
         </section>
-      )}
+      ) : null}
 
-      {!started && !examplesDismissed && (
+      {showHero && !examplesDismissed && (
         <div className="examples-block" aria-label="Examples">
           <div className="examples-head">
             <span className="examples-label">Try an example</span>
@@ -2281,6 +2500,9 @@ export default function Home() {
         </section>
       )}
 
+      {/* Composer is useless in the idle carousel state (no game field visible);
+          it returns once "+ New game" reveals the setup form. */}
+      {!quickIdle && (
       <form className={`composer${started ? " docked" : ""}`} onSubmit={handleSubmit}>
         {coverEnabled && pendingImages.length > 0 && (
           <div className="composer-attachments">
@@ -2438,10 +2660,13 @@ export default function Home() {
           )}
         </div>
       </form>
+      )}
 
-      <p className="disclaimer">
-        Guides are summarized by AI. Check the sources for version-specific details.
-      </p>
+      {!quickIdle && (
+        <p className="disclaimer">
+          Guides are summarized by AI. Check the sources for version-specific details.
+        </p>
+      )}
 
       {authOpen && <AuthPanel onClose={dismissOverlay} />}
 
