@@ -160,8 +160,9 @@ create index on public.guide_chunks
   select/insert). Ceiling is cache pollution, not a data leak; TTL-less is fine
   (guides change rarely). `ponytail:` re-ingest only if a guide is stale; add a
   content-hash column + refresh later if it matters.
-- Multi-guide later: no schema change. Retrieval filter goes from
-  `guide_url = $1` to `guide_url = any($1)`.
+- Multi-guide: `db/preferred-guide-urls.sql` adds `chats.preferred_guide_urls`
+  and replaces `match_guide_chunks` with a `text[]` filter (`guide_url = any($1)`).
+  Client/API accept `preferredUrls` (max 5); legacy single `preferredUrl` still works.
 
 ## Ingest
 
@@ -256,8 +257,9 @@ whether chunks come from RAG or (in the fallback) from web search.
 
 1. **Now:** single-guide RAG end to end (ingest, retrieve, similarity-route,
    fidelity prompt). Validate reliability on real guides.
-2. **Multi-guide (days later):** widen the retrieval filter to several URLs + UI
-   to attach more than one guide. No schema/ingest/prompt changes.
+2. **Multi-guide (implemented):** widen the retrieval filter to several URLs + UI
+   to attach more than one guide. No schema/ingest/prompt changes beyond
+   `preferred_guide_urls` + `match_guide_chunks(text[], …)`.
 
 ## Cost recap (Replicate; confirmed on the model pages)
 

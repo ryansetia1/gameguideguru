@@ -34,26 +34,28 @@ create policy "guide_chunks insert"
   on public.guide_chunks for insert
   with check (true);
 
--- Cosine similarity retrieval for a single guide URL.
+-- Cosine similarity retrieval for one or more guide URLs.
 create or replace function public.match_guide_chunks(
-  p_guide_url text,
+  p_guide_urls text[],
   p_embedding vector(1024),
   p_limit int default 5
 )
 returns table (
+  guide_url text,
   chunk_text text,
   similarity float
 )
 language sql stable
 as $$
   select
+    guide_url,
     chunk_text,
     1 - (embedding <=> p_embedding) as similarity
   from public.guide_chunks
-  where guide_url = p_guide_url
+  where guide_url = any(p_guide_urls)
   order by embedding <=> p_embedding
   limit p_limit;
 $$;
 
-grant execute on function public.match_guide_chunks(text, vector, int)
+grant execute on function public.match_guide_chunks(text[], vector, int)
   to anon, authenticated, service_role;

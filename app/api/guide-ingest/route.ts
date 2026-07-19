@@ -1,36 +1,55 @@
 import { NextResponse } from "next/server";
 
-import { ensureGuideIngested, isGuideIndexed, isGuideRagAvailable } from "@/lib/guide-ingest";
+import {
+  coerceGuideUrlsFromBody,
+  cleanGuideUrl,
+  normalizeGuideUrlList,
+} from "@/lib/guide-urls.js";
+import {
+  ensureGuideIngested,
+  isGuideIndexed,
+  isGuideRagAvailable,
+} from "@/lib/guide-ingest";
 
 export const runtime = "nodejs";
 
-function cleanUrl(value: unknown): string {
-  if (typeof value !== "string") return "";
-  const trimmed = value.trim().slice(0, 300);
-  if (!trimmed) return "";
-  try {
-    const url = new URL(trimmed);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
-    return url.toString();
-  } catch {
-    return "";
-  }
-}
-
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const preferredUrl = cleanUrl(searchParams.get("url"));
+  const urls = normalizeGuideUrlList(
+    [
+      ...searchParams.getAll("url"),
+      ...(searchParams.get("urls")
+        ? searchParams.get("urls")!.split(",")
+        : []),
+    ].flatMap((value) => {
+      const url = cleanGuideUrl(value);
+      return url ? [url] : [];
+    }),
+  );
 
-  if (!preferredUrl) {
+  if (!urls.length) {
     return NextResponse.json({ error: "Missing guide URL." }, { status: 400 });
   }
 
   if (!isGuideRagAvailable()) {
-    return NextResponse.json({ available: false, indexed: false });
+    return NextResponse.json({ available: false, indexed: false, results: [] });
   }
 
-  const indexed = await isGuideIndexed(preferredUrl);
-  return NextResponse.json({ available: true, indexed });
+  const results = await Promise.all(
+    urls.map(async (url) => ({
+      url,
+      indexed: await isGuideIndexed(url),
+    })),
+  );
+  const indexedCount = results.filter((row) => row.indexed).length;
+
+  return NextResponse.json({
+    available: true,
+    indexed: indexedCount === urls.length,
+    indexedCount,
+    total: urls.length,
+    results,
+  });
 }
 
 export async function POST(request: Request) {
@@ -42,23 +61,39 @@ export async function POST(request: Request) {
   }
 
   const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-  const preferredUrl = cleanUrl(record.preferredUrl);
+  const urls = coerceGuideUrlsFromBody(record);
 
-  if (!preferredUrl) {
+  if (!urls.length) {
     return NextResponse.json({ error: "Missing guide URL." }, { status: 400 });
   }
 
   if (!isGuideRagAvailable()) {
-    return NextResponse.json({ available: false, indexed: false });
+    return NextResponse.json({
+      available: false,
+      indexed: false,
+      indexedCount: 0,
+      total: urls.length,
+      results: [],
+    });
   }
 
   try {
-    const result = await ensureGuideIngested(preferredUrl, request.signal);
+    const settled = await Promise.all(
+      urls.map(async (url) => {
+        const result = await ensureGuideIngested(url, request.signal);
+        return { url, ...result };
+      }),
+    );
+    const indexedCount = settled.filter((row) => row.indexed).length;
+    const hubWarning = settled.some((row) => row.hubWarning);
+
     return NextResponse.json({
       available: true,
-      indexed: result.indexed,
-      chunkCount: result.chunkCount,
-      hubWarning: result.hubWarning,
+      indexed: indexedCount === urls.length,
+      indexedCount,
+      total: urls.length,
+      hubWarning,
+      results: settled,
     });
   } catch (error) {
     console.error("Guide ingest failed:", error);

@@ -2,7 +2,12 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { embedQuery } from "@/lib/embed";
 import { toVectorString } from "@/lib/embed-cache";
-import { ensureGuideIngested, isGuideRagAvailable, normalizeGuideUrl } from "@/lib/guide-ingest";
+import {
+  ensureGuideIngested,
+  isGuideRagAvailable,
+  normalizeGuideUrl,
+} from "@/lib/guide-ingest";
+import { normalizeGuideUrlList } from "@/lib/guide-urls.js";
 import type { SearchResult } from "@/lib/tavily";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -26,6 +31,7 @@ function getClient(): SupabaseClient | null {
 }
 
 type MatchRow = {
+  guide_url: string;
   chunk_text: string;
   similarity: number;
 };
@@ -34,6 +40,8 @@ export type GuideRagResult = {
   sources: SearchResult[];
   skipWebSearch: boolean;
   hubWarning: boolean;
+  indexedCount: number;
+  totalGuides: number;
 };
 
 function hostLabel(guideUrl: string): string {
@@ -45,15 +53,18 @@ function hostLabel(guideUrl: string): string {
 }
 
 /**
- * Preferred-guide RAG path: ingest (lazy), embed query, retrieve top-K chunks,
- * route on similarity. Returns null when RAG infra is unavailable so the caller
- * can fall back to tiered web search.
+ * Preferred-guide RAG path: ingest (lazy), embed query, retrieve top-K chunks
+ * across one or more guide URLs, route on similarity. Returns null when RAG
+ * infra is unavailable so the caller can fall back to tiered web search.
  */
-export async function retrieveFromPreferredGuide(input: {
-  guideUrl: string;
+export async function retrieveFromPreferredGuides(input: {
+  guideUrls: string[];
   query: string;
   signal?: AbortSignal;
 }): Promise<GuideRagResult | null> {
+  const guideUrls = normalizeGuideUrlList(input.guideUrls).map(normalizeGuideUrl);
+  if (!guideUrls.length) return null;
+
   if (!isGuideRagAvailable()) {
     if (!ragUnavailableLogged) {
       console.warn("Preferred-guide RAG unavailable; falling back to web search.");
@@ -62,19 +73,33 @@ export async function retrieveFromPreferredGuide(input: {
     return null;
   }
 
-  const guideUrl = normalizeGuideUrl(input.guideUrl);
-  const ingest = await ensureGuideIngested(guideUrl, input.signal);
-  if (!ingest.indexed) {
+  const ingestResults = await Promise.all(
+    guideUrls.map((guideUrl) => ensureGuideIngested(guideUrl, input.signal)),
+  );
+  const indexedUrls = guideUrls.filter((_, index) => ingestResults[index]?.indexed);
+  const hubWarning = ingestResults.some((result) => result.hubWarning);
+  const indexedCount = indexedUrls.length;
+  const totalGuides = guideUrls.length;
+
+  if (!indexedCount) {
     return {
       sources: [],
       skipWebSearch: false,
-      hubWarning: ingest.hubWarning,
+      hubWarning,
+      indexedCount: 0,
+      totalGuides,
     };
   }
 
   const queryEmbedding = await embedQuery(input.query, input.signal);
   if (!queryEmbedding?.length) {
-    return { sources: [], skipWebSearch: false, hubWarning: ingest.hubWarning };
+    return {
+      sources: [],
+      skipWebSearch: false,
+      hubWarning,
+      indexedCount,
+      totalGuides,
+    };
   }
 
   const supabase = getClient();
@@ -83,7 +108,7 @@ export async function retrieveFromPreferredGuide(input: {
   let matches: MatchRow[] = [];
   try {
     const { data, error } = await supabase.rpc("match_guide_chunks", {
-      p_guide_url: guideUrl,
+      p_guide_urls: indexedUrls,
       p_embedding: toVectorString(queryEmbedding),
       p_limit: RETRIEVE_K,
     });
@@ -91,28 +116,57 @@ export async function retrieveFromPreferredGuide(input: {
     matches = (data ?? []) as MatchRow[];
   } catch (error) {
     console.error("Guide chunk retrieval failed:", error);
-    return { sources: [], skipWebSearch: false, hubWarning: ingest.hubWarning };
+    return {
+      sources: [],
+      skipWebSearch: false,
+      hubWarning,
+      indexedCount,
+      totalGuides,
+    };
   }
 
   if (!matches.length) {
-    return { sources: [], skipWebSearch: false, hubWarning: ingest.hubWarning };
+    return {
+      sources: [],
+      skipWebSearch: false,
+      hubWarning,
+      indexedCount,
+      totalGuides,
+    };
   }
 
   const topSimilarity = matches[0]?.similarity ?? 0;
-  const label = hostLabel(guideUrl);
   const hit = topSimilarity >= GUIDE_HIT;
 
-  const sources: SearchResult[] = matches.map((row, index) => ({
-    title: hit ? `${label} (section ${index + 1})` : label,
-    url: guideUrl,
-    content: row.chunk_text,
-    score: row.similarity,
-    preferred: hit,
-  }));
+  const sources: SearchResult[] = matches.map((row, index) => {
+    const label = hostLabel(row.guide_url);
+    return {
+      title: hit ? `${label} (section ${index + 1})` : label,
+      url: row.guide_url,
+      content: row.chunk_text,
+      score: row.similarity,
+      preferred: hit,
+    };
+  });
 
   return {
     sources: hit ? sources : sources.slice(0, 1),
     skipWebSearch: hit,
-    hubWarning: ingest.hubWarning,
+    hubWarning,
+    indexedCount,
+    totalGuides,
   };
+}
+
+/** @deprecated Use retrieveFromPreferredGuides */
+export async function retrieveFromPreferredGuide(input: {
+  guideUrl: string;
+  query: string;
+  signal?: AbortSignal;
+}): Promise<GuideRagResult | null> {
+  return retrieveFromPreferredGuides({
+    guideUrls: input.guideUrl ? [input.guideUrl] : [],
+    query: input.query,
+    signal: input.signal,
+  });
 }

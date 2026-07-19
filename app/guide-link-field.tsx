@@ -2,15 +2,17 @@
 
 import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { MAX_GUIDE_URLS, cleanGuideUrl, normalizeGuideUrlList } from "@/lib/guide-urls.js";
+
 type GuideHit = { title: string; url: string; snippet: string };
 
 type Props = {
-  value: string;
-  onChange: (value: string) => void;
+  value: string[];
+  onChange: (value: string[]) => void;
   game: string;
   platform: string;
   disabled?: boolean;
-  /** Called when the user picks a result via "Use" — the caller collapses the section. */
+  /** Called when the user adds a guide via search — caller may collapse the section. */
   onGuidePicked?: () => void;
 };
 
@@ -22,8 +24,17 @@ function hostLabel(url: string) {
   }
 }
 
-export function GuideLinkField({ value, onChange, game, platform, disabled, onGuidePicked }: Props) {
+export function GuideLinkField({
+  value,
+  onChange,
+  game,
+  platform,
+  disabled,
+  onGuidePicked,
+}: Props) {
   const [mode, setMode] = useState<"link" | "search">("link");
+  const [draftUrl, setDraftUrl] = useState("");
+  const [addError, setAddError] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GuideHit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -34,6 +45,39 @@ export function GuideLinkField({ value, onChange, game, platform, disabled, onGu
   const autoRanRef = useRef(false);
   const trimmedGame = game.trim();
   const canSearch = trimmedGame.length > 0;
+  const atMax = value.length >= MAX_GUIDE_URLS;
+
+  const addUrl = useCallback(
+    (raw: string) => {
+      const cleaned = cleanGuideUrl(raw);
+      if (!cleaned) {
+        setAddError("Paste a full http or https link.");
+        return false;
+      }
+      const next = normalizeGuideUrlList([...value, cleaned]);
+      if (next.length === value.length) {
+        setAddError("That guide is already in your list.");
+        return false;
+      }
+      if (next.length > MAX_GUIDE_URLS) {
+        setAddError(`You can add up to ${MAX_GUIDE_URLS} guides.`);
+        return false;
+      }
+      onChange(next);
+      setDraftUrl("");
+      setAddError("");
+      return true;
+    },
+    [onChange, value],
+  );
+
+  const removeUrl = useCallback(
+    (url: string) => {
+      onChange(value.filter((entry) => entry !== url));
+      setAddError("");
+    },
+    [onChange, value],
+  );
 
   const runSearch = useCallback(async () => {
     if (!trimmedGame) {
@@ -85,12 +129,18 @@ export function GuideLinkField({ value, onChange, game, platform, disabled, onGu
     void runSearch();
   }, [mode, canSearch, disabled, runSearch]);
 
+  function onAddSubmit(event: FormEvent) {
+    event.preventDefault();
+    addUrl(draftUrl);
+  }
+
   function pickGuide(url: string) {
-    onChange(url);
-    setMode("link");
-    setSearchError("");
-    // The user has chosen their preferred guide — collapse the section.
-    onGuidePicked?.();
+    if (atMax) {
+      setSearchError(`You can add up to ${MAX_GUIDE_URLS} guides.`);
+      return;
+    }
+    const added = addUrl(url);
+    if (added && value.length + 1 >= MAX_GUIDE_URLS) onGuidePicked?.();
   }
 
   function onSearchSubmit(event: FormEvent) {
@@ -98,9 +148,15 @@ export function GuideLinkField({ value, onChange, game, platform, disabled, onGu
     void runSearch();
   }
 
+  const urlInList = (url: string) => {
+    const cleaned = cleanGuideUrl(url);
+    if (!cleaned) return false;
+    return normalizeGuideUrlList([...value, cleaned]).length === value.length;
+  };
+
   return (
     <div className="guide-link-field">
-      <div className="guide-link-modes" role="tablist" aria-label="Preferred guide source">
+      <div className="guide-link-modes" role="tablist" aria-label="Preferred guide sources">
         <button
           type="button"
           role="tab"
@@ -123,20 +179,55 @@ export function GuideLinkField({ value, onChange, game, platform, disabled, onGu
         </button>
       </div>
 
+      {value.length > 0 && (
+        <ul className="guide-url-list" aria-label="Added guides">
+          {value.map((url) => (
+            <li key={url} className="guide-url-row">
+              <div className="guide-url-row-body">
+                <a href={url} target="_blank" rel="noreferrer" className="guide-url-host">
+                  {hostLabel(url)}
+                </a>
+                <span className="guide-url-path">{url}</span>
+              </div>
+              <button
+                type="button"
+                className="guide-url-remove"
+                disabled={disabled}
+                aria-label={`Remove ${hostLabel(url)}`}
+                onClick={() => removeUrl(url)}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
       {mode === "link" ? (
-        <input
-          id={inputId}
-          type="url"
-          inputMode="url"
-          role="tabpanel"
-          aria-label="Preferred guide URL"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="Paste a specific guide page (not a category/hub) for best results"
-          maxLength={300}
-          autoComplete="off"
-          disabled={disabled}
-        />
+        <form className="guide-url-add-form" onSubmit={onAddSubmit} role="tabpanel">
+          <input
+            id={inputId}
+            type="url"
+            inputMode="url"
+            aria-label="Guide URL to add"
+            value={draftUrl}
+            onChange={(event) => {
+              setDraftUrl(event.target.value);
+              if (addError) setAddError("");
+            }}
+            placeholder={
+              atMax
+                ? `Up to ${MAX_GUIDE_URLS} guides added`
+                : "Paste a specific guide page (not a category/hub)"
+            }
+            maxLength={300}
+            autoComplete="off"
+            disabled={disabled || atMax}
+          />
+          <button type="submit" className="nav-button" disabled={disabled || atMax || !draftUrl.trim()}>
+            Add
+          </button>
+        </form>
       ) : (
         <div
           className={`guide-search-panel${canSearch ? "" : " is-inactive"}`}
@@ -189,29 +280,39 @@ export function GuideLinkField({ value, onChange, game, platform, disabled, onGu
           {searchError && canSearch && <p className="guide-search-error">{searchError}</p>}
           {results.length > 0 && searchAvailable && (
             <ul className="guide-search-results" aria-label="Guide search results">
-              {results.map((hit) => (
-                <li key={hit.url} className="guide-search-hit">
-                  <div className="guide-search-hit-body">
-                    <a href={hit.url} target="_blank" rel="noreferrer" className="guide-search-title">
-                      {hit.title}
-                    </a>
-                    <span className="guide-search-host">{hostLabel(hit.url)}</span>
-                    {hit.snippet && <p className="guide-search-snippet">{hit.snippet}</p>}
-                  </div>
-                  <button
-                    type="button"
-                    className="guide-search-use"
-                    disabled={disabled}
-                    onClick={() => pickGuide(hit.url)}
-                  >
-                    Use
-                  </button>
-                </li>
-              ))}
+              {results.map((hit) => {
+                const added = urlInList(hit.url);
+                return (
+                  <li key={hit.url} className="guide-search-hit">
+                    <div className="guide-search-hit-body">
+                      <a href={hit.url} target="_blank" rel="noreferrer" className="guide-search-title">
+                        {hit.title}
+                      </a>
+                      <span className="guide-search-host">{hostLabel(hit.url)}</span>
+                      {hit.snippet && <p className="guide-search-snippet">{hit.snippet}</p>}
+                    </div>
+                    <button
+                      type="button"
+                      className="guide-search-use"
+                      disabled={disabled || added || atMax}
+                      onClick={() => pickGuide(hit.url)}
+                    >
+                      {added ? "Added" : "Add"}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
       )}
+
+      <p className="field-hint">
+        {atMax
+          ? `${MAX_GUIDE_URLS} guides max. Remove one to add another.`
+          : `Add up to ${MAX_GUIDE_URLS} trusted guides. We search them first, then the web.`}
+      </p>
+      {addError && <p className="guide-search-error">{addError}</p>}
     </div>
   );
 }

@@ -20,7 +20,12 @@ import {
   IconX,
 } from "./icons";
 import { FUN_ROLES, HERO_LINES } from "@/lib/hero-copy.js";
-import { guideIngestHint } from "@/lib/guide-hints.js";
+import { guideIngestHint, guideIngestHintFromResponse } from "@/lib/guide-hints.js";
+import {
+  guideUrlsFromChat,
+  guideUrlsPayload,
+  guideUrlsSummary,
+} from "@/lib/guide-urls.js";
 import { compressImage } from "@/lib/image.js";
 import { GuideLinkField } from "./guide-link-field";
 import { HltbRow } from "./hltb-row";
@@ -334,7 +339,7 @@ function SpoilerToggle({
 export default function Home() {
   const [game, setGame] = useState("");
   const [platform, setPlatform] = useState("");
-  const [preferredUrl, setPreferredUrl] = useState("");
+  const [preferredUrls, setPreferredUrls] = useState<string[]>([]);
   // Which optional section shows below the trigger row — only one at a time, so
   // toggling keeps the two triggers fixed in place instead of reflowing them.
   const [optPanel, setOptPanel] = useState<"guide" | "spoiler" | null>(null);
@@ -349,7 +354,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [indexingGuide, setIndexingGuide] = useState(false);
+  const [indexingGuideCount, setIndexingGuideCount] = useState(0);
 
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -414,7 +419,7 @@ export default function Home() {
     messages: Message[];
     game: string;
     platform: string;
-    preferredUrl: string;
+    preferredUrls: string[];
     cover: string;
     releaseYear: string;
     conversationGame: string;
@@ -682,7 +687,7 @@ export default function Home() {
       setActiveChatId(draft.activeChatId);
       setGame(draft.game);
       setPlatform(draft.platform);
-      setPreferredUrl(draft.preferredUrl);
+      setPreferredUrls(draft.preferredUrls);
       setCover(draft.cover);
       setPendingCover(null);
       replacedCoverRef.current = null;
@@ -766,7 +771,7 @@ export default function Home() {
     saveSessionDraft({
       game,
       platform,
-      preferredUrl,
+      preferredUrls,
       cover: cover.startsWith("blob:") ? "" : cover,
       releaseYear,
       // Anon: keep the local game id so a refresh resumes the same entry and
@@ -774,7 +779,7 @@ export default function Home() {
       activeChatId,
       messages,
     });
-  }, [messages, activeChatId, game, platform, preferredUrl, cover, releaseYear, user, temporary]);
+  }, [messages, activeChatId, game, platform, preferredUrls, cover, releaseYear, user, temporary]);
 
   useEffect(() => {
     void refreshSteamStatus();
@@ -1017,7 +1022,7 @@ export default function Home() {
     setMessages([]);
     setGame("");
     setPlatform("");
-    setPreferredUrl("");
+    setPreferredUrls([]);
     if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
     setCover("");
     setPendingCover(null);
@@ -1060,7 +1065,7 @@ export default function Home() {
         messages,
         game,
         platform,
-        preferredUrl,
+        preferredUrls,
         cover,
         releaseYear,
         conversationGame: conversationGame.current,
@@ -1097,7 +1102,7 @@ export default function Home() {
       setMessages(prior.messages);
       setGame(prior.game);
       setPlatform(prior.platform);
-      setPreferredUrl(prior.preferredUrl);
+      setPreferredUrls(prior.preferredUrls);
       setCover(prior.cover);
       setReleaseYear(prior.releaseYear);
       conversationGame.current = prior.conversationGame;
@@ -1127,7 +1132,7 @@ export default function Home() {
     setActiveChatId(chat.id);
     setGame(chat.game);
     setPlatform(chat.platform);
-    setPreferredUrl(chat.preferred_guide_url);
+    setPreferredUrls(guideUrlsFromChat(chat));
     if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
     setCover(chat.cover_url ?? "");
     setPendingCover(null);
@@ -1268,7 +1273,7 @@ export default function Home() {
           ...existing,
           game,
           platform,
-          preferred_guide_url: preferredUrl,
+          ...guideUrlsPayload(preferredUrls),
           release_year: releaseYear,
           updated_at: new Date().toISOString(),
         });
@@ -1283,7 +1288,7 @@ export default function Home() {
         .update({
           game,
           platform,
-          preferred_guide_url: preferredUrl,
+          ...guideUrlsPayload(preferredUrls),
           cover_url: coverUrl,
           release_year: releaseYear,
           updated_at: new Date().toISOString(),
@@ -1376,7 +1381,7 @@ export default function Home() {
     setMessages([]);
     setGame(game.name);
     setPlatform("PC");
-    setPreferredUrl("");
+    setPreferredUrls([]);
     if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
     setCover(coverEnabled ? game.cover : "");
     setPendingCover(null);
@@ -1550,7 +1555,7 @@ export default function Home() {
         id,
         game,
         platform,
-        preferred_guide_url: preferredUrl,
+        ...guideUrlsPayload(preferredUrls),
         cover_url: cover.startsWith("blob:") ? "" : cover,
         release_year: releaseYear,
         messages: nextMessages,
@@ -1566,7 +1571,7 @@ export default function Home() {
     const payload = {
       game,
       platform,
-      preferred_guide_url: preferredUrl,
+      ...guideUrlsPayload(preferredUrls),
       cover_url: coverUrl,
       release_year: releaseYear,
       messages: nextMessages,
@@ -1623,29 +1628,19 @@ export default function Home() {
 
     try {
       let ingestHint: string | null = null;
-      if (preferredUrl) {
-        setIndexingGuide(true);
+      if (preferredUrls.length) {
+        setIndexingGuideCount(preferredUrls.length);
         try {
           const ingestResponse = await fetch("/api/guide-ingest", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             signal: controller.signal,
-            body: JSON.stringify({ preferredUrl }),
+            body: JSON.stringify({ preferredUrls }),
           });
           if (ingestResponse.ok) {
             const ingestData: unknown = await ingestResponse.json();
-            if (ingestData && typeof ingestData === "object") {
-              const record = ingestData as Record<string, unknown>;
-              ingestHint = guideIngestHint({
-                available:
-                  "available" in record ? Boolean(record.available) : true,
-                indexed:
-                  "indexed" in record ? Boolean(record.indexed) : undefined,
-                hubWarning:
-                  "hubWarning" in record ? Boolean(record.hubWarning) : false,
-              });
-              if (ingestHint) setToast(ingestHint);
-            }
+            ingestHint = guideIngestHintFromResponse(ingestData);
+            if (ingestHint) setToast(ingestHint);
           } else if (!controller.signal.aborted) {
             let message: string | null = null;
             try {
@@ -1662,17 +1657,28 @@ export default function Home() {
               // ignore parse errors
             }
             ingestHint =
-              message ?? guideIngestHint({ available: true, indexed: false });
+              message ??
+              guideIngestHint({
+                available: true,
+                indexed: false,
+                total: preferredUrls.length,
+                indexedCount: 0,
+              });
             if (ingestHint) setToast(ingestHint);
           }
         } catch (ingestError) {
           if (!(ingestError instanceof DOMException && ingestError.name === "AbortError")) {
             console.error("Guide ingest failed:", ingestError);
-            ingestHint = guideIngestHint({ available: true, indexed: false });
+            ingestHint = guideIngestHint({
+              available: true,
+              indexed: false,
+              total: preferredUrls.length,
+              indexedCount: 0,
+            });
             if (ingestHint) setToast(ingestHint);
           }
         } finally {
-          setIndexingGuide(false);
+          setIndexingGuideCount(0);
         }
       }
 
@@ -1685,7 +1691,7 @@ export default function Home() {
           platform,
           question,
           history,
-          preferredUrl,
+          preferredUrls,
           images,
           spoilerPrefs,
           playerName: user ? displayNameFromMetadata(user.user_metadata) : "",
@@ -2368,17 +2374,22 @@ export default function Home() {
               <p>{[displayPlatform(platform, cover), releaseYear].filter(Boolean).join(" · ")}</p>
             )}
             <HltbRow title={game} appId={steamAppIdFromCoverUrl(cover)?.toString()} />
-            {preferredUrl && (
-              <a
-                className="game-card-link"
-                href={preferredUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <span className="icon-inline">
-                  Preferred guide <IconArrowUpRight />
-                </span>
-              </a>
+            {preferredUrls.length > 0 && (
+              <div className="game-card-guides">
+                {preferredUrls.map((url) => (
+                  <a
+                    key={url}
+                    className="game-card-link"
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <span className="icon-inline">
+                      {guideUrlsSummary([url])} <IconArrowUpRight />
+                    </span>
+                  </a>
+                ))}
+              </div>
             )}
             <div className="spoiler-panel">
               <SpoilerToggle
@@ -2483,9 +2494,9 @@ export default function Home() {
                 aria-controls="opt-panel-guide"
                 onClick={() => setOptPanel((cur) => (cur === "guide" ? null : "guide"))}
               >
-                <span className="opt-summary-label">Preferred guide (optional)</span>
-                {preferredUrl && (
-                  <span className="opt-summary-value">{hostname(preferredUrl)}</span>
+                <span className="opt-summary-label">Preferred guides (optional)</span>
+                {preferredUrls.length > 0 && (
+                  <span className="opt-summary-value">{guideUrlsSummary(preferredUrls)}</span>
                 )}
               </button>
               <button
@@ -2504,12 +2515,11 @@ export default function Home() {
             {optPanel === "guide" && (
               <div className="opt-panel" id="opt-panel-guide">
                 <GuideLinkField
-                  value={preferredUrl}
-                  onChange={setPreferredUrl}
+                  value={preferredUrls}
+                  onChange={setPreferredUrls}
                   game={game}
                   platform={platform}
                   disabled={loading}
-                  onGuidePicked={() => setOptPanel(null)}
                 />
               </div>
             )}
@@ -2726,8 +2736,10 @@ export default function Home() {
             <div className="turn guide loading-card">
               <span className="scan-line" aria-hidden="true" />
               <p>
-                {indexingGuide
-                  ? "Indexing your guide..."
+                {indexingGuideCount
+                  ? indexingGuideCount > 1
+                    ? `Indexing ${indexingGuideCount} guides...`
+                    : "Indexing your guide..."
                   : "Searching walkthroughs and player forums..."}
               </p>
             </div>

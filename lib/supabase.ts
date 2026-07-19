@@ -21,6 +21,8 @@ export type Chat = {
   game: string;
   platform: string;
   preferred_guide_url: string;
+  /** Optional: absent until preferred-guide-urls migration (db/preferred-guide-urls.sql). */
+  preferred_guide_urls?: string[];
   // Optional: absent until the cover-metadata migration is applied (see
   // db/cover-metadata.sql). `cover_url` may be a TheGamesDB CDN URL or a
   // Supabase Storage public URL from a device upload.

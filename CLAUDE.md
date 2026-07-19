@@ -19,7 +19,7 @@ do not sync to the cloud or use Storage uploads.
  preferred-guide link, global major-spoiler toggle (profile menu + `user_metadata.spoiler_major`) and per-game major-spoiler toggle (setup **Spoilers** opt-tab + compact toggle on the game card; `loadGameSpoilerPrefs`/`saveGameSpoilerPrefs` in `lib/spoiler-prefs.js`; effective = global OR per-game), message feed,
  docked composer) and `/api/solve` consumer.
   Keeps `messages` state and sends the last 10 messages (5 turns) as `history`
-  plus `preferredUrl` and `spoilerPrefs` (`major`, default off). Also owns Supabase auth state, the "Your games" menu
+  plus `preferredUrls` (up to 5) and `spoilerPrefs` (`major`, default off). Also owns Supabase auth state, the "Your games" menu
   (list/resume/new/delete), per-turn chat persistence (auto-creates a new saved
   chat when the game name changes mid-session), edit/retry on message bubbles,
   structured highlight sections on assistant replies, a game metadata card with
@@ -111,10 +111,12 @@ do not sync to the cloud or use Storage uploads.
   DB is unavailable (`available: false`). `onPick` surfaces the chosen
   `{ name, year, cover, platform }` to the page (manual typing clears the stale
   cover); `showCover` is off for signed-out users.
-- `app/guide-link-field.tsx`: preferred-guide twin tabs — **Paste link** (URL
-  input) or **Search web** (queries `/api/guide-search` with game/platform +
-  optional keywords; **Use** fills `preferredUrl` and switches back to paste).
-  Auto-runs a search when the tab opens if a game name is set.
+- `app/guide-link-field.tsx`: preferred-guide twin tabs — **Paste link** (add up to
+  5 URLs) or **Search web** (queries `/api/guide-search` with game/platform +
+  optional keywords; **Add** appends a hit to the list). Auto-runs a search when
+  the tab opens if a game name is set. `lib/guide-urls.js` owns URL validation,
+  dedupe, chat/draft coercion, and legacy `preferredUrl` / `preferred_guide_url`
+  fallback.
 - `app/api/guide-search/route.ts`: browse endpoint for the picker. Calls
   `discoverGuideLinks` (tiered Tavily/Serper, no answer-time confidence gate).
   Returns `{ results: [{ title, url, snippet }], available }`; `available: false`
@@ -207,22 +209,23 @@ do not sync to the cloud or use Storage uploads.
   `lib/games.js#mapGames` shapes the payload. Provider swap to IGDB later is this
   file + `mapGames` only.
 - `app/api/solve/route.ts`: validates/sanitizes `{ game, platform, question,
-  history, preferredUrl, spoilerPrefs, playerName }` at the trust boundary (history capped to 10, content
-  truncated, `preferredUrl` must be http/https, `spoilerPrefs` coerced to booleans,
+  history, preferredUrls, spoilerPrefs, playerName }` at the trust boundary (history capped to 10, content
+  truncated, `preferredUrls` capped/deduped via `lib/guide-urls.js`, `spoilerPrefs` coerced to booleans,
   `playerName` from `display_name`, max 32 chars). Always calls `resolveQuestion`
-  to rewrite the query into standalone English. When `preferredUrl` is set, runs
-  preferred-guide RAG (`lib/guide-rag.ts`: lazy ingest, embed query, pgvector
-  retrieve, similarity-route at `GUIDE_HIT`); on a high-similarity hit the
-  retrieved chunks are marked `preferred` and tiered web search is skipped. On a
-  low-similarity miss (or when RAG infra is unset) falls back to tiered Tavily/Serper
-  search. Without a preferred URL, tiered search only (cached in
-  `lib/search-cache.ts` keyed by `searchQuery`). Search is best-effort (skipped if
-  no search API key, failures swallowed); the model still answers. Returns
-  `{ answer, highlights, sources, spoilers, guideHint? }` (`spoilers` trimmed to
-  `[]` when `spoilerPrefs.major` is false). Only `REPLICATE_API_TOKEN` is mandatory.
-- `app/api/guide-ingest/route.ts`: lazy shared ingest for a preferred guide URL
-  (`POST` ensure indexed, `GET` check indexed). Used by the client to show
-  "Indexing your guide..." before the first solve turn.
+  to rewrite the query into standalone English. When any preferred URL is set, runs
+  preferred-guide RAG (`lib/guide-rag.ts`: lazy ingest all URLs, embed query,
+  pgvector retrieve across `guide_url = any($urls)`, similarity-route at
+  `GUIDE_HIT`); on a high-similarity hit the retrieved chunks are marked
+  `preferred` and tiered web search is skipped. On a low-similarity miss (or when
+  RAG infra is unset) falls back to tiered Tavily/Serper search. Without preferred
+  URLs, tiered search only (cached in `lib/search-cache.ts` keyed by `searchQuery`).
+  Search is best-effort (skipped if no search API key, failures swallowed); the model
+  still answers. Returns `{ answer, highlights, sources, spoilers, guideHint? }`
+  (`spoilers` trimmed to `[]` when `spoilerPrefs.major` is false). Only
+  `REPLICATE_API_TOKEN` is mandatory.
+- `app/api/guide-ingest/route.ts`: lazy shared ingest for one or more preferred
+  guide URLs (`POST` batch ensure indexed, `GET` check indexed). Used by the client
+  to show "Indexing your guide(s)..." before the first solve turn.
 - `lib/guide-rag.ts` + `lib/guide-ingest.ts` + `lib/chunk-guide.js` +
   `lib/embed.ts` + `lib/embed-cache.ts`: preferred-guide RAG. Tavily extract the
   pasted page (`extractGuidePage`), structure-aware chunking (`chunkGuide`),
@@ -343,7 +346,8 @@ do not sync to the cloud or use Storage uploads.
   disable pinch-zoom (honored in the installed PWA; iOS Safari tabs ignore it by
   design).
 - Persistence model: one `public.chats` row per saved game (`game`, `platform`,
-  `preferred_guide_url`, `cover_url`, `release_year`, `messages` jsonb), RLS-scoped
+  `preferred_guide_url` (legacy first URL), `preferred_guide_urls` (text[]; see
+  `db/preferred-guide-urls.sql`), `cover_url`, `release_year`, `messages` jsonb), RLS-scoped
   to `auth.uid()`; the client upserts the whole `messages` array each turn and
   reads with `select("*")` so it tolerates the cover columns being absent before
   the migration. Device-uploaded covers live in the public `covers` Storage bucket

@@ -33,6 +33,15 @@ import { buildGuideDiscoveryQuery } from "../lib/guide-search.js";
 import { chunkGuide } from "../lib/chunk-guide.js";
 import { guideIngestHint } from "../lib/guide-hints.js";
 import {
+  cleanGuideUrl,
+  coerceGuideUrlsFromBody,
+  guideUrlsFromChat,
+  guideUrlsPayload,
+  guideUrlsSummary,
+  MAX_GUIDE_URLS,
+  normalizeGuideUrlList,
+} from "../lib/guide-urls.js";
+import {
   steamIdFromClaimedId,
   steamIdFromMetadata,
   steamAppIdFromCoverUrl,
@@ -224,7 +233,7 @@ const preferredPrompt = buildPrompt({
   ],
 });
 assert.match(preferredPrompt, /PREFERRED GUIDE/);
-assert.match(preferredPrompt, /primary source of truth/);
+assert.match(preferredPrompt, /primary sources of truth/);
 assert.match(preferredPrompt, /Talk to Viktor after the fire\./);
 
 const plainPrompt = buildPrompt({
@@ -255,6 +264,47 @@ assert.match(
 );
 assert.equal(guideIngestHint({ available: false, indexed: false }), null);
 assert.equal(guideIngestHint({ available: true, indexed: true }), null);
+assert.match(
+  guideIngestHint({ available: true, indexedCount: 1, total: 3 }) ?? "",
+  /2 of 3/,
+);
+
+assert.equal(MAX_GUIDE_URLS, 5);
+assert.deepEqual(
+  normalizeGuideUrlList([
+    "https://gamefaqs.gamespot.com/guide/1",
+    "HTTPS://GAMEFAQS.GAMESPOT.COM/guide/1/",
+    "not-a-url",
+  ]),
+  ["https://gamefaqs.gamespot.com/guide/1"],
+);
+assert.deepEqual(
+  coerceGuideUrlsFromBody({
+    preferredUrl: "https://example.com/a",
+    preferredUrls: ["https://example.com/b"],
+  }),
+  ["https://example.com/b"],
+);
+assert.deepEqual(
+  coerceGuideUrlsFromBody({ preferredUrl: "https://example.com/legacy" }),
+  ["https://example.com/legacy"],
+);
+assert.deepEqual(
+  guideUrlsFromChat({
+    preferred_guide_url: "https://example.com/old",
+    preferred_guide_urls: ["https://example.com/new"],
+  }),
+  ["https://example.com/new"],
+);
+assert.equal(guideUrlsSummary(["https://www.ign.com/walkthroughs/foo"]), "ign.com");
+assert.equal(
+  guideUrlsSummary(["https://a.com/1", "https://b.com/2"]),
+  "2 guides",
+);
+assert.deepEqual(guideUrlsPayload(["https://a.com/1", "https://b.com/2"]), {
+  preferred_guide_url: "https://a.com/1",
+  preferred_guide_urls: ["https://a.com/1", "https://b.com/2"],
+});
 
 // TheGamesDB payload mapping: keep valid entries, derive year from release_date,
 // build a front-boxart URL from the include block, and drop malformed/empty ones.

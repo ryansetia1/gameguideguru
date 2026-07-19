@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import { getCachedSearch, setCachedSearch } from "@/lib/search-cache";
 import { censorSpoilers, resolveQuestion, summarize, type Turn } from "@/lib/replicate";
 import { guideIngestHint } from "@/lib/guide-hints.js";
-import { retrieveFromPreferredGuide } from "@/lib/guide-rag";
+import { coerceGuideUrlsFromBody } from "@/lib/guide-urls.js";
+import { retrieveFromPreferredGuides } from "@/lib/guide-rag";
 import { coerceSpoilerPrefs } from "@/lib/spoiler-prefs";
 import { coerceDisplayName } from "@/lib/profile.js";
 import { searchGuides, type SearchResult } from "@/lib/tavily";
@@ -101,7 +102,7 @@ export async function POST(request: Request) {
   const question = cleanText(record.question, 300);
   const game = cleanText(record.game, 120);
   const platform = cleanText(record.platform, 40);
-  const preferredUrl = cleanUrl(record.preferredUrl);
+  const preferredUrls = coerceGuideUrlsFromBody(record);
   const history = parseHistory(record.history);
   const images = parseImages(record.images);
   const spoilerPrefs = coerceSpoilerPrefs(record.spoilerPrefs);
@@ -134,7 +135,7 @@ export async function POST(request: Request) {
       platform,
       userId,
       signal,
-      forRag: Boolean(preferredUrl),
+      forRag: preferredUrls.length > 0,
     });
 
     const hasSearchProvider = Boolean(
@@ -144,15 +145,22 @@ export async function POST(request: Request) {
       .filter(Boolean)
       .join(" ");
 
-    if (preferredUrl) {
-      const rag = await retrieveFromPreferredGuide({
-        guideUrl: preferredUrl,
+    if (preferredUrls.length) {
+      const rag = await retrieveFromPreferredGuides({
+        guideUrls: preferredUrls,
         query: searchTopic,
         signal,
       });
 
       if (rag?.hubWarning) {
         guideHint = guideIngestHint({ hubWarning: true }) ?? undefined;
+      } else if (rag && rag.indexedCount < rag.totalGuides) {
+        guideHint =
+          guideIngestHint({
+            available: true,
+            indexedCount: rag.indexedCount,
+            total: rag.totalGuides,
+          }) ?? undefined;
       } else if (rag && !rag.skipWebSearch && !rag.sources.length) {
         guideHint =
           guideIngestHint({ available: true, indexed: false }) ?? undefined;
