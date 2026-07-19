@@ -19,6 +19,7 @@ import {
   IconStop,
   IconX,
 } from "./icons";
+import { FUN_ROLES, HERO_LINES } from "@/lib/hero-copy.js";
 import { GuideLinkField } from "./guide-link-field";
 import { HltbRow } from "./hltb-row";
 import { PlatformSelect } from "./platform-select";
@@ -268,33 +269,21 @@ function displayPlatform(platform: string, coverUrl?: string | null): string {
   return steamAppIdFromCoverUrl(coverUrl ?? "") ? "Steam" : platform;
 }
 
-// Fun rotating roles for the "Companion for ___" eyebrow. First stays the
-// original word so the initial paint matches the design (and SSR is stable).
-const FUN_ROLES = [
-  "adventurers", "button mashers", "cozy gamers", "loot goblins", "speedrunners",
-  "backseat gamers", "tryhards", "sweatlords", "keyboard warriors", "dungeon divers",
-  "boss slayers", "quest chasers", "completionists", "achievement hunters",
-  "trophy collectors", "lore nerds", "min-maxers", "theorycrafters", "grinders",
-  "campers", "snipers", "healers", "tanks", "DPS mains", "solo queuers", "guildmates",
-  "raid bosses", "PvP demons", "couch co-oppers", "retro heads", "pixel peepers",
-  "ragequitters", "save scummers", "potion hoarders", "fast travelers",
-  "easter-egg hunters", "glitch hunters", "sequence breakers", "100-percenters",
-  "permadeath survivors", "roguelike addicts", "gacha addicts", "wallet warriors",
-  "F2P heroes", "meta slaves", "wiki lurkers", "blind runners", "first-try legends",
-  "3am raiders", "snack-powered gamers", "controller throwers", "WASD wizards",
-  "quickscopers", "clutch masters", "comeback kings", "respawn regulars",
-  "lategame legends", "mod hoarders", "cheat-code kids", "konami-code knowers",
-  "puzzle ponderers", "low-HP gamblers", "last-stand heroes", "dodge-roll addicts",
-  "parry gods", "stealth sneakers", "chaos gremlins", "chest openers",
-  "NPC befrienders", "cutscene enjoyers", "fog-of-war clearers", "map completionists",
-  "side-quest addicts", "one-more-turners", "loot sorters", "hardcore heroes",
-  "casual legends", "pixel pilgrims", "boss-rush fiends", "no-hit runners",
-  "lucky crit-fishers", "rng sufferers", "patch-note readers", "hitbox scientists",
-  "frame-perfect freaks", "combo dreamers", "spawn campers", "map hackers (jk)",
-  "mini-map addicts", "fanfic writers", "headcanon holders", "ship captains",
-  "emote spammers", "GG sayers", "rage-quit royalty", "loot-box gamblers",
-  "endgame grinders", "secret finders", "speedrun timers", "forever-stuck heroes",
-];
+function RotatingHeadline() {
+  // Pick a random line on mount only, so it changes per refresh/open but not
+  // mid-view. Starts at index 0 (matches SSR) then swaps client-side, avoiding
+  // a hydration mismatch.
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    setI(Math.floor(Math.random() * HERO_LINES.length));
+  }, []);
+  const [lead, payoff] = HERO_LINES[i];
+  return (
+    <h1>
+      {lead} <em>{payoff}</em>
+    </h1>
+  );
+}
 
 function RotatingWord() {
   const [i, setI] = useState(0);
@@ -2129,9 +2118,7 @@ export default function Home() {
             <p className="eyebrow">
               Companion for <RotatingWord />
             </p>
-            <h1>
-              Stuck? <em>Keep playing.</em>
-            </h1>
+            <RotatingHeadline />
             <p className="intro">
               Say the game and where you&apos;re stuck. We turn web guides into steps
               you can act on.
