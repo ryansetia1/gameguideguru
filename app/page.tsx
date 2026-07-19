@@ -410,6 +410,7 @@ export default function Home() {
   const chatHistoryPushed = useRef(false);
   const sessionHydratedRef = useRef(false);
   const steamLinkHandledRef = useRef(false);
+  const steamSigninHandledRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const conversationGame = useRef("");
   const activeChatIdRef = useRef<string | null>(null);
@@ -539,7 +540,9 @@ export default function Home() {
     const linkPayload: { ok?: boolean; error?: string; steamId?: string } =
       await linkResponse.json();
     if (!linkResponse.ok || !linkPayload.ok) {
-      if (linkPayload.error !== "no_steam_session") {
+      if (linkPayload.error === "steam_is_login_account") {
+        setError("That Steam account already signs in on its own. Use Continue with Steam instead.");
+      } else if (linkPayload.error !== "no_steam_session") {
         setError("Could not save Steam to your account. Your library still works on this device.");
       }
       return false;
@@ -551,6 +554,35 @@ export default function Home() {
     setToast("Steam connected ✓");
     return true;
   }, [user]);
+
+  // "Sign in with Steam" return: the gg_steam cookie holds a verified SteamID;
+  // the bridge route mints/reuses the matching Supabase account and hands back a
+  // session for us to adopt. Library then loads from the account's steam_id.
+  const loginWithSteam = useCallback(async () => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const res = await fetch("/api/steam/session", {
+      method: "POST",
+      credentials: "include",
+    });
+    const payload: {
+      ok?: boolean;
+      access_token?: string;
+      refresh_token?: string;
+      steamId?: string;
+    } = await res.json().catch(() => ({}));
+    if (!res.ok || !payload.ok || !payload.access_token || !payload.refresh_token) {
+      setError("Steam sign-in isn't available right now. Try Google or email.");
+      return;
+    }
+    const { data } = await supabase.auth.setSession({
+      access_token: payload.access_token,
+      refresh_token: payload.refresh_token,
+    });
+    if (data.session?.user) setUser(data.session.user);
+    if (payload.steamId) setSteamId(payload.steamId);
+    setToast("Signed in with Steam ✓");
+  }, []);
 
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
@@ -771,6 +803,15 @@ export default function Home() {
       setError("Steam sign-in failed. Try again.");
       return;
     }
+    if (steam === "signin") {
+      // "Sign in with Steam" return: bridge the gg_steam cookie into a Supabase
+      // session. Runs once, independent of the (still signed-out) user state.
+      if (steamSigninHandledRef.current) return;
+      steamSigninHandledRef.current = true;
+      stripParam();
+      void loginWithSteam();
+      return;
+    }
     if (steam === "linked") {
       // Linking needs the signed-in Supabase user, whose session loads async.
       // Wait for it before consuming the param, or we'd strip it and no-op.
@@ -779,7 +820,7 @@ export default function Home() {
       stripParam();
       void linkSteamToAccount();
     }
-  }, [user, linkSteamToAccount]);
+  }, [user, linkSteamToAccount, loginWithSteam]);
 
   // On sign-in, only REFRESH status (surfaces an already-linked account's Steam).
   // Linking happens solely on the explicit `?steam=linked` return above, so a
@@ -1309,7 +1350,7 @@ export default function Home() {
       pushOverlayHistory();
       return;
     }
-    window.location.href = "/api/steam/login";
+    window.location.href = "/api/steam/login?intent=link";
   }
 
   function startFromSteamGame(game: SteamGame) {

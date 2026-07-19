@@ -64,7 +64,10 @@ export async function GET(request: Request) {
     return fail();
   }
 
-  const response = NextResponse.redirect(`${origin}/?steam=linked`);
+  // "signin" returns to the login-bridge handler; "link" (default) to the
+  // attach-to-account handler. Both carry the same verified gg_steam cookie.
+  const intent = incoming.get("i") === "signin" ? "signin" : "linked";
+  const response = NextResponse.redirect(`${origin}/?steam=${intent}`);
   clearOpenIdState(response, secure);
   try {
     response.cookies.set(STEAM_SESSION_COOKIE, signSteamSession(steamId), {

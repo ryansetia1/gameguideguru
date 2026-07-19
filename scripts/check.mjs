@@ -34,6 +34,7 @@ import {
   yearFromUnixSeconds,
 } from "../lib/steam.js";
 import { signSteamSession, verifySteamSession } from "../lib/steam-session.js";
+import { syntheticEmail, steamIdFromSyntheticEmail } from "../lib/steam-account.js";
 import {
   CHAT_QUERY_PARAM,
   coerceSessionDraft,
@@ -161,6 +162,14 @@ assert.equal(
 );
 assert.equal(steamIdFromMetadata({ steam_id: "76561198000000000" }), "76561198000000000");
 assert.equal(steamIdFromMetadata({ steam_id: 76561198000000000 }), "76561198000000000");
+
+// Steam-login synthetic identity round-trips, and the email can't be a real one.
+assert.equal(
+  steamIdFromSyntheticEmail(syntheticEmail("76561198000000000")),
+  "76561198000000000",
+);
+assert.equal(steamIdFromSyntheticEmail("someone@gmail.com"), null);
+assert.match(syntheticEmail("76561198000000000"), /@steam\.gameguidego\.local$/);
 assert.match(steamLibraryCoverUrl(570), /\/570\/library_600x900\.jpg$/);
 assert.equal(yearFromSteamReleaseDate("Nov 1, 2004"), "2004");
 assert.equal(yearFromSteamReleaseDate("2020"), "2020");

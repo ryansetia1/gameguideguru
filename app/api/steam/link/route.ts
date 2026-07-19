@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { steamIdFromMetadata } from "@/lib/steam.js";
+import { syntheticEmail, syntheticPassword } from "@/lib/steam-account.js";
 import { STEAM_SESSION_COOKIE, verifySteamSession } from "@/lib/steam-session.js";
 
 export const runtime = "nodejs";
@@ -54,6 +55,28 @@ export async function POST(request: Request) {
   const user = sessionData.user;
   if (steamIdFromMetadata(user.user_metadata) === steamId) {
     return NextResponse.json({ ok: true, steamId, alreadyLinked: true });
+  }
+
+  // Guard (decision: keep Steam-login and Google/email accounts separate): if
+  // this SteamID already backs a direct "Sign in with Steam" account, refuse to
+  // also attach it to this different account. Probe by signing into the
+  // deterministic Steam-login creds; a hit that isn't the current user blocks.
+  try {
+    const probe = createClient(url, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data: probed } = await probe.auth.signInWithPassword({
+      email: syntheticEmail(steamId),
+      password: syntheticPassword(steamId),
+    });
+    if (probed?.user && probed.user.id !== user.id) {
+      return NextResponse.json(
+        { ok: false, error: "steam_is_login_account" },
+        { status: 409 },
+      );
+    }
+  } catch {
+    // No such account (or no secret configured) -> nothing to guard against.
   }
 
   const { error: linkError } = await supabase.auth.updateUser({

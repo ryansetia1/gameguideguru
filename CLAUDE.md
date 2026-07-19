@@ -71,8 +71,9 @@ and simply cannot save.
   **edge-swipe**: left→sidebar, right→last-opened library (`lastLibrary`; Steam
   when connected, else saved), signed-in only, disabled while an overlay/edit is
   active.
-- `app/auth-panel.tsx`: themed sign-in/sign-up modal (email+password and Google
-  OAuth via `getSupabase().auth`). Surfaces the "check your email" state when the
+- `app/auth-panel.tsx`: themed sign-in/sign-up modal (email+password, Google
+  OAuth via `getSupabase().auth`, and **Continue with Steam** →
+  `/api/steam/login?intent=signin`). Surfaces the "check your email" state when the
   project has email confirmation enabled.
 - `lib/supabase.ts`: `getSupabase()` singleton browser client from the
   `NEXT_PUBLIC_SUPABASE_*` vars; returns `null` when unset so the app degrades to
@@ -121,10 +122,25 @@ and simply cannot save.
   omits `release_date`; owned-games has no release date. Keyless on purpose so the
   year works even when `STEAM_API_KEY` is unset; IP rate-limited ~200/5min), and
   `steamIdFromMetadata` (reads the linked `steam_id` from Supabase `user_metadata`).
-  Steam is **not a sign-in method** — it is a *link* action on an already
-  signed-in Supabase account, so there is no "Continue with Steam" in the
-  logged-out auth modal (removed as misleading); the entry point is "Connect
-  Steam" in the sidebar, shown only when signed in. `lib/steam-session.js` signs
+  Steam is **both a sign-in method and a link action**. Steam OpenID returns
+  ONLY a numeric SteamID (no email), so a Steam login can never merge-by-email
+  with a Google/email account — Steam-login accounts live in a reserved email
+  namespace (`steam_<id>@steam.gameguidego.local`, see `lib/steam-account.js`).
+  **Sign in with Steam** ("Continue with Steam" in the logged-out auth modal):
+  after OpenID verifies the SteamID, `POST /api/steam/session` uses the
+  `SUPABASE_SERVICE_ROLE_KEY` to admin-create/reuse a Supabase user keyed by that
+  SteamID (deterministic HMAC password, `email_confirm:true`, `steam_id` +
+  Steam persona `display_name`/`avatar_url` from `fetchSteamProfile`), signs in
+  with the anon client, and returns the session for the client to adopt
+  (`loginWithSteam` → `setSession`). The library then loads from the account's
+  `steam_id`. **Link** ("Connect Steam" in the sidebar, signed-in only) attaches
+  Steam to an existing Google/email account, unchanged. The two are kept separate:
+  `/api/steam/link` refuses (409 `steam_is_login_account`) to attach a SteamID
+  that already backs a direct Steam-login account. Intent is round-tripped through
+  the OpenID `return_to` (`i=signin|link`), so the callback redirects
+  `?steam=signin` vs `?steam=linked` with no extra cookie. Requires
+  `SUPABASE_SERVICE_ROLE_KEY` + `STEAM_API_KEY`; without the service key the
+  bridge 501s and Steam degrades to link-only. `lib/steam-session.js` signs
   a device-scoped `gg_steam` HMAC cookie (30-day, keyed by `AUTH_SECRET` or
   `STEAM_API_KEY`) holding the verified numeric SteamID — Steam OpenID never
   returns an email, so accounts never merge by email.
@@ -402,8 +418,13 @@ Server-only secrets (never expose via `NEXT_PUBLIC_`, never commit `.env.local`)
   TheGamesDB). Missing key => the field degrades to free text. IGDB (Twitch
   `TWITCH_CLIENT_ID`/`SECRET`) is the intended eventual upgrade but not wired now.
 - `STEAM_API_KEY` (optional; Steam Web API key for owned-games library import after
-  OpenID login). Missing key => Connect Steam / Steam library stay hidden or no-op.
-  User's Steam profile Game details must be Public.
+  OpenID login, plus the persona name/avatar on Sign in with Steam). Missing key =>
+  Connect Steam / Steam library stay hidden or no-op. User's Steam profile Game
+  details must be Public.
+- `SUPABASE_SERVICE_ROLE_KEY` (optional, server-only; NEVER expose via
+  `NEXT_PUBLIC_`). Enables **Sign in with Steam** by minting a Supabase account for
+  the Steam identity (`/api/steam/session`). Without it the bridge 501s and Steam
+  stays a link-only action on a Google/email account.
 
 Public client vars (safe to expose; protected by RLS), optional — enable
 accounts, saved chats, and the search cache:

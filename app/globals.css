@@ -3371,6 +3371,38 @@ details.sources small {
   height: 18px;
 }
 
+.auth-steam {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+  border: 1.5px solid var(--ink);
+  /* Steam brand blue, readable in both themes. */
+  background: #1b2838;
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-steam:hover:not(:disabled) {
+  background: #2a3f5a;
+}
+
+.auth-steam:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-steam-icon {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
 .auth-steam-hint {
   margin: 8px 0 0;
   color: var(--muted);

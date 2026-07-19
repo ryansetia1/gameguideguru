@@ -14,7 +14,11 @@ export async function GET(request: Request) {
   const origin = getAuthOrigin(request);
   const secure = origin.startsWith("https");
   const state = newOpenIdState();
-  const response = NextResponse.redirect(buildSteamLoginUrl(origin, state));
+  // "signin" => bridge to a Supabase account (logged-out user); "link" (default)
+  // => attach Steam to the signed-in account (sidebar "Connect Steam").
+  const intent =
+    new URL(request.url).searchParams.get("intent") === "signin" ? "signin" : "link";
+  const response = NextResponse.redirect(buildSteamLoginUrl(origin, state, intent));
   response.cookies.set(OPENID_STATE_COOKIE, state, {
     httpOnly: true,
     sameSite: "lax",
