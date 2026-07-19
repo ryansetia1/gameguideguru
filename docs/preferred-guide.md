@@ -355,10 +355,11 @@ refreshed. New caches from the fixed path are complete.
   (private mode, quota) → panel shows "3 of 12 picked" but server ingests all or
   nothing, silently. Surface `setBundlePrefs` write failures, or send selection
   from UI state. (client audit F2/F7)
-- **Raise/remove the 12-part discovery cap** (`maxPart`,
+- ~~**Raise/remove the 12-part discovery cap** (`maxPart`,
   `PART_QUERY_PAGE_THRESHOLD` in gamefaqs-bundle.js / gamefaqs-discover.ts) — now
   that raw-TOC extract is the primary source, the search fan-out is rare, so the
-  cap that hides parts 13+ is no longer needed. (discovery A#3)
+  cap that hides parts 13+ is no longer needed. (discovery A#3)~~ **DONE** —
+  raised to 50 (matches `MAX_BUNDLE_PAGES`).
 - **Honest polling finish.** `pollBundleIndexingProgress` ties "done" to the ingest
   promise resolving, not to pages actually reaching indexed — shows complete even
   when pages failed. Base "done" on `targets ⊆ indexed` from a final status read.
@@ -373,8 +374,9 @@ refreshed. New caches from the fixed path are complete.
   (F1/F3/F4/F9/F10). Compute panel props on the fly from `bundleIndexStatus` +
   `getBundlePrefs`. This is the "mini-rewrite" of one client layer — discuss before
   doing.
-- Cross-account pref bleed: clear `gg:bundle-prefs` + reset `lastSyncedPayload` on
-  sign-out. (client F5)
+- ~~Cross-account pref bleed: clear `gg:bundle-prefs` + reset `lastSyncedPayload` on
+  sign-out. (client F5)~~ **DONE** — `clearBundlePrefs()` exported from
+  `lib/bundle-prefs.js`, called in `signOut()`.
 - Dead-page pruning: union-only merge never drops 404'd pages; add periodic
   re-discovery or a prune. (state F11)
 - Cache write atomicity: `setCachedBundleDiscovery` is read-modify-write, last
@@ -383,8 +385,9 @@ refreshed. New caches from the fixed path are complete.
 - Blocked-content detection only checks 3 Cloudflare marker strings; a challenge
   variant without them passes as "content" → empty TOC read as single-page guide.
   (discovery A#4)
-- Unify the two slug parsers (`getIndexedBundlePagesFromDb` inline regex vs
-  `slugFromGamefaqsPageUrl`). (state F4)
+- ~~Unify the two slug parsers (`getIndexedBundlePagesFromDb` inline regex vs
+  `slugFromGamefaqsPageUrl`). (state F4)~~ **DONE** —
+  `getIndexedBundlePagesFromDb` now calls `slugFromGamefaqsPageUrl`.
 
 ## Known ceilings (`ponytail:`)
 

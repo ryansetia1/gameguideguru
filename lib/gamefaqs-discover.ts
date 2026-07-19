@@ -23,7 +23,7 @@ type BundlePage = { title: string; url: string; slug: string };
 
 export type DiscoverOptions = { refresh?: boolean };
 
-const PART_QUERY_PAGE_THRESHOLD = 12;
+const PART_QUERY_PAGE_THRESHOLD = 50;
 
 function buildBundleDiscovery(
   parsed: ParsedFaq,

@@ -28,6 +28,7 @@ import { guideIngestHint, guideIngestHintFromResponse } from "@/lib/guide-hints.
 import {
   bundleHasPendingPages,
   bundlePrefsForApi,
+  clearBundlePrefs,
   filterBundlePanelPages,
   getBundlePrefs,
   hydrateBundlePrefsFromUser,
@@ -2149,6 +2150,8 @@ export default function Home() {
       () => {},
     );
     setSteamId(null);
+    // Prevent cross-account bundle-pref bleed on shared devices.
+    clearBundlePrefs();
     // Reset the open thread (it referenced a signed-in chat); loadChats then
     // repopulates from anon localStorage. Previously handled by the !user effect.
     newGame();
