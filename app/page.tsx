@@ -3647,15 +3647,15 @@ export default function Home() {
                 {indexingGuideCount
                   ? indexingIsBundlePages || bundlePageTotal > 1
                     ? indexingGuideCount > 0
-                      ? `Indexing GameFAQs bundle (${indexingGuideCount} pages left). This may take a few minutes.`
-                      : "Finishing bundle indexing..."
+                      ? `Reading ${indexingGuideCount} pages. This might take a minute...`
+                      : "Wrapping up reading..."
                     : indexingGuideCount > 1
-                      ? `Indexing ${indexingGuideCount} guides...`
-                      : "Indexing your guide..."
+                      ? `Reading ${indexingGuideCount} guides...`
+                      : "Reading your guide..."
                   : generationStatus ||
                     (preferredUrls.length
-                      ? "Building your answer..."
-                      : "Searching walkthroughs and player forums...")}
+                      ? "Writing answer..."
+                      : "Looking for answers online...")}
               </p>
             </div>
           )}

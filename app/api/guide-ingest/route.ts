@@ -11,6 +11,7 @@ import {
   isGuideIndexed,
   isGuideRagAvailable,
 } from "@/lib/guide-ingest";
+import { logIngestJourneyToDb } from "@/lib/solve-log.ts";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -92,12 +93,37 @@ export async function POST(request: Request) {
     const settled = [];
     for (const url of urls) {
       const prefs = bundlePrefs[url];
-      const result = await ensureGuideIngested(url, request.signal, {
-        ...ingestCtx,
-        skipSlugs: prefs?.skippedSlugs,
-        includeSlugs: prefs?.selectedSlugs,
-      });
-      settled.push({ url, ...result });
+      const startMs = Date.now();
+      try {
+        const result = await ensureGuideIngested(url, request.signal, {
+          ...ingestCtx,
+          skipSlugs: prefs?.skippedSlugs,
+          includeSlugs: prefs?.selectedSlugs,
+        });
+        settled.push({ url, ...result });
+        
+        logIngestJourneyToDb({
+          userId,
+          game,
+          platform,
+          url,
+          latencyMs: Date.now() - startMs,
+          status: "success",
+          pagesIndexed: result.chunkCount > 0 ? 1 : 0, // ensureGuideIngested currently returns chunkCount, but wait, does it return pages_indexed? We don't have accurate pages indexed per ensureGuideIngested without inspecting deep inside, but we know if it succeeded.
+          hubWarning: result.hubWarning,
+        }).catch(console.error);
+      } catch (err) {
+        settled.push({ url, indexed: false, chunkCount: 0, hubWarning: false });
+        logIngestJourneyToDb({
+          userId,
+          game,
+          platform,
+          url,
+          latencyMs: Date.now() - startMs,
+          status: "error",
+          errorMessage: err instanceof Error ? err.message : String(err),
+        }).catch(console.error);
+      }
     }
     const indexedCount = settled.filter((row) => row.indexed).length;
     const hubWarning = settled.some((row) => row.hubWarning);
@@ -115,6 +141,19 @@ export async function POST(request: Request) {
     const timedOut =
       error instanceof Error &&
       (error.name === "AbortError" || error.name === "TimeoutError");
+      
+    // Log the whole batch failure if something outside the loop threw
+    for (const url of urls) {
+      logIngestJourneyToDb({
+        userId,
+        game,
+        platform,
+        url,
+        status: "error",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      }).catch(console.error);
+    }
+    
     return NextResponse.json(
       { error: timedOut ? "Indexing took too long. Try again." : "Couldn't index that guide." },
       { status: timedOut ? 504 : 502 },

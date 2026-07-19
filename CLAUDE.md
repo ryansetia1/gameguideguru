@@ -40,7 +40,7 @@ do not sync to the cloud or use Storage uploads.
   light-markdown rendering of answers (`lib/markdown.js`: bold/lists/headings),
   a dismissable examples strip
   (remembered in `localStorage`), and auto-scroll (smooth on new turns, instant
-  jump to the last user message when opening a saved game). Refresh restores the open thread via `?chat=<id>`
+  jump to the last user message when opening a saved game; scroll-to-bottom FAB hides cleanly when bottom is reached). Refresh restores the open thread via `?chat=<id>`
   (signed-in saved chats) or a `sessionStorage` draft (`lib/chat-session.js`;
   anon / not-yet-saved). `runTurn`/`persistChat` centralise ask +
   save; `conversationGame` tracks which game the visible thread belongs to.
@@ -278,7 +278,7 @@ do not sync to the cloud or use Storage uploads.
   `npm run check`.
 - `lib/replicate.ts`: Replicate adapter. `summarize(input)` sends
   `system_instruction` + `prompt` separately with Gemini fields
-  (`max_output_tokens`, `thinking_budget: 0`) and parses the JSON
+  (`max_output_tokens`, `thinking_budget: 0`), polls prediction status to yield granular `status` events (e.g. "Starting AI engine") to the UI during generation, and parses the JSON
   `{ answer, highlights, spoilers, spoilerRisk }` via `lib/highlights.js#parseSummary`.
   `/api/solve` calls `censorSpoilers` when spoilers are OFF and `spoilerRisk` is
   true (best-effort rewrite; fails open). `resolveQuestion({ question, history, forRag? })`
@@ -468,7 +468,7 @@ verify actual indexed state before clearing the progress indicator.
 - **Resume**: per-page idempotent — existing `guide_chunks` for a URL are skipped;
   failed/missing pages retried on next turn.
 - **Skip ingest when done**: client skips `POST /api/guide-ingest` when
-  `bundleHasPendingPages` is false (all target slugs indexed or skipped).
+  `bundleHasPendingPages` is false (all target slugs indexed or skipped) or when local `guideIndexState` confirms a single-page guide is already indexed. Server `isGuideIndexed` includes a canonical URL fallback to gracefully handle GameFAQs single-page URLs submitted with arbitrary query parameters (e.g. `?page=1`).
 - Filters discovery by `skipSlugs` / `includeSlugs` from `bundlePrefs`.
 - Deletes orphan pre-bundle root chunks on bundle ingest.
 - Returns `pagesMissing` (failed, not skipped), `pagesIndexed`, `pageCount` (target

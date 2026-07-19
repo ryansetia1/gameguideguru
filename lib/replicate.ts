@@ -111,10 +111,10 @@ async function runModel(
     (prediction: PredictionMetrics & { status?: string }) => {
       metrics = prediction.metrics;
       if (prediction.status && onProgress) {
-        let msg = "Processing...";
-        if (prediction.status === "starting") msg = "Starting AI engine...";
-        else if (prediction.status === "processing") msg = "Generating answer...";
-        else if (prediction.status === "succeeded") msg = "Formatting answer...";
+        let msg = "Thinking...";
+        if (prediction.status === "starting") msg = "Reading up...";
+        else if (prediction.status === "processing") msg = "Writing answer...";
+        else if (prediction.status === "succeeded") msg = "Polishing answer...";
         onProgress(msg);
       }
       if (prediction.logs) {

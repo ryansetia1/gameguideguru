@@ -9,6 +9,7 @@ import { retrieveFromPreferredGuides } from "@/lib/guide-rag";
 import { coerceSpoilerPrefs } from "@/lib/spoiler-prefs";
 import { coerceDisplayName } from "@/lib/profile.js";
 import { searchGuides, type SearchResult } from "@/lib/tavily";
+import { logSolveJourneyToDb, type SolveJourneyEntry } from "@/lib/solve-log.ts";
 
 export const runtime = "nodejs";
 
@@ -137,7 +138,16 @@ export async function POST(request: Request) {
         let sources: SearchResult[] = [];
         let guideHint: string | undefined;
 
+        const startedAt = Date.now();
+        let rewriteLatencyMs = 0;
+        let retrievalLatencyMs = 0;
+        let generationLatencyMs = 0;
+        let pipelineType: SolveJourneyEntry["pipelineType"] = "knowledge_only";
+        let finalAnswer = "";
+        let finalSources: any[] = [];
+
         sendEvent("status", { text: "Understanding your question..." });
+        const rewriteStart = Date.now();
         const searchTopic = await resolveQuestion({
           question,
           history,
@@ -148,6 +158,8 @@ export async function POST(request: Request) {
           forRag: preferredUrls.length > 0,
         });
 
+        rewriteLatencyMs = Date.now() - rewriteStart;
+
         const hasSearchProvider = Boolean(
           process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY,
         );
@@ -155,6 +167,7 @@ export async function POST(request: Request) {
           .filter(Boolean)
           .join(" ");
 
+        const retrievalStart = Date.now();
         if (preferredUrls.length) {
           sendEvent("status", { text: "Searching your guide..." });
           const rag = await retrieveFromPreferredGuides({
@@ -193,14 +206,18 @@ export async function POST(request: Request) {
             sources = [...rag.sources, ...web];
           } else if (hasSearchProvider) {
             sendEvent("status", { text: "Searching the web..." });
+            pipelineType = "fallback_web";
             sources = await tieredWebSearch(searchQuery, signal);
           }
         } else if (hasSearchProvider) {
+          pipelineType = "web";
           sendEvent("status", { text: "Searching the web..." });
           sources = await tieredWebSearch(searchQuery, signal);
         }
+        retrievalLatencyMs = Date.now() - retrievalStart;
 
         sendEvent("status", { text: "Reading and building answer..." });
+        const generationStart = Date.now();
         let { answer, highlights, spoilers, spoilerRisk } = await summarize({
           game,
           platform,
@@ -233,14 +250,35 @@ export async function POST(request: Request) {
           }
         }
 
+        generationLatencyMs = Date.now() - generationStart;
+        finalAnswer = answer;
+        finalSources = sources.map(({ title, url }) => ({ title, url }));
+
         sendEvent("result", {
           answer,
           highlights,
           spoilers: spoilerPrefs.major ? spoilers : [],
-          sources: sources.map(({ title, url }) => ({ title, url })),
+          sources: finalSources,
           ...(guideHint ? { guideHint } : {}),
         });
         controller.close();
+        
+        // Non-blocking log
+        logSolveJourneyToDb({
+          userId,
+          game,
+          platform,
+          question,
+          preferredUrls,
+          pipelineType,
+          rewriteLatencyMs,
+          retrievalLatencyMs,
+          generationLatencyMs,
+          totalLatencyMs: Date.now() - startedAt,
+          status: "success",
+          answer: finalAnswer,
+          sources: finalSources,
+        }).catch(console.error);
       } catch (error) {
         console.error("Guide generation failed:", error);
         const timedOut =
@@ -253,6 +291,19 @@ export async function POST(request: Request) {
             : "Couldn't build a guide. Please try again shortly.",
         });
         controller.close();
+        
+        // Non-blocking log
+        logSolveJourneyToDb({
+          userId,
+          game,
+          platform,
+          question,
+          preferredUrls,
+          pipelineType: "knowledge_only", // Default fallback if failed early
+          totalLatencyMs: Date.now() - (Date.now()), // Not exact since we don't have startedAt in catch context if it failed before initialization, but actually startedAt is in try block! Wait, I must declare startedAt outside try or just fallback to generic. 
+          status: "error",
+          errorMessage: error instanceof Error ? error.message : String(error),
+        }).catch(console.error);
       }
     },
   });

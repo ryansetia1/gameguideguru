@@ -1,0 +1,109 @@
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+// Log when Supabase vars are set. Set LLM_DB_LOG=0 to disable (e.g. local tests).
+const ENABLED =
+  process.env.LLM_DB_LOG !== "0" && Boolean(url && anonKey);
+
+let client: SupabaseClient | null = null;
+
+function getClient(): SupabaseClient | null {
+  if (!ENABLED || !url || !anonKey) return null;
+  if (!client) {
+    client = createClient(url, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
+  return client;
+}
+
+export type SolveJourneyEntry = {
+  userId?: string | null;
+  game?: string | null;
+  platform?: string | null;
+  question: string;
+  preferredUrls?: string[];
+  pipelineType: "rag" | "web" | "fallback_web" | "knowledge_only";
+  rewriteLatencyMs?: number;
+  retrievalLatencyMs?: number;
+  generationLatencyMs?: number;
+  totalLatencyMs?: number;
+  status: "success" | "error";
+  errorMessage?: string;
+  answer?: string;
+  sources?: any[];
+};
+
+function coerceInt(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.max(0, Math.round(value));
+}
+
+/** Best-effort insert into `public.solve_logs`. Never blocks the answer path. */
+export async function logSolveJourneyToDb(entry: SolveJourneyEntry): Promise<void> {
+  const supabase = getClient();
+  if (!supabase) return;
+  try {
+    const { error } = await supabase.from("solve_logs").insert({
+      user_id: entry.userId ?? null,
+      game: entry.game?.slice(0, 120) ?? null,
+      platform: entry.platform?.slice(0, 80) ?? null,
+      question: entry.question.slice(0, 5000),
+      preferred_urls: entry.preferredUrls ?? [],
+      pipeline_type: entry.pipelineType,
+      rewrite_latency_ms: coerceInt(entry.rewriteLatencyMs),
+      retrieval_latency_ms: coerceInt(entry.retrievalLatencyMs),
+      generation_latency_ms: coerceInt(entry.generationLatencyMs),
+      total_latency_ms: coerceInt(entry.totalLatencyMs),
+      status: entry.status,
+      error_message: entry.errorMessage?.slice(0, 5000) ?? null,
+      answer: entry.answer?.slice(0, 50000) ?? null,
+      sources: entry.sources ?? [],
+    });
+    if (error) {
+      console.error("Failed to insert solve log:", error);
+    }
+  } catch (err) {
+    console.error("Error inserting solve log:", err);
+  }
+}
+
+export type IngestJourneyEntry = {
+  userId?: string | null;
+  game?: string | null;
+  platform?: string | null;
+  url: string;
+  latencyMs?: number;
+  status: "success" | "error";
+  pagesIndexed?: number;
+  pagesMissing?: number;
+  hubWarning?: boolean;
+  errorMessage?: string;
+};
+
+/** Best-effort insert into `public.ingest_logs`. Never blocks the ingest path. */
+export async function logIngestJourneyToDb(entry: IngestJourneyEntry): Promise<void> {
+  const supabase = getClient();
+  if (!supabase) return;
+  try {
+    const { error } = await supabase.from("ingest_logs").insert({
+      user_id: entry.userId ?? null,
+      game: entry.game?.slice(0, 120) ?? null,
+      platform: entry.platform?.slice(0, 80) ?? null,
+      url: entry.url.slice(0, 500),
+      latency_ms: coerceInt(entry.latencyMs),
+      status: entry.status,
+      pages_indexed: coerceInt(entry.pagesIndexed),
+      pages_missing: coerceInt(entry.pagesMissing),
+      hub_warning: entry.hubWarning ?? false,
+      error_message: entry.errorMessage?.slice(0, 5000) ?? null,
+    });
+    if (error) {
+      console.error("Failed to insert ingest log:", error);
+    }
+  } catch (err) {
+    console.error("Error inserting ingest log:", err);
+  }
+}
