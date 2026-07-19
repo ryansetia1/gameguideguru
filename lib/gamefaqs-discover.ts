@@ -42,7 +42,9 @@ function buildBundleDiscovery(
 }
 
 function isBlockedGuideContent(text: string): boolean {
-  return /Social Media Cookies|Just a moment|challenges\.cloudflare/i.test(text);
+  return /Social Media Cookies|Just a moment|challenges\.cloudflare|Enable JavaScript and cookies to continue|Please stand by, while we are checking your browser|Cloudflare Ray ID|cf-browser-verification|DDoS protection by Cloudflare/i.test(
+    text,
+  );
 }
 
 async function enrichGamefaqsBundleTitle(

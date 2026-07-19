@@ -381,14 +381,15 @@ refreshed. New caches from the fixed path are complete.
 - ~~Cross-account pref bleed: clear `gg:bundle-prefs` + reset `lastSyncedPayload` on
   sign-out. (client F5)~~ **DONE** — `clearBundlePrefs()` exported from
   `lib/bundle-prefs.js`, called in `signOut()`.
-- Dead-page pruning: union-only merge never drops 404'd pages; add periodic
-  re-discovery or a prune. (state F11)
-- Cache write atomicity: `setCachedBundleDiscovery` is read-modify-write, last
+- ~~Dead-page pruning: union-only merge never drops 404'd pages; add periodic
+  re-discovery or a prune. (state F11)~~ **SKIPPED** — union merge is safest;
+  dropping pages risks losing data if Tavily transiently fails.
+- ~~Cache write atomicity: `setCachedBundleDiscovery` is read-modify-write, last
   writer wins under concurrency; move to a `security definer` jsonb-merge RPC if it
-  matters. (state F9)
-- Blocked-content detection only checks 3 Cloudflare marker strings; a challenge
+  matters. (state F9)~~ **DONE** — moved to `merge_guide_bundle_cache` RPC.
+- ~~Blocked-content detection only checks 3 Cloudflare marker strings; a challenge
   variant without them passes as "content" → empty TOC read as single-page guide.
-  (discovery A#4)
+  (discovery A#4)~~ **DONE** — added 5 more Cloudflare/challenge regex markers.
 - ~~Unify the two slug parsers (`getIndexedBundlePagesFromDb` inline regex vs
   `slugFromGamefaqsPageUrl`). (state F4)~~ **DONE** —
   `getIndexedBundlePagesFromDb` now calls `slugFromGamefaqsPageUrl`.

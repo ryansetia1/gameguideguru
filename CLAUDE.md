@@ -518,6 +518,22 @@ Panel when loaded:
   per-guide set — which surfaced as a preferred-guide answer drifting off the guide
   even though `hit=true`. Removed in `db/guide-chunks.sql`; re-add hnsw only for
   unfiltered global KNN over 100k+ chunks.
+
+### Skipped Refactors (Tier 3)
+
+The following Tier 3 cleanup tasks were deliberately skipped to prioritize stability:
+
+- **Dead-page pruning (`lib/gamefaqs-discover.ts`)**: Currently uses union-only merge
+  for discovery caches (`mergeGamefaqsBundlePages`). This means 404'd pages are never
+  dropped. We skipped implementing a hard prune or overwrite mode to avoid the risk of
+  losing valid pages (and triggering excessive Tavily fallback searches) if an extraction
+  transiently fails.
+- **Deleting `guideBundleMeta` derived cache (`app/page.tsx`)**: The `guideBundleMeta`
+  React state duplicates data from `bundleIndexStatus` (server) and `getBundlePrefs`
+  (localStorage), causing multiple drift classes. We skipped the "mini-rewrite" to
+  remove it because it touches almost all panel render logic and is highly error-prone.
+  If drift becomes a critical issue, future agents should remove `guideBundleMeta` entirely
+  and compute its properties on the fly (e.g. `missingPages = discovery \setminus indexed`).
 - Debug retrieval with `RAG_DEBUG=1` → logs `[rag-calibrate] hit=… top=… scores=[…]
   top_chunk=…` per query (scores should have several entries, not one; top_chunk
   should match the question). This is the fastest way to tell a retrieval miss
