@@ -9,13 +9,14 @@ TheGamesDB-backed game-name autocomplete (with box art; IGDB is the eventual
 upgrade), a fuzzy/acronym-aware platform selector, multi-turn
 follow-up chat, an optional preferred-guide source, and optional Supabase
 accounts that save per-game chats. The UI is English; the model still answers in
-the player's input language. No login wall: signed-out users keep full access
-and simply cannot save.
+the player's input language. No login wall: signed-out users keep full access;
+chats persist on-device in `localStorage` (cap 20) via `lib/local-games.js` but
+do not sync to the cloud or use Storage uploads.
 
 ## Architecture
 
 - `app/page.tsx`: English client chat UI (game field, platform, optional
- preferred-guide link, global major-spoiler toggle (profile menu + `user_metadata.spoiler_major`), message feed,
+ preferred-guide link, global major-spoiler toggle (profile menu + `user_metadata.spoiler_major`) and per-game major-spoiler toggle (setup **Spoilers** opt-tab + compact toggle on the game card; `loadGameSpoilerPrefs`/`saveGameSpoilerPrefs` in `lib/spoiler-prefs.js`; effective = global OR per-game), message feed,
  docked composer) and `/api/solve` consumer.
   Keeps `messages` state and sends the last 10 messages (5 turns) as `history`
   plus `preferredUrl` and `spoilerPrefs` (`major`, default off). Also owns Supabase auth state, the "Your games" menu
@@ -212,7 +213,8 @@ and simply cannot save.
   to rewrite the query into standalone English before searching. Wraps the search
   in a cache (`lib/search-cache.ts`) keyed by `searchQuery + preferredUrl`.
   Search is best-effort (skipped if no `TAVILY_API_KEY`, failures swallowed); the
-  model still answers. Returns `{ answer, highlights, sources }`. Only
+  model still answers. Returns `{ answer, highlights, sources, spoilers }`
+  (`spoilers` trimmed to `[]` when `spoilerPrefs.major` is false). Only
   `REPLICATE_API_TOKEN` is mandatory.
 - `lib/tavily.ts`: `searchGuides(query, preferredUrl?)` orchestrates Tavily then a
   Serper.dev fallback; `discoverGuideLinks(game, platform, query?)` powers the
@@ -249,10 +251,12 @@ and simply cannot save.
 - `lib/replicate.ts`: Replicate adapter. `summarize(input)` sends
   `system_instruction` + `prompt` separately with Gemini fields
   (`max_output_tokens`, `thinking_budget: 0`) and parses the JSON
-  `{ answer, highlights }` via `lib/highlights.js#parseSummary`. `resolveQuestion({
-  question, history })` does a small, low-token call to rewrite any question into
-  a standalone English search query, falling back to the raw question on any
-  failure. Exports the `Turn`, `Highlight`, and `SummaryResult` types.
+  `{ answer, highlights, spoilers, spoilerRisk }` via `lib/highlights.js#parseSummary`.
+  `/api/solve` calls `censorSpoilers` when spoilers are OFF and `spoilerRisk` is
+  true (best-effort rewrite; fails open). `resolveQuestion({ question, history })`
+  does a small, low-token call to rewrite any question into a standalone English
+  search query, falling back to the raw question on any failure. Exports the
+  `Turn`, `Highlight`, `SpoilerReveal`, and `SummaryResult` types.
 - `lib/profile.js`: `display_name` / avatar helpers for the profile menu and page.
   `avatarUrlFromUser` is pref-aware: it honours `user_metadata.avatar_pref`
   (`google`/`steam`/`upload`) when that source exists, else falls back
@@ -264,10 +268,13 @@ and simply cannot save.
 - `lib/image.js`: `compressImage(file, maxDim, quality)` — client-side canvas
   downscale + JPEG re-encode shared by covers, message images, and avatar upload.
 - `lib/spoiler-prefs.js`: global **major spoiler** toggle (`major`, default off)
-  in `localStorage` (`gg:spoiler-major`; signed-in users sync `user_metadata.spoiler_major`),
-  `buildSpoilerBlock` + `buildSpoilerOutputRules` for the summarize prompt (LLM
-  filters to genuinely major twists; routine walkthrough stays in `answer`),
-  `coerceSpoilerPrefs` at the API trust boundary. Covered by `npm run check`.
+  in `localStorage` (`gg:spoiler-major`; signed-in users sync `user_metadata.spoiler_major`)
+  plus per-game overrides in `gg:spoiler-prefs` keyed by normalized game name.
+  `effectiveSpoilerPrefs(global, game)` ORs them for each turn. `buildSpoilerBlock`
+  + `buildSpoilerOutputRules` for the summarize prompt (LLM filters to genuinely
+  major twists; routine walkthrough stays in `answer`; when OFF the model may set
+  `spoilerRisk` for a second-pass censor), `coerceSpoilerPrefs` at the API trust
+  boundary. Covered by `npm run check`.
 - `lib/voice.js` + `app/voice-input.tsx`: composer mic via the free Web Speech API
   (**all users**). Buffered-until-stop dictation; platform-split capture (desktop
   `continuous` + rebuild finals, iOS `continuous: false` + `results[0]` + restart).
@@ -301,6 +308,13 @@ and simply cannot save.
   `llm-log.json` (dev / `LLM_LOG=1`); Supabase table `public.llm_calls`
   (`db/llm-calls.sql`) when `NEXT_PUBLIC_SUPABASE_*` are set (`LLM_DB_LOG=0`
   disables). Insert-only RLS — no client reads.
+- `lib/hero-copy.js`: rotating home marketing copy — `FUN_ROLES` (eyebrow
+  "Companion for …", cycles on a timer; tap pauses/resumes) and `HERO_LINES`
+  (`[hook, payoff]` headline pairs; one picked at random per open; index 0 is the
+  SSR-stable default).
+- `app/profile-menu.tsx`: signed-in nav avatar dropdown — link to `/profile`,
+  global spoiler toggle, theme picker (System/Light/Dark via `lib/theme.js`),
+  sign out. Theme/spoiler writes sync to `user_metadata` when signed in.
 - `lib/games.js`: `mapGames(payload)` maps a TheGamesDB `ByGameName?include=boxart`
   payload to `{ id, name, year, releaseDate, cover, platform }` (year from
   `release_date`, cover from the front box-art in the `include` block), dropping
