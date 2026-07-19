@@ -29,6 +29,7 @@ import {
 } from "../lib/voice.js";
 import { warmUpMicrophone } from "../lib/voice-meter.js";
 import { buildGuideDiscoveryQuery } from "../lib/guide-search.js";
+import { chunkGuide } from "../lib/chunk-guide.js";
 import {
   steamIdFromClaimedId,
   steamIdFromMetadata,
@@ -208,6 +209,39 @@ const noSources = buildPrompt({ question: "What now?", sources: [] });
 assert.match(noSources, /No web results were found/);
 assert.match(noSources, /Game: unspecified/);
 assert.doesNotMatch(noSources, /Conversation so far/);
+
+const preferredPrompt = buildPrompt({
+  game: "Suikoden",
+  question: "How do I recruit Kwanda?",
+  sources: [
+    {
+      title: "game8.co",
+      content: "Talk to Viktor after the fire.",
+      preferred: true,
+    },
+  ],
+});
+assert.match(preferredPrompt, /PREFERRED GUIDE/);
+assert.match(preferredPrompt, /primary source of truth/);
+assert.match(preferredPrompt, /Talk to Viktor after the fire\./);
+
+const plainPrompt = buildPrompt({
+  question: "Where is the key?",
+  sources: [{ title: "IGN", content: "Check the attic." }],
+});
+assert.doesNotMatch(plainPrompt, /PREFERRED GUIDE/);
+assert.doesNotMatch(plainPrompt, /primary source of truth/);
+
+const twoHeadingGuide =
+  "# Chapter 1\n\nEnter the cave and take the sword.\n\n" +
+  "## Boss: Golem\n\nUse fire magic on the weak spot.\n\n" +
+  "# Chapter 2\n\nLeave town through the east gate.";
+const guideChunks = chunkGuide(twoHeadingGuide);
+assert.ok(guideChunks.length >= 2, "chunkGuide should split on headings");
+assert.ok(
+  guideChunks.some((chunk) => chunk.includes("Golem")),
+  "chunkGuide should keep section content",
+);
 
 // TheGamesDB payload mapping: keep valid entries, derive year from release_date,
 // build a front-boxart URL from the include block, and drop malformed/empty ones.

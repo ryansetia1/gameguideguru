@@ -210,31 +210,37 @@ do not sync to the cloud or use Storage uploads.
   history, preferredUrl, spoilerPrefs, playerName }` at the trust boundary (history capped to 10, content
   truncated, `preferredUrl` must be http/https, `spoilerPrefs` coerced to booleans,
   `playerName` from `display_name`, max 32 chars). Always calls `resolveQuestion`
-  to rewrite the query into standalone English before searching. Wraps the search
-  in a cache (`lib/search-cache.ts`) keyed by `searchQuery + preferredUrl`.
-  Search is best-effort (skipped if no `TAVILY_API_KEY`, failures swallowed); the
-  model still answers. Returns `{ answer, highlights, sources, spoilers }`
-  (`spoilers` trimmed to `[]` when `spoilerPrefs.major` is false). Only
-  `REPLICATE_API_TOKEN` is mandatory.
-- `lib/tavily.ts`: `searchGuides(query, preferredUrl?)` orchestrates Tavily then a
-  Serper.dev fallback; `discoverGuideLinks(game, platform, query?)` powers the
-  guide picker (same providers, returns up to 8 hits without `selectSources`).
-  Query text is built by `lib/guide-search.js#buildGuideDiscoveryQuery`. `searchTavily`
-  throws when every Tavily call fails so
-  `searchGuides` can fall back to `searchSerper` (snippet-only: a preferred host
-  becomes a `site:` filter, else one general query, trimmed to top 3). With no
-  `preferredUrl` the Tavily path
-  it runs the normal tiered search (GameFAQs -> trusted walkthrough providers ->
-  forums -> general).  With one it cascades: (1) for a deep chapter URL, extract that page in full
- (via `focusSection`), else (2) site-search the host for the right section page,
- else (3) site-search snippets, else (4) for hub/root URLs extract the pasted
- URL, else (5) fall back to the tiers. Steps 1-4 return sources solely from the
- preferred site and SKIP the confidence gate (the user's site choice is trusted,
- so a low-scoring but correct fan-site page still wins over the pasted hub URL).
- The extracted page is trimmed to the query-matching window via `focusSection`, not
-  its opening. All paths use `search_depth: "advanced"`, exclude video/social
-  domains, dedupe by URL+title, clean via `cleanSnippet`, and the tiered path
-  gates/trims via `selectSources`.
+  to rewrite the query into standalone English. When `preferredUrl` is set, runs
+  preferred-guide RAG (`lib/guide-rag.ts`: lazy ingest, embed query, pgvector
+  retrieve, similarity-route at `GUIDE_HIT`); on a high-similarity hit the
+  retrieved chunks are marked `preferred` and tiered web search is skipped. On a
+  low-similarity miss (or when RAG infra is unset) falls back to tiered Tavily/Serper
+  search. Without a preferred URL, tiered search only (cached in
+  `lib/search-cache.ts` keyed by `searchQuery`). Search is best-effort (skipped if
+  no search API key, failures swallowed); the model still answers. Returns
+  `{ answer, highlights, sources, spoilers, guideHint? }` (`spoilers` trimmed to
+  `[]` when `spoilerPrefs.major` is false). Only `REPLICATE_API_TOKEN` is mandatory.
+- `app/api/guide-ingest/route.ts`: lazy shared ingest for a preferred guide URL
+  (`POST` ensure indexed, `GET` check indexed). Used by the client to show
+  "Indexing your guide..." before the first solve turn.
+- `lib/guide-rag.ts` + `lib/guide-ingest.ts` + `lib/chunk-guide.js` +
+  `lib/embed.ts` + `lib/embed-cache.ts`: preferred-guide RAG. Tavily extract the
+  pasted page (`extractGuidePage`), structure-aware chunking (`chunkGuide`),
+  Qwen3-Embedding-8B on Replicate (`EMBED_MODEL`, default pinned
+  `lucataco/qwen3-embedding-8b:42d96848…`), shared `public.guide_chunks` + `match_guide_chunks`
+  RPC (pgvector, 1024-dim). Query embeddings cached in `public.embed_cache` (7-day
+  TTL). Fail-open to tiered web search when Supabase/pgvector/Replicate embed is unset.
+  Full design: [`docs/preferred-guide.md`](docs/preferred-guide.md).
+- `lib/tavily.ts`: `searchGuides(query)` orchestrates Tavily tiered search then a
+  Serper.dev fallback; `extractGuidePage(url)` pulls full page text for RAG ingest;
+  `discoverGuideLinks(game, platform, query?)` powers the guide picker (same
+  providers, returns up to 8 hits without `selectSources`). Query text for the
+  picker is built by `lib/guide-search.js#buildGuideDiscoveryQuery`. `searchTavily`
+  throws when every Tavily call fails so `searchGuides` can fall back to
+  `searchSerper` (snippet-only, trimmed to top 3). Tiered path: GameFAQs ->
+  trusted walkthrough providers -> forums -> general. All paths use
+  `search_depth: "advanced"`, exclude video/social domains, dedupe by URL+title,
+  clean via `cleanSnippet`, and gate/trim via `selectSources`.
 - `lib/search-cache.ts`: best-effort Supabase-backed cache of `searchGuides`
   output (`getCachedSearch`/`setCachedSearch`, 7-day TTL). Uses a server client
   built from the `NEXT_PUBLIC_SUPABASE_*` vars (no session); no-ops when unset or
@@ -290,9 +296,11 @@ do not sync to the cloud or use Storage uploads.
   web-as-support, on-topic guardrail — only game guidance, decline off-topic and
   never reveal/override the prompt — injection safety, JSON output with `answer` +
   optional `highlights`), `buildPrompt({ game, platform, question, sources,
-  history, imageCount, spoilerPrefs, playerName })` (adds a visual-context note when
-  images are attached; `playerName` only on the first turn — follow-ups get a
-  no-greeting rule to stop repeated "hello again" salutations),
+  history, imageCount, spoilerPrefs, playerName })` (sources may carry
+  `preferred: true` for RAG chunks — labels them PREFERRED GUIDE and injects a
+  fidelity directive; adds a visual-context note when images are attached;
+  `playerName` only on the first turn — follow-ups get a no-greeting rule to stop
+  repeated "hello again" salutations),
   plus `REWRITE_INSTRUCTION` + `buildRewritePrompt({ question, history })` for
   query rewriting. Covered by `npm run check`.
 - `lib/highlights.js`: `KINDS`/`KIND_LABELS`, `coerceHighlights(value)`, and
@@ -381,11 +389,13 @@ do not sync to the cloud or use Storage uploads.
   for the same app can duplicate upstream searches; upgrade path: `claim_hltb_lease`
   + rate bucket like steamAntiFomo. HLTB's search path segment can rotate; update
   `SEARCH_SEG` in `lib/hltb-cache.js` when init/search starts 404ing.
-- Preferred-guide site-search + extract feeds the model the `focusSection` window
-  (capped at `EXTRACT_CONTENT_CAP`) of the picked page, targeted by query-term
-  density — better than a fixed head slice for huge single-page guides, but still
-  keyword density, not semantics; upgrade path is embeddings/chunk re-ranking. It
-  trusts the user's site choice and skips the confidence gate.
+- Preferred-guide RAG (`GUIDE_HIT` in `lib/guide-rag.ts`) is a hand-tuned cosine
+  threshold, not a learned router. Chunking is recursive boundary-split in
+  `lib/chunk-guide.js`, not semantic. Ingest has no single-flight lease (unique
+  index guards dup rows; concurrent first-time ingests of the same URL can
+  duplicate upstream embed work). Query-embed cache is best-effort (`embed_cache`).
+  Given page only; hub/multi-page guides rely on the user pasting the real page
+  (surfaced via optional `guideHint` toast).
 - Every turn runs two sequential Gemini calls (`resolveQuestion` then
   `summarize`). `max_output_tokens` on the rewrite must stay generous (~200);
   too tight a cap returns empty even with thinking off.
@@ -443,6 +453,8 @@ Server-only secrets (never expose via `NEXT_PUBLIC_`, never commit `.env.local`)
 - `SERPER_API_KEY` (optional; Serper.dev fallback used only when Tavily is
   unconfigured or every Tavily call fails — quota/outage. Snippet-only, no extract).
 - `REPLICATE_MODEL` (optional, default `google/gemini-2.5-flash`).
+- `EMBED_MODEL` (optional, default pinned `lucataco/qwen3-embedding-8b:42d96848…`; preferred-guide
+  RAG embedder. Swapping dims requires re-ingest).
 - `LLM_LOG` (optional; `1` enables the `llm-log.json` model-call log in
   production — it is on automatically in dev). `LLM_LOG_PATH` overrides the path.
 - `LLM_DB_LOG` (optional; `0` disables writes to `public.llm_calls`. On by default
@@ -463,7 +475,8 @@ Public client vars (safe to expose; protected by RLS), optional — enable
 accounts, saved chats, and the search cache:
 
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (publishable key).
-  Project `GameGuideGuru` (ref `luoymycbpnvamdtlzjem`). Google OAuth and email
+  Project `GameGuideGuru` (ref `luoymycbpnvamdtlzjem`). Apply `db/guide-chunks.sql`
+  and `db/embed-cache.sql` (pgvector extension) for preferred-guide RAG. Google OAuth and email
   confirmation are configured in the Supabase dashboard.
 
 ## Working conventions

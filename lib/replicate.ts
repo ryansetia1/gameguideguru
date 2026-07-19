@@ -208,7 +208,15 @@ export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
 
   const images = (input.images ?? []).filter((url) => typeof url === "string" && url);
   const replicate = new Replicate({ auth: token });
-  const prompt = buildPrompt({ ...input, imageCount: images.length });
+  const prompt = buildPrompt({
+    ...input,
+    imageCount: images.length,
+    sources: input.sources.map(({ title, content, preferred }) => ({
+      title,
+      content,
+      preferred,
+    })),
+  });
   const { output: rawOutput, durationMs, predictTimeMs, inputTokens, outputTokens } =
     await runModel(
     replicate,

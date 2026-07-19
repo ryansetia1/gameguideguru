@@ -348,6 +348,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [indexingGuide, setIndexingGuide] = useState(false);
 
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -1620,6 +1621,24 @@ export default function Home() {
     abortRef.current = controller;
 
     try {
+      if (preferredUrl) {
+        setIndexingGuide(true);
+        try {
+          await fetch("/api/guide-ingest", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify({ preferredUrl }),
+          });
+        } catch (ingestError) {
+          if (!(ingestError instanceof DOMException && ingestError.name === "AbortError")) {
+            console.error("Guide ingest failed:", ingestError);
+          }
+        } finally {
+          setIndexingGuide(false);
+        }
+      }
+
       const response = await fetch("/api/solve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1659,6 +1678,13 @@ export default function Home() {
         "sources" in data && Array.isArray(data.sources)
           ? (data.sources as Source[])
           : [];
+      if (
+        "guideHint" in data &&
+        typeof data.guideHint === "string" &&
+        data.guideHint
+      ) {
+        setToast(data.guideHint);
+      }
       const highlights = coerceHighlights(
         "highlights" in data ? data.highlights : undefined,
       );
@@ -2661,7 +2687,11 @@ export default function Home() {
           {loading && (
             <div className="turn guide loading-card">
               <span className="scan-line" aria-hidden="true" />
-              <p>Searching walkthroughs and player forums...</p>
+              <p>
+                {indexingGuide
+                  ? "Indexing your guide..."
+                  : "Searching walkthroughs and player forums..."}
+              </p>
             </div>
           )}
 

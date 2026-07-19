@@ -1,6 +1,6 @@
 # Preferred guide as RAG: "assistant given a book"
 
-Build plan. Not built yet. Written 2026-07-19.
+Build plan. Implemented 2026-07-19. See architecture in `CLAUDE.md`.
 
 ## The vision (narrow, on purpose)
 
@@ -32,7 +32,7 @@ that guide.
 
 ## Decided stack
 
-- **Embedder:** **Qwen3-Embedding-8B** on Replicate (`lucataco/qwen3-embedding-8b`,
+- **Embedder:** **Qwen3-Embedding-8B** on Replicate (`lucataco/qwen3-embedding-8b:42d96848…`,
   same provider/key as the LLM). Best accuracy of the candidates we evaluated,
   32k-token context (handles long guide sections without truncation), 1024-dim.
   NOT CLIP — CLIP's text encoder caps at 77 tokens (~20 effective) and is an
@@ -237,7 +237,7 @@ whether chunks come from RAG or (in the fallback) from web search.
 ## Config / env
 
 - Reuses `REPLICATE_API_TOKEN` (embedder + LLM same provider).
-- New optional: `EMBED_MODEL` (default `lucataco/qwen3-embedding-8b`) so the
+- New optional: `EMBED_MODEL` (default pinned version of `lucataco/qwen3-embedding-8b`) so the
   model is swappable like `REPLICATE_MODEL`. Swapping dims requires re-ingest.
 - pgvector requires the `vector` extension enabled in Supabase (one dashboard
   toggle / the migration's `create extension`).

@@ -1,4 +1,4 @@
-import { cleanSnippet, focusSection } from "@/lib/clean";
+import { cleanSnippet } from "@/lib/clean";
 import { buildGuideDiscoveryQuery } from "@/lib/guide-search.js";
 import { selectSources } from "@/lib/rank";
 
@@ -17,6 +17,7 @@ export type SearchResult = {
   url: string;
   content: string;
   score: number;
+  preferred?: boolean;
 };
 
 // Video/social results the text LLM cannot read; always excluded.
@@ -58,11 +59,6 @@ const TIERS: string[][] = [
 // gating/trimming happens in selectSources.
 const MIN_RESULTS = 3;
 const CONTENT_CAP = 800;
-// The user's preferred page is a whole trusted walkthrough, so give it far more
-// room than a search snippet. focusSection trims a long page to the window that
-// matches the question, so this cap is the size of that relevant slice, not the
-// whole guide — generous enough for a full section without dumping a 100k-char FAQ.
-const EXTRACT_CONTENT_CAP = 9000;
 // Snippets shorter than this after cleaning are almost always pure navigation.
 const MIN_CONTENT = 60;
 
@@ -155,9 +151,8 @@ function looksLikeIndex(rawUrl: string): boolean {
   }
 }
 
-// Site root or archive listing — site-search should pick a child article. A deep
-// link like /3-suikoden-kwanda-rosman is a specific chapter: extract it directly.
-function looksLikeHub(rawUrl: string): boolean {
+// Site root or archive listing — not a full walkthrough page.
+export function looksLikeHub(rawUrl: string): boolean {
   try {
     const path = new URL(rawUrl).pathname.replace(/\/+$/, "") || "/";
     if (path === "/") return true;
@@ -167,15 +162,17 @@ function looksLikeHub(rawUrl: string): boolean {
   }
 }
 
-// Pull the full content of the user's preferred guide page directly. Returns a
-// single source or null (bad URL, unreachable page, or too little text). The
-// user explicitly trusts this page, so callers use it without a confidence gate.
-async function extractPreferred(
-  apiKey: string,
+/**
+ * Pull the full text of a guide page for RAG ingest. Given page only — does not
+ * follow child links. Returns null when Tavily is unconfigured or extract fails.
+ */
+export async function extractGuidePage(
   rawUrl: string,
-  query: string,
   signal?: AbortSignal,
-): Promise<SearchResult | null> {
+): Promise<{ url: string; content: string } | null> {
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) return null;
+
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
@@ -191,7 +188,7 @@ async function extractPreferred(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ urls: [parsed.toString()] }),
-    signal: combineSignal(12_000, signal),
+    signal: combineSignal(30_000, signal),
   });
 
   if (!response.ok) return null;
@@ -208,98 +205,21 @@ async function extractPreferred(
   const raw = (first as { raw_content: unknown }).raw_content;
   if (typeof raw !== "string") return null;
 
-  const content = focusSection(cleanSnippet(raw), query, EXTRACT_CONTENT_CAP);
+  const content = cleanSnippet(raw);
   if (content.length < MIN_CONTENT) return null;
 
-  return {
-    title: parsed.hostname.replace(/^www\./, ""),
-    url: parsed.toString(),
-    content,
-    score: 1,
-  };
+  return { url: parsed.toString(), content };
 }
 
 /**
- * Tavily implementation. When `preferredUrl` is set: for a specific chapter URL,
- * extract it first; for a hub/root URL, site-search the host for the right section.
- * Falls back to site-search snippets, then the normal tiered search. Throws when
- * every Tavily call fails (e.g. quota/outage) so the caller can fall back.
+ * Tavily implementation. Tiered domain search with confidence gating in
+ * selectSources. Throws when every Tavily call fails so the caller can fall back.
  */
 async function searchTavily(
   apiKey: string,
   query: string,
-  preferredUrl?: string,
-  focusQuery?: string,
   signal?: AbortSignal,
 ): Promise<SearchResult[]> {
-  const focus = (focusQuery ?? query).trim();
-  const preferred = (preferredUrl ?? "").trim();
-  if (preferred) {
-    let host = "";
-    try {
-      host = new URL(preferred).hostname.replace(/^www\./, "");
-    } catch {
-      host = "";
-    }
-
-    const hub = looksLikeHub(preferred);
-
-    // Deep link the user pasted — read that page, don't let site-search override it
-    // with a higher-scoring index (e.g. a 108-Stars recruit list on the same host).
-    if (!hub) {
-      try {
-        const exact = await extractPreferred(apiKey, preferred, focus, signal);
-        if (exact) return [exact];
-      } catch {
-        // ponytail: fall through to site-search on the same host.
-      }
-    }
-
-    // Site-search the preferred host for the right section, then read it in full.
-    if (host) {
-      let domainResults: SearchResult[] = [];
-      try {
-        domainResults = await runSearch(apiKey, query, [host], signal);
-      } catch {
-        domainResults = [];
-      }
-      // The user explicitly trusts this site, so rank by score but SKIP the
-      // confidence gate: a niche fan-site's top hit often scores below
-      // CONFIDENCE_MIN yet is exactly the right section page. Gating here made us
-      // fall through to extracting the pasted hub/category URL (shallow index).
-      const ranked = domainResults
-        .slice()
-        .sort((a, b) => b.score - a.score);
-      // Prefer real article pages over listing/hub pages (a pasted /category/...
-      // hub only has teasers; the actual walkthrough lives on a linked article),
-      // so we drill to the section page instead of extracting the index.
-      const articles = ranked.filter((result) => !looksLikeIndex(result.url));
-      const picks = articles.length ? articles : ranked;
-      if (picks.length) {
-        try {
-          const deep = await extractPreferred(apiKey, picks[0].url, focus, signal);
-          if (deep) {
-            return [{ ...deep, title: picks[0].title || deep.title }];
-          }
-        } catch {
-          // ponytail: extract failures fall back to site-search snippets.
-        }
-        return picks.slice(0, 3);
-      }
-    }
-
-    // Hub URL only: site-search found nothing useful — try extracting the paste.
-    if (hub) {
-      try {
-        const exact = await extractPreferred(apiKey, preferred, focus, signal);
-        if (exact) return [exact];
-      } catch {
-        // ponytail: extract failures fall through to tiered search.
-      }
-    }
-  }
-
-  // 3. Normal tiered search.
   return selectSources(await tieredSearch(apiKey, query, signal));
 }
 
@@ -409,26 +329,13 @@ async function serperQuery(
 
 /**
  * Serper.dev fallback used when Tavily is unavailable. Snippet-only (no page
- * extraction): a preferred host becomes a `site:` filter, otherwise one general
- * query (the query already carries "walkthrough guide"). Trimmed to the top 3.
+ * extraction). Trimmed to the top 3.
  */
 async function searchSerper(
   apiKey: string,
   query: string,
-  preferredUrl?: string,
   signal?: AbortSignal,
 ): Promise<SearchResult[]> {
-  let host = "";
-  try {
-    if (preferredUrl) host = new URL(preferredUrl).hostname.replace(/^www\./, "");
-  } catch {
-    host = "";
-  }
-
-  if (host) {
-    const scoped = await serperQuery(apiKey, `site:${host} ${query}`, signal);
-    if (scoped.length) return scoped.slice(0, 3);
-  }
   return (await serperQuery(apiKey, query, signal)).slice(0, 3);
 }
 
@@ -440,8 +347,6 @@ async function searchSerper(
  */
 export async function searchGuides(
   query: string,
-  preferredUrl?: string,
-  focusQuery?: string,
   signal?: AbortSignal,
 ): Promise<SearchResult[]> {
   const tavilyKey = process.env.TAVILY_API_KEY;
@@ -452,13 +357,13 @@ export async function searchGuides(
 
   if (tavilyKey) {
     try {
-      return await searchTavily(tavilyKey, query, preferredUrl, focusQuery, signal);
+      return await searchTavily(tavilyKey, query, signal);
     } catch (error) {
       if (!serperKey) throw error;
       console.error("Tavily unavailable; falling back to Serper:", error);
     }
   }
-  return searchSerper(serperKey as string, query, preferredUrl, signal);
+  return searchSerper(serperKey as string, query, signal);
 }
 
 const DISCOVER_MAX = 8;

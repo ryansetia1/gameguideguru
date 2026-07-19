@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getCachedSearch, setCachedSearch } from "@/lib/search-cache";
 import { censorSpoilers, resolveQuestion, summarize, type Turn } from "@/lib/replicate";
+import { retrieveFromPreferredGuide } from "@/lib/guide-rag";
 import { coerceSpoilerPrefs } from "@/lib/spoiler-prefs";
 import { coerceDisplayName } from "@/lib/profile.js";
 import { searchGuides, type SearchResult } from "@/lib/tavily";
@@ -65,6 +66,24 @@ function parseHistory(value: unknown): Turn[] {
     .slice(-MAX_HISTORY);
 }
 
+async function tieredWebSearch(
+  searchQuery: string,
+  signal: AbortSignal,
+): Promise<SearchResult[]> {
+  const cacheKey = `${searchQuery}::web`;
+  const cached = await getCachedSearch(cacheKey);
+  if (Array.isArray(cached)) return cached as SearchResult[];
+
+  try {
+    const results = await searchGuides(searchQuery, signal);
+    void setCachedSearch(cacheKey, results);
+    return results;
+  } catch (searchError) {
+    console.error("Search failed, continuing without sources:", searchError);
+    return [];
+  }
+}
+
 export async function POST(request: Request) {
   let body: unknown;
 
@@ -86,13 +105,7 @@ export async function POST(request: Request) {
   const images = parseImages(record.images);
   const spoilerPrefs = coerceSpoilerPrefs(record.spoilerPrefs);
   const playerName = coerceDisplayName(record.playerName);
-  // Client-sent for the debug log only (llm_calls.user_id). ponytail: trusted
-  // from the body — spoofable, but it's an insert-only debug table, low stakes.
-  // Upgrade path: verify the Authorization bearer server-side. Non-UUID => null
-  // so a bad value can't FK-fail the whole log insert.
   const userId = cleanUuid(record.userId);
-  // Client Stop aborts the fetch; this fires so we cancel the Replicate
-  // prediction / Tavily search instead of finishing (and billing) them.
   const signal = request.signal;
 
   if (question.length < 2) {
@@ -110,32 +123,55 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Search is best-effort supporting evidence; the model can still answer from
-    // its own knowledge if it returns nothing or fails.
     let sources: SearchResult[] = [];
-    if (process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY) {
-      // Rewrite into a standalone English search query first (first messages
-      // benefit from translation/normalisation; follow-ups need context resolved).
-      const searchTopic = await resolveQuestion({
-        question,
-        history,
-        game,
-        platform,
-        userId,
+    let guideHint: string | undefined;
+
+    const searchTopic = await resolveQuestion({
+      question,
+      history,
+      game,
+      platform,
+      userId,
+      signal,
+    });
+
+    const hasSearchProvider = Boolean(
+      process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY,
+    );
+    const searchQuery = [game, platform, searchTopic, "walkthrough guide"]
+      .filter(Boolean)
+      .join(" ");
+
+    if (preferredUrl) {
+      const rag = await retrieveFromPreferredGuide({
+        guideUrl: preferredUrl,
+        query: searchTopic,
         signal,
       });
-      const searchQuery = [game, platform, searchTopic, "walkthrough guide"]
-        .filter(Boolean)
-        .join(" ");
-      // Cache the final result per (query + preferred URL) so repeat/popular
-      // queries skip the tiered Tavily calls entirely. Best-effort both ways.
-      const cacheKey = `${searchQuery}::${preferredUrl}`;
+
+      if (rag?.hubWarning) {
+        guideHint =
+          "That link looks like an index page. Paste the page with the full walkthrough.";
+      }
+
+      if (rag?.skipWebSearch) {
+        sources = rag.sources;
+      } else if (rag) {
+        const web = hasSearchProvider
+          ? await tieredWebSearch(searchQuery, signal)
+          : [];
+        sources = [...rag.sources, ...web];
+      } else if (hasSearchProvider) {
+        sources = await tieredWebSearch(searchQuery, signal);
+      }
+    } else if (hasSearchProvider) {
+      const cacheKey = `${searchQuery}::`;
       const cached = await getCachedSearch(cacheKey);
       if (Array.isArray(cached)) {
         sources = cached as SearchResult[];
       } else {
         try {
-          sources = await searchGuides(searchQuery, preferredUrl, searchTopic, signal);
+          sources = await searchGuides(searchQuery, signal);
           void setCachedSearch(cacheKey, sources);
         } catch (searchError) {
           console.error("Search failed, continuing without sources:", searchError);
@@ -156,10 +192,6 @@ export async function POST(request: Request) {
       signal,
     });
 
-    // Spoilers OFF + the model flagged its own answer as risky -> run the
-    // second-pass censor to strip any major reveal that leaked into the answer.
-    // Best-effort: on failure censorSpoilers returns null and we keep the
-    // (prompt-guarded) original. Most turns never reach this branch.
     if (!spoilerPrefs.major && spoilerRisk) {
       const cleaned = await censorSpoilers({
         answer,
@@ -178,9 +210,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       answer,
       highlights,
-      // Never ship spoiler reveals when the player has them OFF.
       spoilers: spoilerPrefs.major ? spoilers : [],
       sources: sources.map(({ title, url }) => ({ title, url })),
+      ...(guideHint ? { guideHint } : {}),
     });
   } catch (error) {
     console.error("Guide generation failed:", error);
