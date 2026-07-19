@@ -113,20 +113,10 @@ const namedPrompt = buildPrompt({
   sources: [],
   playerName: "Ryan",
 });
-assert.match(namedPrompt, /Player display name: Ryan/);
-
-const followUpPrompt = buildPrompt({
-  game: "Zelda",
-  question: "And after that?",
-  sources: [],
-  playerName: "Ryan",
-  history: [
-    { role: "user", content: "Where is the first dungeon?" },
-    { role: "assistant", content: "Go to the beach." },
-  ],
-});
-assert.match(followUpPrompt, /follow-up/i);
-assert.match(followUpPrompt, /Do NOT greet/i);
+assert.match(namedPrompt, /player's name is Ryan/);
+// Name is context only: no scripted greeting, and never open every reply with it.
+assert.match(namedPrompt, /don't open every reply with it/i);
+assert.doesNotMatch(namedPrompt, /—/); // no em-dashes in user-facing/persona copy
 
 assert.equal(coerceDisplayName("  Ryan  "), "Ryan");
 assert.equal(displayNameFromMetadata({ display_name: "Ayu" }), "Ayu");

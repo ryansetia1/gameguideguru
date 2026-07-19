@@ -2218,6 +2218,48 @@ details.sources small {
   cursor: not-allowed;
 }
 
+/* Thin banner shown while a temporary chat is active. */
+.temp-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1.5px dashed var(--ink);
+  background: var(--paper-strong);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.temp-banner-off {
+  margin-left: auto;
+  flex: none;
+  padding: 4px 10px;
+  border: 1.5px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.temp-banner-off:hover:not(:disabled) {
+  background: var(--signal);
+}
+
+.temp-banner-off:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.temp-badge {
+  display: inline-grid;
+  place-items: center;
+  margin-left: 6px;
+  vertical-align: middle;
+  color: var(--ink);
+}
+
 .composer-attach-menu {
   position: absolute;
   right: 0;
@@ -2255,6 +2297,23 @@ details.sources small {
 
 .composer-extras-back {
   font-weight: 600;
+}
+
+/* Temporary-chat menu item: label left, On/Off state right. */
+.composer-attach-menu button.composer-extras-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.composer-extras-state {
+  font-weight: 700;
+  color: var(--text-subtle);
+}
+
+.composer-extras-state.on {
+  color: var(--ink);
 }
 
 @keyframes mic-pulse {

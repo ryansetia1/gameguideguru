@@ -12,7 +12,7 @@ import {
   IconDiamond,
   IconDotsVertical,
   IconGrid,
-  IconPaperclip,
+  IconIncognito,
   IconPencil,
   IconPlus,
   IconRefresh,
@@ -24,7 +24,6 @@ import { HltbRow } from "./hltb-row";
 import { PlatformSelect } from "./platform-select";
 import { SteamLibrary, type SteamGame } from "./steam-library";
 import { ProfileMenu } from "./profile-menu";
-import { VoiceInput } from "./voice-input";
 import { VoiceVisualizer } from "./voice-visualizer";
 import {
   KINDS,
@@ -297,18 +296,6 @@ const FUN_ROLES = [
   "endgame grinders", "secret finders", "speedrun timers", "forever-stuck heroes",
 ];
 
-function useMediaQuery(query: string) {
-  const [matches, setMatches] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia(query);
-    const update = () => setMatches(mq.matches);
-    update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
-  }, [query]);
-  return matches;
-}
-
 function RotatingWord() {
   const [i, setI] = useState(0);
   // Tap/click to freeze on a word (e.g. to screenshot), tap again to resume.
@@ -401,6 +388,10 @@ export default function Home() {
   // user already has saved games (signed-in or anon local). Reset on newGame().
   const [newGameOpen, setNewGameOpen] = useState(false);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  // Temporary chat: lives only in memory, never written to Supabase/localStorage/
+  // sessionStorage, so a refresh or close wipes it. Follow-ups still work (they
+  // read from `messages` state, not storage).
+  const [temporary, setTemporary] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -413,11 +404,11 @@ export default function Home() {
   const [globalSpoilerMajor, setGlobalSpoilerMajor] = useState(false);
   const [gameSpoilerMajor, setGameSpoilerMajor] = useState(false);
   const spoilerPrefs = effectiveSpoilerPrefs(globalSpoilerMajor, gameSpoilerMajor);
-  const [attachOpen, setAttachOpen] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const [librarySearch, setLibrarySearch] = useState("");
   const [confirmState, setConfirmState] = useState<{
     message: string;
+    confirmLabel?: string;
     resolve: (value: boolean) => void;
   } | null>(null);
   const [toast, setToast] = useState("");
@@ -433,14 +424,23 @@ export default function Home() {
   const abortRef = useRef<AbortController | null>(null);
   const conversationGame = useRef("");
   const activeChatIdRef = useRef<string | null>(null);
+  // Snapshot of the thread open before entering temporary chat, so turning it off
+  // returns there (temporary is a non-destructive detour, not a reset).
+  const preTemporaryRef = useRef<{
+    activeChatId: string | null;
+    messages: Message[];
+    game: string;
+    platform: string;
+    preferredUrl: string;
+    cover: string;
+    releaseYear: string;
+    conversationGame: string;
+  } | null>(null);
   // Mirror `user` in a ref so the stable loadChats/persist callbacks can branch
   // signed-in (Supabase) vs anon (localStorage) without stale-closure bugs.
   const userRef = useRef<User | null>(null);
   // Guard so the Steam release-year backfill runs at most once per mount.
   const steamBackfillRef = useRef(false);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const attachRef = useRef<HTMLDivElement>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   // Path of a previously-uploaded cover that a new pick will replace, deleted once
@@ -511,7 +511,6 @@ export default function Home() {
   // keeps the signed-out flow simple and avoids any Storage use for anon users.
   const coverEnabled = Boolean(user);
   const [voiceSupported, setVoiceSupported] = useState(false);
-  const compactComposer = useMediaQuery("(max-width: 540px)");
   const steamConnected = Boolean(
     user && (steamId || steamIdFromMetadata(user.user_metadata)),
   );
@@ -731,6 +730,12 @@ export default function Home() {
       setChatUrl(null);
       return;
     }
+    // Temporary chat: keep nothing so a refresh or close wipes it.
+    if (temporary) {
+      clearSessionDraft();
+      setChatUrl(null);
+      return;
+    }
     // Signed-in saved chats restore via ?chat=; anon local games have an id too
     // but must fall through to the sessionStorage draft (no ?chat= for anon).
     if (activeChatId && user) {
@@ -750,7 +755,7 @@ export default function Home() {
       activeChatId,
       messages,
     });
-  }, [messages, activeChatId, game, platform, preferredUrl, cover, releaseYear, user]);
+  }, [messages, activeChatId, game, platform, preferredUrl, cover, releaseYear, user, temporary]);
 
   useEffect(() => {
     void refreshSteamStatus();
@@ -807,15 +812,6 @@ export default function Home() {
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [menuOpenId]);
-
-  useEffect(() => {
-    if (!attachOpen) return;
-    function onPointerDown(event: PointerEvent) {
-      if (!attachRef.current?.contains(event.target as Node)) setAttachOpen(false);
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [attachOpen]);
 
   useEffect(() => {
     if (!toast) return;
@@ -996,8 +992,82 @@ export default function Home() {
     conversationGame.current = "";
     setSidebarOpen(false);
     setMenuOpenId(null);
+    setTemporary(false);
     // Back to quick-access home; the setup form re-hides behind "+ New game".
     setNewGameOpen(false);
+  }
+
+  // Temporary chat is a non-destructive detour. Turning it ON snapshots the open
+  // thread (which is already saved) and starts a fresh in-memory thread, keeping
+  // the game/platform/cover so you can ask the same game off the record. Turning
+  // it OFF restores that snapshot, so cancelling before chatting drops you back
+  // where you were. Only discarding a temporary thread that has content confirms.
+  async function toggleTemporary() {
+    if (loading) return;
+
+    // Shared reset of transient composer/edit state.
+    const clearTransient = () => {
+      clearPendingImages();
+      setInput("");
+      setError("");
+      setEditingIndex(null);
+      setEditingText("");
+    };
+
+    if (!temporary) {
+      preTemporaryRef.current = {
+        activeChatId,
+        messages,
+        game,
+        platform,
+        preferredUrl,
+        cover,
+        releaseYear,
+        conversationGame: conversationGame.current,
+      };
+      clearTransient();
+      setMessages([]);
+      setActiveChatId(null);
+      conversationGame.current = "";
+      clearSessionDraft();
+      setChatUrl(null);
+      setTemporary(true);
+      return;
+    }
+
+    if (
+      messages.length > 0 &&
+      !(await askConfirm(
+        "Turn off temporary chat? This conversation won't be saved.",
+        "Discard",
+      ))
+    ) {
+      return;
+    }
+
+    const prior = preTemporaryRef.current;
+    preTemporaryRef.current = null;
+    clearTransient();
+    setTemporary(false);
+    if (prior) {
+      // Jump to the last user message like openChat, so the restored thread lands
+      // where it was rather than scrolled to the top.
+      if (prior.messages.length) jumpRef.current = true;
+      setActiveChatId(prior.activeChatId);
+      setMessages(prior.messages);
+      setGame(prior.game);
+      setPlatform(prior.platform);
+      setPreferredUrl(prior.preferredUrl);
+      setCover(prior.cover);
+      setReleaseYear(prior.releaseYear);
+      conversationGame.current = prior.conversationGame;
+      // Restore the saved-chat deep link so a later refresh reopens it.
+      if (prior.activeChatId && user) setChatUrl(prior.activeChatId);
+    } else {
+      setMessages([]);
+      setActiveChatId(null);
+      conversationGame.current = "";
+    }
   }
 
   // Explicit "+ New game": reset, then reveal the setup form (with animation)
@@ -1033,6 +1103,7 @@ export default function Home() {
     setEditingText("");
     setSidebarOpen(false);
     setMenuOpenId(null);
+    setTemporary(false);
   }
 
   // Autocomplete pick carries box art + year + platform; manual typing clears the
@@ -1203,10 +1274,13 @@ export default function Home() {
   }
 
   // Promise-based confirm dialog (replaces window.confirm): resolves true/false
-  // when the user acts. Shared by every destructive action.
+  // when the user acts. Shared by every destructive action. `confirmLabel`
+  // overrides the default "Delete" button text (e.g. "Discard").
   const askConfirm = useCallback(
-    (message: string) =>
-      new Promise<boolean>((resolve) => setConfirmState({ message, resolve })),
+    (message: string, confirmLabel?: string) =>
+      new Promise<boolean>((resolve) =>
+        setConfirmState({ message, confirmLabel, resolve }),
+      ),
     [],
   );
 
@@ -1435,6 +1509,7 @@ export default function Home() {
   }
 
   async function persistChat(nextMessages: Message[], targetChatId: string | null) {
+    if (temporary) return null; // temporary chat: nothing gets written anywhere
     const supabase = getSupabase();
     // Anon: persist to localStorage (Chat-shaped, no Storage — cover is CDN/"").
     if (!supabase || !user) {
@@ -1572,6 +1647,9 @@ export default function Home() {
       conversationGame.current = game;
       const savedId = await persistChat(nextMessages, targetChatId);
       if (savedId) activeChatIdRef.current = savedId;
+      // Temporary chat never persists, so drop this turn's uploaded images from
+      // Storage instead of leaving them orphaned.
+      if (temporary && images.length) void deleteMessageImages([userMessage]);
     } catch (caught) {
       setMessages(priorMessages);
       // A user-triggered Stop aborts the fetch — treat it as a silent cancel,
@@ -1665,7 +1743,6 @@ export default function Home() {
   const QUICK_LIMIT = 4;
   const recentGames = chats.slice(0, QUICK_LIMIT);
   const moreGamesCount = chats.length - recentGames.length;
-  const showCombinedExtras = compactComposer && coverEnabled && voiceSupported;
   const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
 
   return (
@@ -1997,7 +2074,14 @@ export default function Home() {
           </button>
           {coverEnabled && <CoverThumb cover={cover} name={game} className="cover-mini" />}
           <div className="sticky-meta">
-            <strong>{game || "Untitled game"}</strong>
+            <strong>
+              {game || "Untitled game"}
+              {temporary && (
+                <span className="temp-badge" title="Temporary chat">
+                  <IconIncognito size={13} />
+                </span>
+              )}
+            </strong>
             {(platform || releaseYear || game) && (
               <small className="meta-subline">
                 {displayPlatform(platform, cover) && (
@@ -2363,6 +2447,21 @@ export default function Home() {
         </div>
       )}
 
+      {temporary && !quickIdle && (
+        <div className="temp-banner" role="status">
+          <IconIncognito size={16} />
+          <span>Temporary chat. This won&apos;t be saved.</span>
+          <button
+            type="button"
+            className="temp-banner-off"
+            disabled={loading}
+            onClick={() => void toggleTemporary()}
+          >
+            Turn off
+          </button>
+        </div>
+      )}
+
       {started && (
         <section className="feed" aria-live="polite">
           {messages.map((message, index) =>
@@ -2588,93 +2687,20 @@ export default function Home() {
             />
             <VoiceVisualizer active={voiceListening} />
           </div>
-          {showCombinedExtras ? (
-            <ComposerExtras
-              user={user}
-              disabled={composerLocked}
-              attachDisabled={pendingImages.length >= MAX_MESSAGE_IMAGES}
-              onListeningChange={setVoiceListening}
-              onTranscript={(text) =>
-                setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))
-              }
-              onSelectImages={(files) => void selectMessageImages(files)}
-            />
-          ) : (
-            <>
-              {coverEnabled && (
-                <div className="composer-attach-wrap" ref={attachRef}>
-                  <button
-                    type="button"
-                    className="composer-attach"
-                    title="Attach images"
-                    aria-label="Attach images"
-                    aria-expanded={attachOpen}
-                    aria-haspopup="menu"
-                    disabled={composerLocked || pendingImages.length >= MAX_MESSAGE_IMAGES}
-                    onClick={() => setAttachOpen((open) => !open)}
-                  >
-                    <IconPaperclip />
-                  </button>
-                  {attachOpen && (
-                    <div className="composer-attach-menu" role="menu">
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          galleryInputRef.current?.click();
-                          setAttachOpen(false);
-                        }}
-                      >
-                        Photo library
-                      </button>
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          cameraInputRef.current?.click();
-                          setAttachOpen(false);
-                        }}
-                      >
-                        Camera
-                      </button>
-                    </div>
-                  )}
-                  <input
-                    ref={galleryInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    hidden
-                    disabled={composerLocked || pendingImages.length >= MAX_MESSAGE_IMAGES}
-                    onChange={(event) => {
-                      void selectMessageImages(event.target.files);
-                      event.target.value = "";
-                    }}
-                  />
-                  <input
-                    ref={cameraInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    hidden
-                    disabled={composerLocked || pendingImages.length >= MAX_MESSAGE_IMAGES}
-                    onChange={(event) => {
-                      void selectMessageImages(event.target.files);
-                      event.target.value = "";
-                    }}
-                  />
-                </div>
-              )}
-              <VoiceInput
-                user={user}
-                disabled={composerLocked}
-                onListeningChange={setVoiceListening}
-                onTranscript={(text) =>
-                  setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))
-                }
-              />
-            </>
-          )}
+          <ComposerExtras
+            user={user}
+            disabled={composerLocked}
+            attachDisabled={pendingImages.length >= MAX_MESSAGE_IMAGES}
+            canAttach={coverEnabled}
+            voiceSupported={voiceSupported}
+            temporary={temporary}
+            onToggleTemporary={() => void toggleTemporary()}
+            onListeningChange={setVoiceListening}
+            onTranscript={(text) =>
+              setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))
+            }
+            onSelectImages={(files) => void selectMessageImages(files)}
+          />
           {loading ? (
             <button
               className="submit submit-stop"
@@ -2738,7 +2764,7 @@ export default function Home() {
                   setConfirmState(null);
                 }}
               >
-                Delete
+                {confirmState.confirmLabel ?? "Delete"}
               </button>
             </div>
           </div>

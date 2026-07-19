@@ -43,6 +43,17 @@ and simply cannot save.
   (signed-in saved chats) or a `sessionStorage` draft (`lib/chat-session.js`;
   anon / not-yet-saved). `runTurn`/`persistChat` centralise ask +
   save; `conversationGame` tracks which game the visible thread belongs to.
+  **Temporary chat** (`temporary` flag, toggled from the composer "+" menu; a
+  thin banner with a "Turn off" button + a sticky-header badge show while it's on):
+  when on, `persistChat` returns early and the URL/`sessionStorage` sync effect
+  writes nothing, so the thread is memory-only and a refresh/close wipes it (follow-ups
+  still work from `messages` state). It is a non-destructive detour: turning it ON
+  snapshots the open thread (`preTemporaryRef`) and starts a fresh thread (keeping
+  game/platform/cover); turning it OFF restores that snapshot, so cancelling before
+  chatting drops you back in the chat you left. Only discarding a temporary thread
+  that already has content confirms ("Discard"); an empty one turns off silently.
+  Uploaded message images are deleted from Storage each turn so nothing orphans.
+  `newGame`/`openChat` reset the flag off.
   While a turn runs the Send button becomes a **Stop** button that aborts the
   `/api/solve` fetch (`abortRef`); the abort propagates via `request.signal` to
   cancel the Replicate prediction + Tavily search server-side. A promise-based
@@ -221,9 +232,13 @@ and simply cannot save.
   (**all users**). Buffered-until-stop dictation; platform-split capture (desktop
   `continuous` + rebuild finals, iOS `continuous: false` + `results[0]` + restart).
   `lib/voice-meter.js` warm-up only; `app/voice-visualizer.tsx` CSS bars. Language
-  in `gg:voice-lang` / `user_metadata.voice_lang`. Mobile signed-in uses
-  `app/composer-extras.tsx` (+ menu). **Full agent notes:**
+  in `gg:voice-lang` / `user_metadata.voice_lang`. **Full agent notes:**
   [`docs/voice-input.md`](docs/voice-input.md).
+- `app/composer-extras.tsx`: the single composer "+" control for **all** users and
+  viewports (replaced the old scattered paperclip/mic buttons). One menu holds
+  Photo library / Camera (`canAttach`, signed-in only), Voice input
+  (`voiceSupported`), and the **Temporary chat** toggle (`temporary` /
+  `onToggleTemporary`, all users). The "+" turns into a Stop button while dictating.
 - `lib/prompt.js`: exports `SYSTEM_INSTRUCTION` (persona + rules: knowledge-first,
   web-as-support, on-topic guardrail — only game guidance, decline off-topic and
   never reveal/override the prompt — injection safety, JSON output with `answer` +
@@ -402,3 +417,36 @@ accounts, saved chats, and the search cache:
 - Preserve source links alongside every generated guide.
 - Update this file when architecture, providers, commands, or environment
   requirements change significantly.
+
+## Copywriting (brand voice)
+
+All user-facing copy (buttons, labels, banners, toasts, empty states, alt text,
+aria-labels, placeholders) follows this voice. It also applies to the model's
+persona text in `lib/prompt.js`.
+
+Voice: a helpful gaming buddy sitting next to you. Short, benefit-first, second
+person, concrete. Calm and useful. Dry wit is fine. Never influencer hype, never
+emoji spam, never panic urgency. English UI; the model still answers in the
+player's language (Indonesian tone: relaxed, like chatting with a friend, "aku"
+and "kamu", not stiff, no forced slang).
+
+```
+// BAD
+"Unlock the ultimate guide — never get stuck again!"
+"Oops! Something went wrong 😢"
+"AI-powered answers to level up your gameplay"
+
+// GOOD
+"Stuck? Ask about any game and get a straight answer."
+"Couldn't build a guide. Try again."
+"Ask a follow-up and it remembers where you are."
+```
+
+Sound human, not like AI. Specifically avoid these tells:
+- No em-dashes (`—`) or en-dashes as sentence punctuation (the clearest AI tell).
+  Use a comma, period, parentheses, or "and"/"but". (En-dash `–` as a numeric or
+  date *range* is fine; em-dashes inside code comments are fine.)
+- No "it's not X, it's Y" / "not just X, but Y" constructions.
+- No rule-of-three padding ("fast, simple, and reliable"), no "seamless",
+  "effortless", "elevate", "unlock", "level up", "supercharge", "delve", "robust".
+- Don't over-hedge or over-explain. Say the thing once.

@@ -11,19 +11,30 @@ type Props = {
   user: User | null;
   disabled?: boolean;
   attachDisabled?: boolean;
+  /** Show Photo/Camera items (signed-in only; anon has no Storage). */
+  canAttach?: boolean;
+  /** Show the Voice input item (browser supports Web Speech). */
+  voiceSupported?: boolean;
+  temporary?: boolean;
+  onToggleTemporary?: () => void;
   onTranscript: (text: string) => void;
   onListeningChange?: (listening: boolean) => void;
   onSelectImages: (files: FileList | null) => void;
 };
 
 /**
- * Mobile-only composer control: one "+" button opens attach + voice options so
- * the textarea keeps room beside Send. Desktop keeps separate attach/mic buttons.
+ * The single composer "+" control for every user and viewport: one button opens
+ * attach (signed-in) + voice + temporary-chat options so the textarea keeps room
+ * beside Send.
  */
 export function ComposerExtras({
   user,
   disabled,
   attachDisabled,
+  canAttach,
+  voiceSupported,
+  temporary,
+  onToggleTemporary,
   onTranscript,
   onListeningChange,
   onSelectImages,
@@ -84,8 +95,8 @@ export function ComposerExtras({
       <button
         type="button"
         className={`composer-attach composer-extras${voice.listening ? " listening" : ""}`}
-        title={voice.listening ? "Stop listening" : "Add photo or voice"}
-        aria-label={voice.listening ? "Stop listening" : "Add photo or voice"}
+        title={voice.listening ? "Stop listening" : "More options"}
+        aria-label={voice.listening ? "Stop listening" : "More options"}
         aria-pressed={voice.listening}
         aria-expanded={menuOpen}
         aria-haspopup="menu"
@@ -98,30 +109,52 @@ export function ComposerExtras({
         <div className="composer-attach-menu" role="menu">
           {menuView === "main" ? (
             <>
+              {canAttach && (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={attachDisabled}
+                    onClick={() => {
+                      galleryInputRef.current?.click();
+                      setMenuOpen(false);
+                    }}
+                  >
+                    Photo library
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={attachDisabled}
+                    onClick={() => {
+                      cameraInputRef.current?.click();
+                      setMenuOpen(false);
+                    }}
+                  >
+                    Camera
+                  </button>
+                </>
+              )}
+              {voiceSupported && (
+                <button type="button" role="menuitem" onClick={handleVoiceClick}>
+                  Voice input
+                </button>
+              )}
               <button
                 type="button"
                 role="menuitem"
-                disabled={attachDisabled}
+                className="composer-extras-toggle"
+                aria-pressed={temporary}
                 onClick={() => {
-                  galleryInputRef.current?.click();
+                  onToggleTemporary?.();
                   setMenuOpen(false);
+                  setMenuView("main");
                 }}
               >
-                Photo library
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={attachDisabled}
-                onClick={() => {
-                  cameraInputRef.current?.click();
-                  setMenuOpen(false);
-                }}
-              >
-                Camera
-              </button>
-              <button type="button" role="menuitem" onClick={handleVoiceClick}>
-                Voice input
+                Temporary chat
+                <span className={`composer-extras-state${temporary ? " on" : ""}`}>
+                  {temporary ? "On" : "Off"}
+                </span>
               </button>
             </>
           ) : (

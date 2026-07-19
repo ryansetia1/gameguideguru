@@ -70,6 +70,17 @@ export function IconPaperclip(props: IconProps) {
   );
 }
 
+export function IconIncognito(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path {...base} d="M4 9h16M7.5 9l1.2-3h6.6L16.5 9" />
+      <circle {...base} cx="7.5" cy="14" r="2.8" />
+      <circle {...base} cx="16.5" cy="14" r="2.8" />
+      <path {...base} d="M10.3 14h3.4" />
+    </Svg>
+  );
+}
+
 export function IconMic(props: IconProps) {
   return (
     <Svg {...props}>
