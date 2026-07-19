@@ -178,6 +178,16 @@ export async function retrieveFromPreferredGuides(input: {
   const topSimilarity = matches[0]?.similarity ?? 0;
   const hit = topSimilarity >= GUIDE_HIT;
 
+  // Calibration: set RAG_DEBUG=1 to print the retrieval scores per query, so
+  // GUIDE_HIT can be tuned to sit between "guide covers this" and "it doesn't".
+  if (process.env.RAG_DEBUG) {
+    console.log(
+      `[rag-calibrate] hit=${hit} top=${topSimilarity.toFixed(3)} ` +
+        `scores=[${matches.map((m) => m.similarity.toFixed(3)).join(", ")}] ` +
+        `q=${JSON.stringify(input.query)}`,
+    );
+  }
+
   const sources: SearchResult[] = matches.map((row, index) => {
     const label = hostLabel(row.guide_url);
     return {

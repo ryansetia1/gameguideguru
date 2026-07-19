@@ -300,6 +300,36 @@ cited around **<$5**). Ingest therefore:
 
 Tune via `.env` if you still hit throttling on a cold account.
 
+## Deferred / future work
+
+Not blocking. Ledger so nothing rots into "later means never".
+
+1. **Calibrate `GUIDE_HIT`** (needs a live test; the only real open item). The
+   Qwen3 query instruction shifted the cosine distribution, so `0.35`
+   ([lib/guide-rag.ts](../lib/guide-rag.ts)) is a guess now. How:
+   - Set `RAG_DEBUG=1` in `.env.local`, `npm run dev`.
+   - Ingest one guide you know well.
+   - Ask ~5 **in-guide** questions (things the guide clearly covers) and ~5
+     **off-guide** ones (a different game / vague / unrelated).
+   - Read the `[rag-calibrate] top=… scores=[…]` lines in the dev terminal. You'll
+     see two clusters (relevant high, irrelevant low). Set `GUIDE_HIT` between
+     them. With normalized Qwen3, relevant passages usually land ~0.5–0.7,
+     irrelevant ~0.1–0.35.
+   - Unset `RAG_DEBUG` when done (the log is gated, so leaving it is harmless).
+2. **True partial-streaming ingest** — answer as soon as the first relevant bundle
+   pages land instead of waiting for all. Needs "pages remaining" bookkeeping so
+   the tail still ingests. Only worth it if a 20-part bundle still feels slow after
+   the double-ingest fix + throttle loosening.
+3. **Collapse the discovery layer** — the dead direct-fetch and the ~50→~16 query
+   explosion are gone, but [lib/gamefaqs-discover.ts](../lib/gamefaqs-discover.ts)
+   is still ~12 layered functions collapsible to seed → 1 extract → 1 site-search
+   → merge. Cleanup, not urgent.
+4. **Minor, safe as-is:** extract-map trailing-slash miss (wastes an occasional
+   Tavily extract; recovery works), `faqId` injected raw into `new RegExp` (safe
+   while it's always digits), ivfflat `lists=100` (likely unused under the
+   `guide_url` filter), URL 300-char truncation, low-confidence branch feeding one
+   sub-`GUIDE_HIT` chunk (arguably intended — the user chose the guide).
+
 ## Known ceilings (`ponytail:`)
 
 - `GUIDE_HIT` similarity threshold is hand-tuned, one constant.
