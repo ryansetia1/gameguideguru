@@ -557,6 +557,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState<string | null>(null);
   const [showScrollFab, setShowScrollFab] = useState(false);
   const [indexingGuideCount, setIndexingGuideCount] = useState(0);
   const [indexingIsBundlePages, setIndexingIsBundlePages] = useState(false);
@@ -2309,6 +2310,7 @@ export default function Home() {
   ) {
     setError("");
     setLoading(true);
+    setGenerationStatus(null);
     setEditingIndex(null);
     setEditingText("");
     let succeeded = false;
@@ -2507,8 +2509,48 @@ export default function Home() {
           bundlePrefs: buildBundlePrefsBody(guideUrls, guideBundleMeta),
         }),
       });
-      const data: unknown = await response.json();
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let answerData: any = null;
+      let streamError: Error | null = null;
 
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || "";
+
+          for (const part of parts) {
+            if (!part.trim()) continue;
+            const eventMatch = part.match(/^event:\s*([^\n]+)/m);
+            const dataMatch = part.match(/^data:\s*([^\n]+)/m);
+            if (eventMatch && dataMatch) {
+              const eventName = eventMatch[1].trim();
+              const payloadStr = dataMatch[1].trim();
+              try {
+                const payload = JSON.parse(payloadStr);
+                if (eventName === "status" && payload.text) {
+                  setGenerationStatus(payload.text);
+                } else if (eventName === "result") {
+                  answerData = payload;
+                } else if (eventName === "error" && payload.error) {
+                  streamError = new Error(payload.error);
+                }
+              } catch (e) {
+                // Ignore parsing errors for incomplete chunks
+              }
+            }
+          }
+        }
+      }
+
+      if (streamError) throw streamError;
+
+      const data: unknown = answerData;
       if (
         !response.ok ||
         !data ||
@@ -2516,14 +2558,7 @@ export default function Home() {
         !("answer" in data) ||
         typeof data.answer !== "string"
       ) {
-        const message =
-          data &&
-          typeof data === "object" &&
-          "error" in data &&
-          typeof data.error === "string"
-            ? data.error
-            : "Couldn't build a guide. Please try again.";
-        throw new Error(message);
+        throw new Error("Couldn't build a guide. Please try again.");
       }
 
       const sources =
@@ -3613,9 +3648,10 @@ export default function Home() {
                     : indexingGuideCount > 1
                       ? `Indexing ${indexingGuideCount} guides...`
                       : "Indexing your guide..."
-                  : preferredUrls.length
-                    ? "Building your answer..."
-                    : "Searching walkthroughs and player forums..."}
+                  : generationStatus ||
+                    (preferredUrls.length
+                      ? "Building your answer..."
+                      : "Searching walkthroughs and player forums...")}
               </p>
             </div>
           )}
