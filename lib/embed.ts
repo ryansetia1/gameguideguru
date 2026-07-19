@@ -6,6 +6,7 @@ import {
   sleep,
   withReplicateRetry,
 } from "@/lib/replicate-retry.js";
+import { logEmbedCall, type EmbedLogMeta } from "@/lib/embed-log";
 
 const DEFAULT_EMBED_MODEL =
   "lucataco/qwen3-embedding-8b:42d968487820032a1535d81ea20df16f442ea308ec5abae6b5d6cf4675eb3e2f";
@@ -82,6 +83,7 @@ async function runEmbedBatch(
 export async function embedTexts(
   texts: string[],
   signal?: AbortSignal,
+  logMeta?: EmbedLogMeta,
 ): Promise<number[][]> {
   const token = process.env.REPLICATE_API_TOKEN;
   const model = resolveEmbedModel();
@@ -92,6 +94,7 @@ export async function embedTexts(
   const cleaned = texts.map((t) => t.replace(/\s+/g, " ").trim()).filter(Boolean);
   if (!cleaned.length) return [];
 
+  const started = Date.now();
   const replicate = new Replicate({ auth: token });
   const out: number[][] = [];
 
@@ -113,6 +116,14 @@ export async function embedTexts(
     }
   }
 
+  logEmbedCall({
+    kind: logMeta?.purpose === "rag_query" ? "embed_query" : "embed_index",
+    textCount: cleaned.length,
+    durationMs: Date.now() - started,
+    sampleText: cleaned[0],
+    meta: logMeta,
+  });
+
   return out;
 }
 
@@ -120,15 +131,30 @@ export async function embedTexts(
 export async function embedQuery(
   query: string,
   signal?: AbortSignal,
+  logMeta?: EmbedLogMeta,
 ): Promise<number[] | null> {
   const key = embedCacheKey(query);
   if (!key) return null;
 
   const cached = await getCachedEmbedding(key);
-  if (cached?.length) return cached;
+  if (cached?.length) {
+    logEmbedCall({
+      kind: "embed_query",
+      textCount: 1,
+      durationMs: 0,
+      sampleText: query,
+      cached: true,
+      meta: logMeta,
+    });
+    return cached;
+  }
 
   try {
-    const [embedding] = await embedTexts([query], signal);
+    const [embedding] = await embedTexts(
+      [query],
+      signal,
+      logMeta ? { ...logMeta, purpose: "rag_query" } : { purpose: "rag_query" },
+    );
     if (!embedding?.length) return null;
     void setCachedEmbedding(key, embedding);
     return embedding;

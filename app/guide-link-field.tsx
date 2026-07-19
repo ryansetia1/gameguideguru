@@ -5,24 +5,30 @@ import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "reac
 import {
   MAX_GUIDE_URLS,
   cleanGuideUrl,
+  guideUrlDedupeKey,
   isGamefaqsBundleUrl,
   isSamePreferredGuide,
   normalizeGuideUrlList,
   normalizePreferredGuideUrl,
 } from "@/lib/guide-urls.js";
+import { setBundlePrefs } from "@/lib/bundle-prefs.js";
 
 type GuideHit = { title: string; url: string; snippet: string };
 
 export type GuideBundleMeta = {
   title: string;
   pageCount: number;
+  pages?: { slug: string; title: string; url: string }[];
+  missingPages?: { slug: string; title: string; url: string }[];
+  selectedSlugs?: string[];
+  skippedSlugs?: string[];
 };
 
 type BundlePreview = {
   canonicalUrl: string;
   title: string;
   pageCount: number;
-  pages: { title: string; url: string }[];
+  pages: { slug: string; title: string; url: string }[];
 };
 
 type Props = {
@@ -57,6 +63,7 @@ export function GuideLinkField({
   const [addError, setAddError] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
   const [bundlePreview, setBundlePreview] = useState<BundlePreview | null>(null);
+  const [selectedSlugs, setSelectedSlugs] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GuideHit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -120,7 +127,7 @@ export function GuideLinkField({
         canonicalUrl?: string;
         title?: string;
         pageCount?: number;
-        pages?: { title: string; url: string }[];
+        pages?: { slug?: string; title: string; url: string }[];
         error?: string;
       } = await response.json();
 
@@ -140,8 +147,24 @@ export function GuideLinkField({
           canonicalUrl: payload.canonicalUrl,
           title: payload.title ?? "GameFAQs guide",
           pageCount: payload.pageCount,
-          pages: payload.pages,
+          pages: payload.pages.map((page) => ({
+            slug:
+              typeof page.slug === "string" && page.slug
+                ? page.slug
+                : page.url.split("/").pop() ?? "",
+            title: page.title,
+            url: page.url,
+          })),
         });
+        setSelectedSlugs(
+          new Set(
+            payload.pages.map((page) =>
+              typeof page.slug === "string" && page.slug
+                ? page.slug
+                : page.url.split("/").pop() ?? "",
+            ),
+          ),
+        );
         return;
       }
 
@@ -236,9 +259,33 @@ export function GuideLinkField({
 
   function confirmBundle() {
     if (!bundlePreview) return;
+    const slugs = [...selectedSlugs];
+    if (!slugs.length) {
+      setAddError("Pick at least one page to index.");
+      return;
+    }
+    const selectedPages = bundlePreview.pages.filter((page) =>
+      selectedSlugs.has(page.slug),
+    );
+    setBundlePrefs(bundlePreview.canonicalUrl, {
+      skippedSlugs: [],
+      selectedSlugs: slugs,
+    });
     commitAddUrl(bundlePreview.canonicalUrl, {
       title: bundlePreview.title,
-      pageCount: bundlePreview.pageCount,
+      pageCount: selectedPages.length,
+      pages: selectedPages,
+      selectedSlugs: slugs,
+      skippedSlugs: [],
+    });
+  }
+
+  function toggleBundlePage(slug: string) {
+    setSelectedSlugs((prev) => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
     });
   }
 
@@ -279,7 +326,7 @@ export function GuideLinkField({
             const meta = bundleMeta[url];
             const bundle = isGamefaqsBundleUrl(url);
             return (
-              <li key={url} className="guide-url-row">
+              <li key={guideUrlDedupeKey(url)} className="guide-url-row">
                 <div className="guide-url-row-body">
                   <a href={url} target="_blank" rel="noreferrer" className="guide-url-host">
                     {bundle ? "GameFAQs bundle" : hostLabel(url)}
@@ -310,35 +357,54 @@ export function GuideLinkField({
           <p className="guide-bundle-preview-eyebrow">Multi-page GameFAQs guide</p>
           <h4 className="guide-bundle-preview-title">{bundlePreview.title}</h4>
           <p className="guide-bundle-preview-copy">
-            We&apos;ll index <strong>{bundlePreview.pageCount} pages</strong> from this
-            guide the first time you ask a question. That can take a minute.
+            Pick which pages to index. We&apos;ll fetch them the first time you ask
+            a question. Large guides can take a few minutes.
           </p>
+          <div className="guide-bundle-preview-select">
+            <button
+              type="button"
+              onClick={() =>
+                setSelectedSlugs(new Set(bundlePreview.pages.map((page) => page.slug)))
+              }
+            >
+              Select all
+            </button>
+            <button type="button" onClick={() => setSelectedSlugs(new Set())}>
+              Clear
+            </button>
+          </div>
           <ul className="guide-bundle-preview-pages">
-            {bundlePreview.pages.slice(0, 6).map((page) => (
-              <li key={page.url}>{page.title}</li>
-            ))}
-            {bundlePreview.pageCount > 6 && (
-              <li className="guide-bundle-preview-more">
-                and {bundlePreview.pageCount - 6} more
+            {bundlePreview.pages.map((page) => (
+              <li key={page.url} className="guide-bundle-preview-page-row">
+                <input
+                  id={`bundle-page-${page.slug}`}
+                  type="checkbox"
+                  checked={selectedSlugs.has(page.slug)}
+                  onChange={() => toggleBundlePage(page.slug)}
+                />
+                <label htmlFor={`bundle-page-${page.slug}`}>{page.title}</label>
               </li>
-            )}
+            ))}
           </ul>
           <div className="guide-bundle-preview-actions">
             <button
               type="button"
               className="nav-button"
               disabled={disabled}
-              onClick={() => setBundlePreview(null)}
+              onClick={() => {
+                setBundlePreview(null);
+                setSelectedSlugs(new Set());
+              }}
             >
               Cancel
             </button>
             <button
               type="button"
               className="nav-button guide-bundle-preview-add"
-              disabled={disabled}
+              disabled={disabled || selectedSlugs.size === 0}
               onClick={confirmBundle}
             >
-              Add bundle ({bundlePreview.pageCount} pages)
+              Add bundle ({selectedSlugs.size} pages)
             </button>
           </div>
         </div>

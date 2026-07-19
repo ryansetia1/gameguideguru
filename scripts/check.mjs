@@ -31,12 +31,20 @@ import {
 import { warmUpMicrophone } from "../lib/voice-meter.js";
 import { buildGuideDiscoveryQuery } from "../lib/guide-search.js";
 import { chunkGuide } from "../lib/chunk-guide.js";
-import { guideIngestHint } from "../lib/guide-hints.js";
+import { guideIngestHint, guideIngestHintFromResponse } from "../lib/guide-hints.js";
+import {
+  bundleHasPendingPages,
+  bundlePrefsAllFromUserMetadata,
+  coerceBundlePrefsFromBody,
+  mergeBundlePrefsAll,
+  targetBundleSlugs,
+} from "../lib/bundle-prefs.js";
 import { isReplicateRateLimit, parsePositiveInt } from "../lib/replicate-retry.js";
 import {
   canonicalGamefaqsBundleUrl,
   parseGamefaqsFaqUrl,
   parseGamefaqsTocFromHtml,
+  parseGamefaqsPagesFromUrls,
   titleFromGamefaqsSlug,
 } from "../lib/gamefaqs-bundle.js";
 import {
@@ -277,6 +285,69 @@ assert.match(
   guideIngestHint({ available: true, indexedCount: 1, total: 3 }) ?? "",
   /2 of 3/,
 );
+assert.match(
+  guideIngestHintFromResponse({
+    available: true,
+    results: [{ bundle: true, pageCount: 12, pagesIndexed: 10, indexed: true }],
+  }) ?? "",
+  /10 of 12 bundle pages/i,
+);
+assert.match(
+  guideIngestHintFromResponse({
+    available: true,
+    results: [
+      {
+        bundle: true,
+        pageCount: 12,
+        pagesIndexed: 11,
+        indexed: true,
+        pagesMissing: [{ slug: "faq", title: "FAQ", url: "https://example.com/faq" }],
+      },
+    ],
+  }) ?? "",
+  /Not indexed: FAQ/i,
+);
+
+assert.deepEqual(
+  targetBundleSlugs(
+    [{ slug: "a" }, { slug: "b" }, { slug: "c" }],
+    { skippedSlugs: ["b"], selectedSlugs: ["a", "b", "c"] },
+  ),
+  ["a", "c"],
+);
+assert.equal(
+  bundleHasPendingPages(
+    [{ slug: "a" }, { slug: "b" }],
+    ["a"],
+    { skippedSlugs: ["b"] },
+  ),
+  false,
+);
+assert.deepEqual(
+  coerceBundlePrefsFromBody({
+    "https://gamefaqs.gamespot.com/faqs/1": {
+      skipSlugs: ["faq"],
+      includeSlugs: ["part-1"],
+    },
+  })["https://gamefaqs.gamespot.com/faqs/1"],
+  { skippedSlugs: ["faq"], selectedSlugs: ["part-1"] },
+);
+
+assert.deepEqual(
+  mergeBundlePrefsAll(
+    { "https://gamefaqs.gamespot.com/faqs/1": { skippedSlugs: ["a"], selectedSlugs: ["x"] } },
+    { "https://gamefaqs.gamespot.com/faqs/1": { skippedSlugs: ["b"], selectedSlugs: ["y"] } },
+  )["https://gamefaqs.gamespot.com/faqs/1"],
+  { skippedSlugs: ["a", "b"], selectedSlugs: ["y"] },
+);
+assert.deepEqual(
+  bundlePrefsAllFromUserMetadata({
+    bundle_prefs: {
+      "https://gamefaqs.gamespot.com/faqs/1": { skipSlugs: ["faq"] },
+    },
+  }),
+  { "https://gamefaqs.gamespot.com/faqs/1": { skippedSlugs: ["faq"] } },
+);
 
 assert.equal(MAX_GUIDE_URLS, 5);
 assert.deepEqual(
@@ -286,6 +357,13 @@ assert.deepEqual(
     "not-a-url",
   ]),
   ["https://gamefaqs.gamespot.com/guide/1"],
+);
+assert.deepEqual(
+  normalizeGuideUrlList([
+    "https://www.lordyuanshu.com/3-suikoden",
+    "https://lordyuanshu.com/3-suikoden",
+  ]),
+  ["https://www.lordyuanshu.com/3-suikoden"],
 );
 assert.deepEqual(
   coerceGuideUrlsFromBody({
@@ -336,6 +414,18 @@ const tocPages = parseGamefaqsTocFromHtml(sampleTocHtml, {
 assert.equal(tocPages.length, 3, "TOC skips boards link");
 assert.ok(tocPages.some((page) => page.slug === "walkthrough-part-1"));
 assert.equal(titleFromGamefaqsSlug("walkthrough-part-5"), "Walkthrough Part 5");
+
+const searchPages = parseGamefaqsPagesFromUrls(
+  [
+    "https://gamefaqs.gamespot.com/ps/198843-suikoden/faqs/80674/introduction",
+    "https://gamefaqs.gamespot.com/ps/198843-suikoden/faqs/80674/walkthrough-part-1",
+    "https://gamefaqs.gamespot.com/ps/198843-suikoden/faqs/80674/walkthrough-part-2",
+    "https://gamefaqs.gamespot.com/boards/198843-suikoden",
+  ],
+  { faqId: "80674", canonicalUrl: suikodenBundle },
+);
+assert.equal(searchPages.length, 3);
+assert.equal(searchPages[0].slug, "introduction");
 
 assert.equal(isReplicateRateLimit(new Error("429 Too Many Requests")), true);
 assert.equal(isReplicateRateLimit(new Error("network down")), false);

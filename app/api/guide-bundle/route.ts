@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { discoverGamefaqsBundle } from "@/lib/gamefaqs-bundle.js";
+import { discoverGamefaqsBundleResolved } from "@/lib/gamefaqs-discover";
 import { cleanGuideUrl } from "@/lib/guide-urls.js";
 
 export const runtime = "nodejs";
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const preview = await discoverGamefaqsBundle(preferredUrl, request.signal);
+    const preview = await discoverGamefaqsBundleResolved(preferredUrl, request.signal);
     return NextResponse.json(preview);
   } catch (error) {
     console.error("Guide bundle preview failed:", error);

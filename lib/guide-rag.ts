@@ -79,6 +79,10 @@ export async function retrieveFromPreferredGuides(input: {
   guideUrls: string[];
   query: string;
   signal?: AbortSignal;
+  game?: string;
+  platform?: string;
+  userId?: string | null;
+  bundlePrefs?: Record<string, { skippedSlugs?: string[]; selectedSlugs?: string[] }>;
 }): Promise<GuideRagResult | null> {
   const preferred = normalizeGuideUrlList(input.guideUrls);
   if (!preferred.length) return null;
@@ -92,7 +96,16 @@ export async function retrieveFromPreferredGuides(input: {
   }
 
   const ingestResults = await Promise.all(
-    preferred.map((guideUrl) => ensureGuideIngested(guideUrl, input.signal)),
+    preferred.map((guideUrl) => {
+      const prefs = input.bundlePrefs?.[guideUrl];
+      return ensureGuideIngested(guideUrl, input.signal, {
+        game: input.game,
+        platform: input.platform,
+        userId: input.userId,
+        skipSlugs: prefs?.skippedSlugs,
+        includeSlugs: prefs?.selectedSlugs,
+      });
+    }),
   );
   const hubWarning = ingestResults.some((result) => result.hubWarning);
   const indexedCount = ingestResults.filter((result) => result.indexed).length;
@@ -111,7 +124,13 @@ export async function retrieveFromPreferredGuides(input: {
   const indexedPreferred = preferred.filter((_, index) => ingestResults[index]?.indexed);
   const { guideUrls, guideBundles } = resolveRagTargets(indexedPreferred);
 
-  const queryEmbedding = await embedQuery(input.query, input.signal);
+  const queryEmbedding = await embedQuery(input.query, input.signal, {
+    purpose: "rag_query",
+    game: input.game,
+    platform: input.platform,
+    userId: input.userId,
+    guideUrl: indexedPreferred[0],
+  });
   if (!queryEmbedding?.length) {
     return {
       sources: [],

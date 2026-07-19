@@ -92,6 +92,7 @@ async function runSearch(
   query: string,
   includeDomains: string[],
   signal?: AbortSignal,
+  maxResults = 5,
 ): Promise<SearchResult[]> {
   const response = await fetch(TAVILY_URL, {
     method: "POST",
@@ -104,7 +105,7 @@ async function runSearch(
       // "advanced" extracts more relevant page chunks and re-ranks better than
       // "basic" (which let an unrelated game outrank the correct guides).
       search_depth: "advanced",
-      max_results: 5,
+      max_results: maxResults,
       include_answer: false,
       exclude_domains: EXCLUDE_DOMAINS,
       ...(includeDomains.length ? { include_domains: includeDomains } : {}),
@@ -476,11 +477,12 @@ async function serperQuery(
   apiKey: string,
   q: string,
   signal?: AbortSignal,
+  num = 10,
 ): Promise<SearchResult[]> {
   const response = await fetch(SERPER_URL, {
     method: "POST",
     headers: { "X-API-KEY": apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ q, num: 10 }),
+    body: JSON.stringify({ q, num }),
     signal: combineSignal(12_000, signal),
   });
   if (!response.ok) throw new Error(`Serper search failed with status ${response.status}`);
@@ -563,4 +565,45 @@ export async function discoverGuideLinks(
   }
 
   return (await searchSerper(serperKey as string, searchQuery)).slice(0, DISCOVER_MAX);
+}
+
+/**
+ * Site-scoped URL discovery for multi-page guide bundles (no confidence gate).
+ */
+export async function searchDiscoveryUrls(
+  query: string,
+  signal?: AbortSignal,
+  options: { maxResults?: number; domains?: string[] } = {},
+): Promise<SearchResult[]> {
+  const maxResults = options.maxResults ?? 25;
+  const domains = options.domains ?? [];
+  const tavilyKey = process.env.TAVILY_API_KEY;
+  const serperKey = process.env.SERPER_API_KEY;
+
+  if (tavilyKey) {
+    try {
+      const results = await runSearch(tavilyKey, query, domains, signal, maxResults);
+      if (results.length) return results;
+    } catch (error) {
+      if (!serperKey) throw error;
+      console.error(
+        "Tavily discovery search failed; falling back to Serper:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+  }
+
+  if (serperKey) {
+    try {
+      return (await serperQuery(serperKey, query, signal, maxResults)).slice(0, maxResults);
+    } catch (error) {
+      console.error(
+        "Serper discovery search failed:",
+        error instanceof Error ? error.message : error,
+      );
+      return [];
+    }
+  }
+
+  return [];
 }

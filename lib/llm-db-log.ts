@@ -20,7 +20,7 @@ function getClient(): SupabaseClient | null {
 }
 
 export type LlmDbLogEntry = {
-  kind: "rewrite" | "summarize" | "censor";
+  kind: "rewrite" | "summarize" | "censor" | "embed_index" | "embed_query";
   model: string;
   system: string;
   prompt: string;

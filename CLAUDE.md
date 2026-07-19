@@ -224,10 +224,21 @@ do not sync to the cloud or use Storage uploads.
   (`spoilers` trimmed to `[]` when `spoilerPrefs.major` is false). Only
   `REPLICATE_API_TOKEN` is mandatory.
 - `app/api/guide-bundle/route.ts`: `GET ?url=` previews GameFAQs multi-page FAQ
-  bundles (page count + section list) before the user confirms add.
+  bundles (page count + section list) before the user confirms add. Discovery
+  uses `lib/gamefaqs-discover.ts` (site search + extract TOC enrichment; GameFAQs
+  blocks direct HTML fetch). `GET /api/guide-bundle/status?url=` returns per-page
+  indexed rows from `guide_chunks` for the game-card collapsible panel
+  (`app/bundle-index-panel.tsx`: missing pages listed first with Skip/Include
+  controls and optional Retry; toast names failed sections via `pagesMissing`.
+  Page pick at add time in `app/guide-link-field.tsx`; skip/select prefs in
+  `lib/bundle-prefs.js` (`localStorage` `gg:bundle-prefs`; signed-in users sync
+  `user_metadata.bundle_prefs` across devices, skip union + selected remote-wins).
 - `app/api/guide-ingest/route.ts`: lazy shared ingest for one or more preferred
-  guide URLs (GameFAQs bundles expand to all TOC pages). Used by the client to
-  show "Indexing your guide(s)..." before the first solve turn.
+  guide URLs (GameFAQs bundles expand to discovered TOC pages, filtered by
+  `bundlePrefs` skip/include). Accepts `game`/`platform`/`userId` for embed audit
+  logs. Skips re-ingest client-side when all target pages are indexed. Returns
+  `pagesMissing` when bundle sections fail extract/embed. Orphan pre-bundle root
+  rows are deleted on ingest.
 - `lib/gamefaqs-bundle.js`: GameFAQs FAQ autodetect, TOC discovery, bundle
   canonical URL normalization (max 50 pages per bundle). Chunks store optional
   `guide_bundle` (`db/guide-bundle.sql`) for retrieval across all pages.
@@ -316,10 +327,12 @@ do not sync to the cloud or use Storage uploads.
   input/output token counts (parsed from the Gemini prediction `logs` text in
   `lib/replicate.ts#runModel` — Gemini reports usage there, not in `metrics`).
   `game`/`platform`/`user_id` are logged on every call (client sends `userId`;
-  validated as a UUID in `/api/solve`). File tail in
+  validated as a UUID in `/api/solve`). Kinds: `rewrite`, `summarize`, `censor`,
+  plus `embed_index` / `embed_query` from `lib/embed-log.ts` (guide ingest batches
+  and per-turn RAG query embeds, including cache hits). File tail in
   `llm-log.json` (dev / `LLM_LOG=1`); Supabase table `public.llm_calls`
-  (`db/llm-calls.sql`) when `NEXT_PUBLIC_SUPABASE_*` are set (`LLM_DB_LOG=0`
-  disables). Insert-only RLS — no client reads.
+  (`db/llm-calls.sql`, patch `db/llm-calls-embed.sql` on older installs) when
+  `NEXT_PUBLIC_SUPABASE_*` are set (`LLM_DB_LOG=0` disables). Insert-only RLS — no client reads.
 - `lib/hero-copy.js`: rotating home marketing copy — `FUN_ROLES` (eyebrow
   "Companion for …", cycles on a timer; tap pauses/resumes) and `HERO_LINES`
   (`[hook, payoff]` headline pairs; one picked at random per open; index 0 is the

@@ -5,6 +5,7 @@ import {
   cleanGuideUrl,
   normalizeGuideUrlList,
 } from "@/lib/guide-urls.js";
+import { coerceBundlePrefsFromBody } from "@/lib/bundle-prefs.js";
 import {
   ensureGuideIngested,
   isGuideIndexed,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/guide-ingest";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -62,6 +64,14 @@ export async function POST(request: Request) {
 
   const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
   const urls = coerceGuideUrlsFromBody(record);
+  const game = typeof record.game === "string" ? record.game.slice(0, 120) : undefined;
+  const platform = typeof record.platform === "string" ? record.platform.slice(0, 80) : undefined;
+  const userId =
+    typeof record.userId === "string" && /^[0-9a-f-]{36}$/i.test(record.userId)
+      ? record.userId
+      : null;
+  const ingestCtx = { game, platform, userId };
+  const bundlePrefs = coerceBundlePrefsFromBody(record.bundlePrefs);
 
   if (!urls.length) {
     return NextResponse.json({ error: "Missing guide URL." }, { status: 400 });
@@ -78,12 +88,16 @@ export async function POST(request: Request) {
   }
 
   try {
-    const settled = await Promise.all(
-      urls.map(async (url) => {
-        const result = await ensureGuideIngested(url, request.signal);
-        return { url, ...result };
-      }),
-    );
+    const settled = [];
+    for (const url of urls) {
+      const prefs = bundlePrefs[url];
+      const result = await ensureGuideIngested(url, request.signal, {
+        ...ingestCtx,
+        skipSlugs: prefs?.skippedSlugs,
+        includeSlugs: prefs?.selectedSlugs,
+      });
+      settled.push({ url, ...result });
+    }
     const indexedCount = settled.filter((row) => row.indexed).length;
     const hubWarning = settled.some((row) => row.hubWarning);
 

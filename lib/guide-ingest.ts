@@ -2,12 +2,15 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { chunkGuide } from "@/lib/chunk-guide.js";
 import { embedTexts } from "@/lib/embed";
+import type { EmbedLogMeta } from "@/lib/embed-log";
 import { toVectorString } from "@/lib/embed-cache";
 import { cleanSnippet } from "@/lib/clean.js";
 import {
-  discoverGamefaqsBundle,
   parseGamefaqsFaqUrl,
+  slugFromGamefaqsPageUrl,
+  titleFromGamefaqsSlug,
 } from "@/lib/gamefaqs-bundle.js";
+import { discoverGamefaqsBundleResolved } from "@/lib/gamefaqs-discover";
 import { isGamefaqsBundleUrl } from "@/lib/guide-urls.js";
 import { parsePositiveInt, sleep } from "@/lib/replicate-retry.js";
 import { extractGuidePage, extractGuidePages, looksLikeHub } from "@/lib/tavily";
@@ -54,6 +57,8 @@ export type IngestResult = {
   bundleKey?: string;
   pageCount?: number;
   pagesIndexed?: number;
+  pagesMissing?: { slug: string; title: string; url: string }[];
+  pagesSkipped?: number;
 };
 
 async function countBundleChunks(
@@ -65,6 +70,86 @@ async function countBundleChunks(
     .select("*", { count: "exact", head: true })
     .eq("guide_bundle", bundleKey);
   return count ?? 0;
+}
+
+/** Remove pre-bundle single-page rows stored on the FAQ root URL. */
+async function deleteOrphanBundleRootChunks(
+  supabase: SupabaseClient,
+  parsed: NonNullable<ReturnType<typeof parseGamefaqsFaqUrl>>,
+): Promise<void> {
+  const root = normalizeGuideUrl(parsed.canonicalUrl);
+  try {
+    await supabase
+      .from("guide_chunks")
+      .delete()
+      .eq("guide_url", root)
+      .is("guide_bundle", null);
+  } catch (error) {
+    console.error("Guide ingest orphan cleanup failed:", error);
+  }
+}
+
+export type BundleIndexPageStatus = {
+  slug: string;
+  title: string;
+  url: string;
+  indexed: boolean;
+  chunks: number;
+};
+
+export type BundleIndexStatus = {
+  bundleKey: string;
+  canonicalUrl: string;
+  pagesIndexed: number;
+  chunkCount: number;
+  pages: BundleIndexPageStatus[];
+};
+
+/** Per-page index status for a GameFAQs bundle from guide_chunks. */
+export async function getBundleIndexStatus(
+  rawUrl: string,
+): Promise<BundleIndexStatus | null> {
+  const parsed = parseGamefaqsFaqUrl(rawUrl);
+  const supabase = getClient();
+  if (!parsed || !supabase) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from("guide_chunks")
+      .select("guide_url")
+      .eq("guide_bundle", parsed.bundleKey);
+    if (error) return null;
+
+    const byUrl = new Map<string, number>();
+    for (const row of data ?? []) {
+      if (!row?.guide_url) continue;
+      byUrl.set(row.guide_url, (byUrl.get(row.guide_url) ?? 0) + 1);
+    }
+
+    const pages: BundleIndexPageStatus[] = [...byUrl.entries()]
+      .map(([guideUrl, chunks]) => {
+        const slug = slugFromGamefaqsPageUrl(guideUrl, parsed.faqId);
+        return {
+          slug,
+          title: slug ? titleFromGamefaqsSlug(slug) : guideUrl,
+          url: guideUrl,
+          indexed: true,
+          chunks,
+        };
+      })
+      .sort((a, b) => a.title.localeCompare(b.title));
+
+    const chunkCount = pages.reduce((sum, page) => sum + page.chunks, 0);
+    return {
+      bundleKey: parsed.bundleKey,
+      canonicalUrl: parsed.canonicalUrl,
+      pagesIndexed: pages.length,
+      chunkCount,
+      pages,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** True when guide_chunks already has rows for this URL or bundle. */
@@ -136,13 +221,19 @@ async function storeGuideChunks(input: {
   guideBundle: string | null;
   text: string;
   signal?: AbortSignal;
+  embedLog?: EmbedLogMeta;
 }): Promise<{ indexed: boolean; chunkCount: number }> {
   const chunks = chunkGuide(input.text);
   if (!chunks.length) return { indexed: false, chunkCount: 0 };
 
   let embeddings: number[][];
   try {
-    embeddings = await embedTexts(chunks, input.signal);
+    embeddings = await embedTexts(chunks, input.signal, {
+      purpose: "ingest",
+      guideUrl: input.guideUrl,
+      bundleKey: input.guideBundle ?? undefined,
+      ...input.embedLog,
+    });
   } catch (error) {
     console.error("Guide ingest embed failed:", error);
     return { indexed: false, chunkCount: 0 };
@@ -157,31 +248,73 @@ async function storeGuideChunks(input: {
   });
 }
 
+type IngestContext = {
+  game?: string;
+  platform?: string;
+  userId?: string | null;
+  skipSlugs?: string[];
+  includeSlugs?: string[];
+};
+
+function filterBundlePages<T extends { slug: string }>(
+  pages: T[],
+  ctx?: IngestContext,
+): T[] {
+  const skip = new Set((ctx?.skipSlugs ?? []).map((slug) => slug.toLowerCase()));
+  const include = ctx?.includeSlugs?.length
+    ? new Set(ctx.includeSlugs.map((slug) => slug.toLowerCase()))
+    : null;
+  return pages.filter((page) => {
+    const slug = page.slug.toLowerCase();
+    if (skip.has(slug)) return false;
+    if (include && !include.has(slug)) return false;
+    return true;
+  });
+}
+
+function embedLogFromContext(ctx?: IngestContext): EmbedLogMeta | undefined {
+  if (!ctx?.game && !ctx?.platform && !ctx?.userId) return undefined;
+  return {
+    purpose: "ingest",
+    game: ctx.game,
+    platform: ctx.platform,
+    userId: ctx.userId,
+  };
+}
+
 type PendingPage = {
   guideUrl: string;
   guideBundle: string | null;
   chunks: string[];
+  slug: string;
 };
 
 async function storePendingPages(input: {
   supabase: SupabaseClient;
   pages: PendingPage[];
   signal?: AbortSignal;
-}): Promise<{ pagesIndexed: number; chunkCount: number }> {
-  if (!input.pages.length) return { pagesIndexed: 0, chunkCount: 0 };
+  embedLog?: EmbedLogMeta;
+}): Promise<{ pagesIndexed: number; chunkCount: number; indexedSlugs: string[] }> {
+  if (!input.pages.length) return { pagesIndexed: 0, chunkCount: 0, indexedSlugs: [] };
 
   const flatChunks = input.pages.flatMap((page) => page.chunks);
   let embeddings: number[][];
   try {
-    embeddings = await embedTexts(flatChunks, input.signal);
+    embeddings = await embedTexts(flatChunks, input.signal, {
+      purpose: "ingest",
+      guideUrl: input.pages[0]?.guideUrl,
+      bundleKey: input.pages[0]?.guideBundle ?? undefined,
+      ...input.embedLog,
+    });
   } catch (error) {
     console.error("Guide ingest batch embed failed:", error);
-    return { pagesIndexed: 0, chunkCount: 0 };
+    return { pagesIndexed: 0, chunkCount: 0, indexedSlugs: [] };
   }
 
   let pagesIndexed = 0;
   let chunkCount = 0;
   let offset = 0;
+  const indexedSlugs: string[] = [];
 
   for (const page of input.pages) {
     const slice = embeddings.slice(offset, offset + page.chunks.length);
@@ -196,15 +329,17 @@ async function storePendingPages(input: {
     if (stored.indexed) {
       pagesIndexed += 1;
       chunkCount += stored.chunkCount;
+      indexedSlugs.push(page.slug);
     }
   }
 
-  return { pagesIndexed, chunkCount };
+  return { pagesIndexed, chunkCount, indexedSlugs };
 }
 
 async function ingestSingleGuidePage(
   rawUrl: string,
   signal?: AbortSignal,
+  ctx?: IngestContext,
 ): Promise<IngestResult> {
   const supabase = getClient();
   if (!supabase || !process.env.REPLICATE_API_TOKEN) {
@@ -235,6 +370,7 @@ async function ingestSingleGuidePage(
     guideBundle: null,
     text,
     signal,
+    embedLog: embedLogFromContext(ctx),
   });
   if (!stored.indexed) {
     return { indexed: false, chunkCount: 0, hubWarning: true };
@@ -245,6 +381,7 @@ async function ingestSingleGuidePage(
 async function ingestGamefaqsBundle(
   rawUrl: string,
   signal?: AbortSignal,
+  ctx?: IngestContext,
 ): Promise<IngestResult> {
   const supabase = getClient();
   if (!supabase || !process.env.REPLICATE_API_TOKEN) {
@@ -253,34 +390,40 @@ async function ingestGamefaqsBundle(
 
   const parsed = parseGamefaqsFaqUrl(rawUrl);
   if (!parsed) {
-    return ingestSingleGuidePage(rawUrl, signal);
+    return ingestSingleGuidePage(rawUrl, signal, ctx);
   }
 
-  const discovery = await discoverGamefaqsBundle(rawUrl, signal);
+  const discovery = await discoverGamefaqsBundleResolved(rawUrl, signal);
   if (!discovery.bundle || !discovery.pages?.length) {
-    return ingestSingleGuidePage(rawUrl, signal);
+    return ingestSingleGuidePage(rawUrl, signal, ctx);
   }
 
-  const { pageCount = discovery.pages.length } = discovery;
-  const bundleKey = parsed.bundleKey;
-  const existingChunks = await countBundleChunks(supabase, bundleKey);
-  if (existingChunks > 0) {
+  const targetPages = filterBundlePages(discovery.pages, ctx);
+  if (!targetPages.length) {
     return {
-      indexed: true,
-      chunkCount: existingChunks,
-      hubWarning: false,
+      indexed: false,
+      chunkCount: 0,
+      hubWarning: true,
       bundle: true,
-      bundleKey,
-      pageCount,
-      pagesIndexed: pageCount,
+      bundleKey: parsed.bundleKey,
+      pageCount: 0,
+      pagesIndexed: 0,
+      pagesSkipped: discovery.pages.length,
     };
   }
 
+  const pageCount = targetPages.length;
+  const bundleKey = parsed.bundleKey;
+  const skippedCount = discovery.pages.length - targetPages.length;
+
+  await deleteOrphanBundleRootChunks(supabase, parsed);
+
   let pagesIndexed = 0;
   let chunkCount = 0;
+  const indexedSlugs = new Set<string>();
 
-  for (let offset = 0; offset < discovery.pages.length; offset += EXTRACT_BATCH_SIZE) {
-    const batch = discovery.pages.slice(offset, offset + EXTRACT_BATCH_SIZE);
+  for (let offset = 0; offset < targetPages.length; offset += EXTRACT_BATCH_SIZE) {
+    const batch = targetPages.slice(offset, offset + EXTRACT_BATCH_SIZE);
     const extracted = await extractGuidePages(
       batch.map((page) => page.url),
       signal,
@@ -299,6 +442,7 @@ async function ingestGamefaqsBundle(
       if ((count ?? 0) > 0) {
         pagesIndexed += 1;
         chunkCount += count ?? 0;
+        indexedSlugs.add(page.slug);
         continue;
       }
 
@@ -308,18 +452,29 @@ async function ingestGamefaqsBundle(
         guideUrl: page.url,
         guideBundle: bundleKey,
         chunks,
+        slug: page.slug,
       });
     }
 
-    const stored = await storePendingPages({ supabase, pages: pending, signal });
+    const stored = await storePendingPages({
+      supabase,
+      pages: pending,
+      signal,
+      embedLog: embedLogFromContext(ctx),
+    });
     pagesIndexed += stored.pagesIndexed;
     chunkCount += stored.chunkCount;
+    for (const slug of stored.indexedSlugs) indexedSlugs.add(slug);
 
-    const hasMore = offset + EXTRACT_BATCH_SIZE < discovery.pages.length;
+    const hasMore = offset + EXTRACT_BATCH_SIZE < targetPages.length;
     if (hasMore && INGEST_BATCH_DELAY_MS) {
       await sleep(INGEST_BATCH_DELAY_MS, signal);
     }
   }
+
+  const pagesMissing = targetPages
+    .filter((page) => !indexedSlugs.has(page.slug))
+    .map((page) => ({ slug: page.slug, title: page.title, url: page.url }));
 
   const hubWarning = pagesIndexed === 0;
   return {
@@ -330,6 +485,8 @@ async function ingestGamefaqsBundle(
     bundleKey,
     pageCount,
     pagesIndexed,
+    pagesMissing: pagesMissing.length ? pagesMissing : undefined,
+    pagesSkipped: skippedCount > 0 ? skippedCount : undefined,
   };
 }
 
@@ -340,9 +497,10 @@ async function ingestGamefaqsBundle(
 export async function ensureGuideIngested(
   rawUrl: string,
   signal?: AbortSignal,
+  ctx?: IngestContext,
 ): Promise<IngestResult> {
   if (parseGamefaqsFaqUrl(rawUrl)) {
-    return ingestGamefaqsBundle(rawUrl, signal);
+    return ingestGamefaqsBundle(rawUrl, signal, ctx);
   }
-  return ingestSingleGuidePage(rawUrl, signal);
+  return ingestSingleGuidePage(rawUrl, signal, ctx);
 }

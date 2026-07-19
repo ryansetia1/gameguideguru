@@ -4,6 +4,7 @@ import { getCachedSearch, setCachedSearch } from "@/lib/search-cache";
 import { censorSpoilers, resolveQuestion, summarize, type Turn } from "@/lib/replicate";
 import { guideIngestHint } from "@/lib/guide-hints.js";
 import { coerceGuideUrlsFromBody } from "@/lib/guide-urls.js";
+import { coerceBundlePrefsFromBody } from "@/lib/bundle-prefs.js";
 import { retrieveFromPreferredGuides } from "@/lib/guide-rag";
 import { coerceSpoilerPrefs } from "@/lib/spoiler-prefs";
 import { coerceDisplayName } from "@/lib/profile.js";
@@ -108,6 +109,7 @@ export async function POST(request: Request) {
   const spoilerPrefs = coerceSpoilerPrefs(record.spoilerPrefs);
   const playerName = coerceDisplayName(record.playerName);
   const userId = cleanUuid(record.userId);
+  const bundlePrefs = coerceBundlePrefsFromBody(record.bundlePrefs);
   const signal = request.signal;
 
   if (question.length < 2) {
@@ -150,6 +152,10 @@ export async function POST(request: Request) {
         guideUrls: preferredUrls,
         query: searchTopic,
         signal,
+        game,
+        platform,
+        userId,
+        bundlePrefs,
       });
 
       if (rag?.hubWarning) {

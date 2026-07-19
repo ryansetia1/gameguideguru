@@ -22,12 +22,42 @@ import {
 import { FUN_ROLES, HERO_LINES } from "@/lib/hero-copy.js";
 import { guideIngestHint, guideIngestHintFromResponse } from "@/lib/guide-hints.js";
 import {
+  bundleHasPendingPages,
+  bundlePrefsForApi,
+  getBundlePrefs,
+  hydrateBundlePrefsFromUser,
+  registerBundlePrefsSync,
+  skipBundlePage,
+  unskipBundlePage,
+} from "@/lib/bundle-prefs.js";
+import {
   guideUrlsFromChat,
   guideUrlsPayload,
   guideUrlsSummary,
+  guideUrlDedupeKey,
   isGamefaqsBundleUrl,
+  normalizeGuideUrlList,
 } from "@/lib/guide-urls.js";
 import { compressImage } from "@/lib/image.js";
+
+function buildBundlePrefsBody(urls: string[]) {
+  const out: Record<string, ReturnType<typeof bundlePrefsForApi>> = {};
+  for (const url of urls) {
+    if (!isGamefaqsBundleUrl(url)) continue;
+    out[url] = bundlePrefsForApi(url);
+  }
+  return out;
+}
+
+function mergedBundlePrefs(url: string, meta?: GuideBundleMeta) {
+  const stored = getBundlePrefs(url);
+  return {
+    skippedSlugs: meta?.skippedSlugs ?? stored.skippedSlugs ?? [],
+    selectedSlugs: meta?.selectedSlugs ?? stored.selectedSlugs,
+  };
+}
+
+import { BundleIndexPanel } from "./bundle-index-panel";
 import { GuideLinkField, type GuideBundleMeta } from "./guide-link-field";
 import { HltbRow } from "./hltb-row";
 import { PlatformSelect } from "./platform-select";
@@ -356,7 +386,13 @@ export default function Home() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [indexingGuideCount, setIndexingGuideCount] = useState(0);
+  const [indexingIsBundlePages, setIndexingIsBundlePages] = useState(false);
   const [guideBundleMeta, setGuideBundleMeta] = useState<Record<string, GuideBundleMeta>>({});
+  const [bundleIndexStatus, setBundleIndexStatus] = useState<
+    Record<string, { pages: { slug: string; title: string; url: string; chunks: number }[] }>
+  >({});
+  const [bundleStatusRev, setBundleStatusRev] = useState(0);
+  const [retryingBundleUrl, setRetryingBundleUrl] = useState<string | null>(null);
 
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -801,6 +837,7 @@ export default function Home() {
             bundle?: boolean;
             pageCount?: number;
             title?: string;
+            pages?: { slug: string; title: string; url: string }[];
           } = await response.json();
           if (!response.ok || !data.bundle || !data.pageCount) return null;
           return {
@@ -808,6 +845,7 @@ export default function Home() {
             meta: {
               title: data.title ?? "GameFAQs guide",
               pageCount: data.pageCount,
+              pages: data.pages,
             },
           };
         } catch {
@@ -816,9 +854,10 @@ export default function Home() {
       }),
     ).then((rows) => {
       if (cancelled) return;
-      const found = rows.filter((row): row is { url: string; meta: GuideBundleMeta } =>
-        Boolean(row),
-      );
+      const found = rows.filter((row) => row !== null) as {
+        url: string;
+        meta: GuideBundleMeta;
+      }[];
       if (!found.length) return;
       setGuideBundleMeta((prev) => {
         const next = { ...prev };
@@ -831,6 +870,171 @@ export default function Home() {
       cancelled = true;
     };
   }, [preferredUrls, guideBundleMeta]);
+
+  // Keep bundle skip/select prefs in sync with localStorage (survives refresh).
+  useEffect(() => {
+    const bundleUrls = preferredUrls.filter((url) => isGamefaqsBundleUrl(url));
+    if (!bundleUrls.length) return;
+    setGuideBundleMeta((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const url of bundleUrls) {
+        const row = next[url];
+        if (!row) continue;
+        const prefs = getBundlePrefs(url);
+        const skippedSame =
+          JSON.stringify(row.skippedSlugs ?? []) === JSON.stringify(prefs.skippedSlugs);
+        const selectedSame =
+          JSON.stringify(row.selectedSlugs ?? null) ===
+          JSON.stringify(prefs.selectedSlugs ?? null);
+        if (skippedSame && selectedSame) continue;
+        changed = true;
+        next[url] = {
+          ...row,
+          skippedSlugs: prefs.skippedSlugs,
+          selectedSlugs: prefs.selectedSlugs ?? row.selectedSlugs,
+        };
+      }
+      return changed ? next : prev;
+    });
+  }, [preferredUrls]);
+
+  const applyIngestRowToMeta = useCallback(
+    (
+      url: string,
+      row: Record<string, unknown>,
+      existing?: GuideBundleMeta,
+    ): GuideBundleMeta | undefined => {
+      if (!isGamefaqsBundleUrl(url)) return existing;
+      const pagesMissing = Array.isArray(row.pagesMissing)
+        ? (row.pagesMissing as { slug: string; title: string; url: string }[])
+        : undefined;
+      const prefs = mergedBundlePrefs(url, existing);
+      const skipped = new Set(prefs.skippedSlugs.map((slug) => slug.toLowerCase()));
+      const filteredMissing = pagesMissing?.filter(
+        (page) => !skipped.has(page.slug.toLowerCase()),
+      );
+      return {
+        title: existing?.title ?? "GameFAQs guide",
+        pageCount:
+          typeof row.pageCount === "number"
+            ? row.pageCount
+            : existing?.pageCount ?? filteredMissing?.length ?? 0,
+        pages: existing?.pages,
+        selectedSlugs: existing?.selectedSlugs,
+        skippedSlugs: existing?.skippedSlugs ?? prefs.skippedSlugs,
+        missingPages: filteredMissing?.length ? filteredMissing : undefined,
+      };
+    },
+    [],
+  );
+
+  const retryBundleIngest = useCallback(
+    async (url: string) => {
+      setRetryingBundleUrl(url);
+      try {
+        const response = await fetch("/api/guide-ingest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            preferredUrls: [url],
+            game,
+            platform,
+            userId: user?.id ?? null,
+            bundlePrefs: buildBundlePrefsBody([url]),
+          }),
+        });
+        if (!response.ok) return;
+        const ingestData = (await response.json()) as {
+          results?: Array<Record<string, unknown>>;
+        };
+        const row = ingestData.results?.[0];
+        if (row) {
+          setGuideBundleMeta((prev) => {
+            const updated = applyIngestRowToMeta(url, row, prev[url]);
+            return updated ? { ...prev, [url]: updated } : prev;
+          });
+          const hint = guideIngestHintFromResponse({
+            available: true,
+            results: [row],
+          });
+          if (hint) setToast(hint);
+        }
+        setBundleStatusRev((rev) => rev + 1);
+      } catch (error) {
+        console.error("Bundle retry ingest failed:", error);
+      } finally {
+        setRetryingBundleUrl(null);
+      }
+    },
+    [applyIngestRowToMeta, game, platform, user],
+  );
+
+  const handleSkipBundlePage = useCallback((url: string, slug: string) => {
+    const prefs = skipBundlePage(url, slug);
+    setGuideBundleMeta((prev) => {
+      const row = prev[url];
+      if (!row) return prev;
+      return {
+        ...prev,
+        [url]: {
+          ...row,
+          skippedSlugs: prefs.skippedSlugs,
+          missingPages: row.missingPages?.filter((page) => page.slug !== slug),
+        },
+      };
+    });
+  }, []);
+
+  const handleUnskipBundlePage = useCallback((url: string, slug: string) => {
+    const prefs = unskipBundlePage(url, slug);
+    setGuideBundleMeta((prev) => {
+      const row = prev[url];
+      if (!row) return prev;
+      return { ...prev, [url]: { ...row, skippedSlugs: prefs.skippedSlugs } };
+    });
+  }, []);
+
+  // Indexed page rows for GameFAQs bundles (DB truth for the collapsible panel).
+  useEffect(() => {
+    let cancelled = false;
+    const bundleUrls = preferredUrls.filter((url) => isGamefaqsBundleUrl(url));
+    if (!bundleUrls.length) return;
+
+    void Promise.all(
+      bundleUrls.map(async (url) => {
+        try {
+          const response = await fetch(
+            `/api/guide-bundle/status?url=${encodeURIComponent(url)}`,
+          );
+          if (!response.ok) return null;
+          const data: {
+            pages?: { slug: string; title: string; url: string; chunks: number }[];
+          } = await response.json();
+          if (!data.pages?.length) return null;
+          return { url, pages: data.pages };
+        } catch {
+          return null;
+        }
+      }),
+    ).then((rows) => {
+      if (cancelled) return;
+      const found = rows.filter(
+        (row): row is { url: string; pages: { slug: string; title: string; url: string; chunks: number }[] } =>
+          Boolean(row),
+      );
+      if (!found.length) return;
+      setBundleIndexStatus((prev) => {
+        const next = { ...prev };
+        for (const row of found) next[row.url] = { pages: row.pages };
+        return next;
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [preferredUrls, bundleStatusRev]);
 
   const bundlePageTotal = preferredUrls.reduce(
     (sum, url) => sum + (guideBundleMeta[url]?.pageCount ?? 0),
@@ -1024,6 +1228,40 @@ export default function Home() {
       saveGlobalSpoilerPrefs({ major: remote });
     }
   }, [user]);
+
+  useEffect(() => {
+    registerBundlePrefsSync(getSupabase());
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    hydrateBundlePrefsFromUser(user.user_metadata, getSupabase());
+    const bundleUrls = preferredUrls.filter((url) => isGamefaqsBundleUrl(url));
+    if (!bundleUrls.length) return;
+    setGuideBundleMeta((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const url of bundleUrls) {
+        const row = next[url];
+        if (!row) continue;
+        const prefs = getBundlePrefs(url);
+        const skippedSame =
+          JSON.stringify(row.skippedSlugs ?? []) === JSON.stringify(prefs.skippedSlugs);
+        const selectedSame =
+          JSON.stringify(row.selectedSlugs ?? null) ===
+          JSON.stringify(prefs.selectedSlugs ?? null);
+        if (skippedSame && selectedSame) continue;
+        changed = true;
+        next[url] = {
+          ...row,
+          skippedSlugs: prefs.skippedSlugs,
+          selectedSlugs: prefs.selectedSlugs ?? row.selectedSlugs,
+        };
+      }
+      return changed ? next : prev;
+    });
+    setBundleStatusRev((rev) => rev + 1);
+  }, [user, preferredUrls]);
 
   useEffect(() => {
     if (!game.trim()) {
@@ -1319,6 +1557,8 @@ export default function Home() {
   async function saveGameMeta() {
     setEditingGame(false);
     conversationGame.current = game;
+    const urls = normalizeGuideUrlList(preferredUrls);
+    setPreferredUrls(urls);
     const supabase = getSupabase();
     const id = activeChatIdRef.current;
     if (!id) return;
@@ -1330,7 +1570,7 @@ export default function Home() {
           ...existing,
           game,
           platform,
-          ...guideUrlsPayload(preferredUrls),
+          ...guideUrlsPayload(urls),
           release_year: releaseYear,
           updated_at: new Date().toISOString(),
         });
@@ -1345,7 +1585,7 @@ export default function Home() {
         .update({
           game,
           platform,
-          ...guideUrlsPayload(preferredUrls),
+          ...guideUrlsPayload(urls),
           cover_url: coverUrl,
           release_year: releaseYear,
           updated_at: new Date().toISOString(),
@@ -1669,6 +1909,7 @@ export default function Home() {
     setEditingIndex(null);
     setEditingText("");
     let succeeded = false;
+    const guideUrls = normalizeGuideUrlList(preferredUrls);
 
     const history = priorMessages
       .slice(-10)
@@ -1686,49 +1927,108 @@ export default function Home() {
 
     try {
       let ingestHint: string | null = null;
-      if (preferredUrls.length) {
-        const bundlePages = preferredUrls.reduce(
-          (sum, url) => sum + (guideBundleMeta[url]?.pageCount ?? 0),
-          0,
-        );
-        setIndexingGuideCount(
-          bundlePages > 1 ? bundlePages : preferredUrls.length,
-        );
-        try {
-          const ingestResponse = await fetch("/api/guide-ingest", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            signal: controller.signal,
-            body: JSON.stringify({ preferredUrls }),
-          });
-          if (ingestResponse.ok) {
-            const ingestData: unknown = await ingestResponse.json();
-            ingestHint = guideIngestHintFromResponse(ingestData);
-            if (ingestHint) setToast(ingestHint);
-          } else if (!controller.signal.aborted) {
-            let message: string | null = null;
-            try {
-              const errData: unknown = await ingestResponse.json();
-              if (
-                errData &&
-                typeof errData === "object" &&
-                "error" in errData &&
-                typeof errData.error === "string"
-              ) {
-                message = errData.error;
-              }
-            } catch {
-              // ignore parse errors
+      if (guideUrls.length) {
+        const ingestResults: Array<Record<string, unknown>> = [];
+        let hubWarning = false;
+        let bundleMetaForRun = { ...guideBundleMeta };
+        for (const url of guideUrls) {
+          if (!isGamefaqsBundleUrl(url) || bundleMetaForRun[url]?.pageCount) continue;
+          try {
+            const previewRes = await fetch(
+              `/api/guide-bundle?url=${encodeURIComponent(url)}`,
+              { signal: controller.signal },
+            );
+            if (!previewRes.ok) continue;
+            const preview = (await previewRes.json()) as {
+              bundle?: boolean;
+              pageCount?: number;
+              title?: string;
+              pages?: { slug: string; title: string; url: string }[];
+            };
+            if (preview.bundle && preview.pageCount) {
+              bundleMetaForRun = {
+                ...bundleMetaForRun,
+                [url]: {
+                  title: preview.title ?? "GameFAQs guide",
+                  pageCount: preview.pageCount,
+                  pages: preview.pages,
+                },
+              };
             }
-            ingestHint =
-              message ??
-              guideIngestHint({
-                available: true,
-                indexed: false,
-                total: preferredUrls.length,
-                indexedCount: 0,
-              });
+          } catch {
+            // preview is best-effort for loading copy
+          }
+        }
+        if (Object.keys(bundleMetaForRun).length > Object.keys(guideBundleMeta).length) {
+          setGuideBundleMeta(bundleMetaForRun);
+        }
+        try {
+          for (const url of guideUrls) {
+            const meta = bundleMetaForRun[url];
+            const bundlePages = meta?.pageCount && meta.pageCount > 1;
+            const discovered = meta?.pages ?? [];
+            const indexedSlugs = bundleIndexStatus[url]?.pages?.map((page) => page.slug) ?? [];
+            const prefs = mergedBundlePrefs(url, meta);
+            if (
+              bundlePages &&
+              discovered.length &&
+              !bundleHasPendingPages(discovered, indexedSlugs, prefs)
+            ) {
+              continue;
+            }
+            setIndexingIsBundlePages(Boolean(bundlePages));
+            setIndexingGuideCount(
+              bundlePages
+                ? meta.pageCount
+                : guideUrls.length > 1
+                  ? guideUrls.length
+                  : 1,
+            );
+            const ingestResponse = await fetch("/api/guide-ingest", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              signal: controller.signal,
+              body: JSON.stringify({
+                preferredUrls: [url],
+                game,
+                platform,
+                userId: user?.id ?? null,
+                bundlePrefs: buildBundlePrefsBody(guideUrls),
+              }),
+            });
+            if (ingestResponse.ok) {
+              const ingestData = (await ingestResponse.json()) as {
+                indexed?: boolean;
+                hubWarning?: boolean;
+                results?: Array<Record<string, unknown>>;
+              };
+              const row =
+                ingestData.results?.[0] ??
+                ({ indexed: ingestData.indexed, hubWarning: ingestData.hubWarning } as const);
+              ingestResults.push(row);
+              if (ingestData.hubWarning) hubWarning = true;
+              const updated = applyIngestRowToMeta(url, row, bundleMetaForRun[url]);
+              if (updated) {
+                bundleMetaForRun = { ...bundleMetaForRun, [url]: updated };
+              }
+            } else if (!controller.signal.aborted) {
+              ingestResults.push({ indexed: false });
+            }
+          }
+          if (ingestResults.length) {
+            const indexedCount = ingestResults.filter((row) => row.indexed).length;
+            ingestHint = guideIngestHintFromResponse({
+              available: true,
+              indexedCount,
+              total: guideUrls.length,
+              hubWarning,
+              results: ingestResults,
+            });
             if (ingestHint) setToast(ingestHint);
+            if (Object.keys(bundleMetaForRun).length) {
+              setGuideBundleMeta(bundleMetaForRun);
+            }
+            setBundleStatusRev((rev) => rev + 1);
           }
         } catch (ingestError) {
           if (!(ingestError instanceof DOMException && ingestError.name === "AbortError")) {
@@ -1736,13 +2036,14 @@ export default function Home() {
             ingestHint = guideIngestHint({
               available: true,
               indexed: false,
-              total: preferredUrls.length,
+              total: guideUrls.length,
               indexedCount: 0,
             });
             if (ingestHint) setToast(ingestHint);
           }
         } finally {
           setIndexingGuideCount(0);
+          setIndexingIsBundlePages(false);
         }
       }
 
@@ -1755,11 +2056,12 @@ export default function Home() {
           platform,
           question,
           history,
-          preferredUrls,
+          preferredUrls: guideUrls,
           images,
           spoilerPrefs,
           playerName: user ? displayNameFromMetadata(user.user_metadata) : "",
           userId: user?.id ?? null,
+          bundlePrefs: buildBundlePrefsBody(guideUrls),
         }),
       });
       const data: unknown = await response.json();
@@ -2448,18 +2750,64 @@ export default function Home() {
                       ? `${meta.title} (${meta.pageCount} pages)`
                       : "GameFAQs bundle"
                     : guideUrlsSummary([url]);
+                  const discoveredPages =
+                    meta?.pages?.map((page) => ({
+                      slug: page.slug,
+                      title: page.title,
+                      url: page.url,
+                    })) ?? [];
+                  const indexedPages = bundleIndexStatus[url]?.pages ?? [];
+                  const skippedSlugs =
+                    meta?.skippedSlugs ?? getBundlePrefs(url).skippedSlugs ?? [];
+                  const skippedSet = new Set(
+                    skippedSlugs.map((slug) => slug.toLowerCase()),
+                  );
+                  const missingPages = (
+                    meta?.missingPages ??
+                    discoveredPages
+                      .filter(
+                        (page) =>
+                          !indexedPages.some((hit) => hit.slug === page.slug),
+                      )
+                      .map((page) => ({
+                        slug: page.slug,
+                        title: page.title,
+                        url: page.url,
+                      }))
+                  ).filter((page) => !skippedSet.has(page.slug.toLowerCase()));
                   return (
-                    <a
-                      key={url}
-                      className="game-card-link"
-                      href={url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <span className="icon-inline">
-                        {label} <IconArrowUpRight />
-                      </span>
-                    </a>
+                    <div key={guideUrlDedupeKey(url)} className="game-card-guide-block">
+                      <a
+                        className="game-card-link"
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <span className="icon-inline">
+                          {label} <IconArrowUpRight />
+                        </span>
+                      </a>
+                      {bundle &&
+                      (discoveredPages.length > 0 ||
+                        indexedPages.length > 0 ||
+                        missingPages.length > 0 ||
+                        skippedSlugs.length > 0) ? (
+                        <BundleIndexPanel
+                          discoveredPages={discoveredPages}
+                          indexedPages={indexedPages}
+                          missingPages={missingPages}
+                          skippedSlugs={skippedSlugs}
+                          onSkipPage={(slug) => handleSkipBundlePage(url, slug)}
+                          onUnskipPage={(slug) => handleUnskipBundlePage(url, slug)}
+                          onRetryMissing={
+                            missingPages.length
+                              ? () => void retryBundleIngest(url)
+                              : undefined
+                          }
+                          retrying={retryingBundleUrl === url}
+                        />
+                      ) : null}
+                    </div>
                   );
                 })}
               </div>
@@ -2785,7 +3133,7 @@ export default function Home() {
                     <summary>Sources ({message.sources.length})</summary>
                     <ol>
                       {message.sources.map((source, i) => (
-                        <li key={source.url}>
+                        <li key={`${source.url}-${i}`}>
                           <a href={source.url} target="_blank" rel="noreferrer">
                             <span className="source-number">
                               {String(i + 1).padStart(2, "0")}
@@ -2812,8 +3160,8 @@ export default function Home() {
               <span className="scan-line" aria-hidden="true" />
               <p>
                 {indexingGuideCount
-                  ? bundlePageTotal > 1
-                    ? `Indexing GameFAQs bundle (${bundlePageTotal} pages)...`
+                  ? indexingIsBundlePages || bundlePageTotal > 1
+                    ? `Indexing GameFAQs bundle (${indexingGuideCount} pages). This may take a few minutes.`
                     : indexingGuideCount > 1
                       ? `Indexing ${indexingGuideCount} guides...`
                       : "Indexing your guide..."
