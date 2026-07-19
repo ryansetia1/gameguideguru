@@ -1573,6 +1573,7 @@ export default function Home() {
     setLoading(true);
     setEditingIndex(null);
     setEditingText("");
+    let succeeded = false;
 
     const history = priorMessages
       .slice(-10)
@@ -1650,6 +1651,7 @@ export default function Home() {
       // Temporary chat never persists, so drop this turn's uploaded images from
       // Storage instead of leaving them orphaned.
       if (temporary && images.length) void deleteMessageImages([userMessage]);
+      succeeded = true;
     } catch (caught) {
       setMessages(priorMessages);
       // A user-triggered Stop aborts the fetch — treat it as a silent cancel,
@@ -1662,6 +1664,11 @@ export default function Home() {
     } finally {
       abortRef.current = null;
       setLoading(false);
+      // Answer's in: hand focus back to the composer so a follow-up can be typed
+      // right away. rAF waits for the textarea to un-disable after loading clears.
+      if (succeeded) {
+        requestAnimationFrame(() => composerRef.current?.focus());
+      }
     }
   }
 
@@ -2074,14 +2081,7 @@ export default function Home() {
           </button>
           {coverEnabled && <CoverThumb cover={cover} name={game} className="cover-mini" />}
           <div className="sticky-meta">
-            <strong>
-              {game || "Untitled game"}
-              {temporary && (
-                <span className="temp-badge" title="Temporary chat">
-                  <IconIncognito size={13} />
-                </span>
-              )}
-            </strong>
+            <strong>{game || "Untitled game"}</strong>
             {(platform || releaseYear || game) && (
               <small className="meta-subline">
                 {displayPlatform(platform, cover) && (
@@ -2095,13 +2095,28 @@ export default function Home() {
                 {releaseYear && <span className="meta-chunk">{releaseYear}</span>}
                 <HltbRow
                   title={game}
-                  appId={steamAppIdFromCoverUrl(cover) || undefined}
+                  appId={steamAppIdFromCoverUrl(cover)?.toString()}
                   variant="inline"
                   sep={Boolean(displayPlatform(platform, cover) || releaseYear)}
                 />
               </small>
             )}
           </div>
+          {activeChatId && !temporary && (
+            <button
+              type="button"
+              className="sticky-incognito"
+              title="Start a temporary chat"
+              aria-label="Start a temporary chat"
+              disabled={loading}
+              onClick={(event) => {
+                event.stopPropagation();
+                void toggleTemporary();
+              }}
+            >
+              <IconIncognito size={18} />
+            </button>
+          )}
         </div>
       )}
 
@@ -2208,6 +2223,18 @@ export default function Home() {
 
       {started && !editingGame ? (
         <section className="game-card" aria-label="Game" ref={topRef}>
+          {activeChatId && !temporary && (
+            <button
+              type="button"
+              className="game-card-incognito"
+              title="Start a temporary chat"
+              aria-label="Start a temporary chat"
+              disabled={loading}
+              onClick={() => void toggleTemporary()}
+            >
+              <IconIncognito size={18} />
+            </button>
+          )}
           <div className="row-menu game-card-menu">
             <button
               type="button"
@@ -2243,12 +2270,12 @@ export default function Home() {
             )}
           </div>
           {coverEnabled && <CoverThumb cover={cover} name={game} className="cover-lg" />}
-          <div className="game-card-meta">
+          <div className={`game-card-meta${activeChatId && !temporary ? " has-quick" : ""}`}>
             <h2>{game || "Untitled game"}</h2>
             {(platform || releaseYear) && (
               <p>{[displayPlatform(platform, cover), releaseYear].filter(Boolean).join(" · ")}</p>
             )}
-            <HltbRow title={game} appId={steamAppIdFromCoverUrl(cover) || undefined} />
+            <HltbRow title={game} appId={steamAppIdFromCoverUrl(cover)?.toString()} />
             {preferredUrl && (
               <a
                 className="game-card-link"
@@ -2447,21 +2474,6 @@ export default function Home() {
         </div>
       )}
 
-      {temporary && !quickIdle && (
-        <div className="temp-banner" role="status">
-          <IconIncognito size={16} />
-          <span>Temporary chat. This won&apos;t be saved.</span>
-          <button
-            type="button"
-            className="temp-banner-off"
-            disabled={loading}
-            onClick={() => void toggleTemporary()}
-          >
-            Turn off
-          </button>
-        </div>
-      )}
-
       {started && (
         <section className="feed" aria-live="polite">
           {messages.map((message, index) =>
@@ -2638,7 +2650,10 @@ export default function Home() {
       {/* Composer is useless in the idle carousel state (no game field visible);
           it returns once "+ New game" reveals the setup form. */}
       {!quickIdle && (
-      <form className={`composer${started ? " docked" : ""}`} onSubmit={handleSubmit}>
+      <form
+        className={`composer${started ? " docked" : ""}${temporary ? " temporary" : ""}`}
+        onSubmit={handleSubmit}
+      >
         {coverEnabled && pendingImages.length > 0 && (
           <div className="composer-attachments">
             {pendingImages.map((img, i) => (
@@ -2687,6 +2702,18 @@ export default function Home() {
             />
             <VoiceVisualizer active={voiceListening} />
           </div>
+          {temporary && (
+            <button
+              type="button"
+              className="composer-temp-flag"
+              title="Temporary chat on. Tap to turn off."
+              aria-label="Temporary chat on. Tap to turn off."
+              disabled={loading}
+              onClick={() => void toggleTemporary()}
+            >
+              <IconIncognito />
+            </button>
+          )}
           <ComposerExtras
             user={user}
             disabled={composerLocked}

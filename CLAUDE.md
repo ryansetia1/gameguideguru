@@ -43,9 +43,14 @@ and simply cannot save.
   (signed-in saved chats) or a `sessionStorage` draft (`lib/chat-session.js`;
   anon / not-yet-saved). `runTurn`/`persistChat` centralise ask +
   save; `conversationGame` tracks which game the visible thread belongs to.
-  **Temporary chat** (`temporary` flag, toggled from the composer "+" menu; a
-  thin banner with a "Turn off" button + a sticky-header badge show while it's on):
-  when on, `persistChat` returns early and the URL/`sessionStorage` sync effect
+  **Temporary chat** (`temporary` flag): entered from the composer "+" menu, or via
+  a quick-access incognito button on the saved game card (`.game-card-incognito`)
+  and the sticky mini-header (`.sticky-incognito`), both shown when
+  `activeChatId && !temporary`. While on, the docked composer's border
+  goes **dashed** (`.composer.temporary`) and a dim, borderless incognito glyph sits
+  left of "+" (`.composer-temp-flag`, tap to turn off) — an always-visible signal,
+  unlike a header badge that scrolls away.
+  When on, `persistChat` returns early and the URL/`sessionStorage` sync effect
   writes nothing, so the thread is memory-only and a refresh/close wipes it (follow-ups
   still work from `messages` state). It is a non-destructive detour: turning it ON
   snapshots the open thread (`preTemporaryRef`) and starts a fresh thread (keeping
