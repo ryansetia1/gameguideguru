@@ -397,9 +397,23 @@ do not sync to the cloud or use Storage uploads.
   duplicate upstream embed work). Query-embed cache is best-effort (`embed_cache`).
   Given page only; hub/multi-page guides rely on the user pasting the real page
   (surfaced via optional `guideHint` toast).
+- **Preferred-guide RAG cost ceiling (cannot blow up per turn):** retrieval uses
+  `match_guide_chunks` with `LIMIT` (`RETRIEVE_K = 5` in `lib/guide-rag.ts`) —
+  the full ingested guide never goes to Gemini, only up to five stored chunks.
+  Each chunk is sized at ingest (~500 tokens, `TARGET_CHARS` in
+  `lib/chunk-guide.js`). On a high-similarity hit, Gemini `summarize` gets those
+  five chunks plus rewrite/history/question (~3k–5k input tokens for research,
+  not 50k+). On a miss: one best chunk + tiered web search (3 snippets × 800
+  chars). **To spend less (future tuning):** (1) lower `RETRIEVE_K` (5 → 3) in
+  `lib/guide-rag.ts`; (2) add a per-source `content` cap in `buildPrompt` (e.g.
+  1500 chars) as a safety net if ingest ever stores one giant chunk; (3) raise
+  `GUIDE_HIT` so more turns fall back to shorter Tavily snippets instead of five
+  RAG chunks; (4) shorten the RAG rewrite cap in `resolveQuestion` (`forRag`
+  `maxChars` / `REWRITE_RAG_INSTRUCTION` word limit). Do not remove the SQL
+  `LIMIT` or send unbounded `guide_chunks` rows to `summarize`.
 - Every turn runs two sequential Gemini calls (`resolveQuestion` then
-  `summarize`). `max_output_tokens` on the rewrite must stay generous (~200);
-  too tight a cap returns empty even with thinking off.
+  `summarize`). Web rewrite `max_output_tokens` ~200; preferred-guide RAG rewrite
+  ~400 (`forRag`). Too tight a cap returns empty even with thinking off.
 - `summarize` asks for JSON (`answer` + `highlights`); `parseSummary` tolerates
   prose/markdown fences when the model drifts. ponytail: prompt-instructed JSON
   rather than `response_mime_type` (not exposed on Replicate's Gemini input).
