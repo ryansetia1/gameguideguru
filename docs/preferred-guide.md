@@ -51,14 +51,48 @@ Feeding the whole book each turn (~4 chars/token):
 | Medium (~100k char) | 25k | $0.0075 |
 | Big FF mega-FAQ (~400k char) | 100k | $0.03 |
 
-A 20-question session on a big guide ≈ **$0.70**. Feeding the full book is cheap.
+A 20-question session on a big guide ≈ **$0.70**. Feeding the full book is cheap
+*per session*.
 
-**Conclusion:** there is no cost reason to build embeddings/RAG. The lazy path
-(feed the book, let the model locate the section) is both the cheapest to build
-and cheap to run. Embeddings only earns its place if a guide is genuinely larger
-than the model's context window (~1M tokens / ~4MB of text — very rare for a
-single-page walkthrough). See the appendix for when/how, kept as a break-glass
-option only.
+**But cost is linear in turn count.** A long game is hundreds of turns, and each
+turn re-feeds the whole book from scratch:
+
+| Approach | tokens/turn | 300 turns | input cost |
+|---|---|---|---|
+| Full-book, medium guide (100k char) | 25k | 7.5M | $2.25 |
+| Full-book, big FF FAQ (400k char) | 100k | 30M | $9.00 |
+| Embeddings/RAG (5 chunks) | ~6k | 1.8M | ~$0.55 |
+
+So over a full playthrough RAG is ~4–16x cheaper on input, and embedding the book
+itself is negligible (~$0.002 once). $9/playthrough is fine for a few prototype
+users; times 1000 players it's real money. This is a **scale** concern, not a
+prototype one.
+
+**Multi-guide kills full-book outright.** If the player supplies 3–5 guides,
+full-book has to feed *all* of them every turn (3–5x tokens, may overflow the
+context window). RAG is the natural fit: all chunks from all guides in one table,
+retrieve the most relevant across books. A planned multi-guide feature effectively
+*forces* RAG — it arrives with that feature, not before.
+
+**The honest trade-off (not just cost):**
+
+| | Full-book | Embeddings/RAG |
+|---|---|---|
+| Section accuracy | Best (model sees the whole book, can't "miss" a section) | Retrieval-miss risk (top-N can skip the answer) |
+| Cost over hundreds of turns | Bloats | Cheap |
+| Multi-guide | Doesn't work | Native |
+| Build complexity | Trivial | Real (embed provider, pgvector, chunking, ingest) |
+
+**Sequencing conclusion.** Langkah #1 is **not** wasted work either way: its real
+value is the generation-side fidelity fix (label + directive), which is
+backend-agnostic and carries over to RAG **unchanged**. The only full-book-specific
+piece is one constant (the cap). So:
+
+- **Multi-guide imminent (weeks/months)** → build RAG now, skip the full-book cap
+  change; do the fidelity fix as part of it.
+- **Multi-guide "someday, maybe"** → ship langkah #1 (full-book, single guide) to
+  validate the UX cheaply, and let the multi-guide feature be the trigger that
+  brings RAG later (swap retrieval, keep the prompt work).
 
 ## The plan (langkah #1 — do this)
 
@@ -126,9 +160,11 @@ directive, and a call with only plain sources does not. One assert, no framework
 
 ## Appendix — embeddings/RAG (break-glass only)
 
-Do **not** build this now. Documented so the option is understood. It becomes
-relevant only if: (a) a guide is larger than the context window, or (b) you
-decide to search across *many* guides at once. Neither is today's vision.
+Build this when **multi-guide** lands, or sooner if hundreds-of-turns cost on a
+big single guide starts to hurt at your user scale (see the cost table above — it
+becomes materially cheaper than full-book over a long playthrough). It's also the
+only option that supports searching across *many* guides at once. Not needed for a
+single-guide prototype validating the UX.
 
 ### What it is
 
