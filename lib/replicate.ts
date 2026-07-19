@@ -4,6 +4,7 @@ import { parseSummary } from "@/lib/highlights.js";
 import { logLlmCall } from "@/lib/llm-log";
 import {
   REWRITE_INSTRUCTION,
+  REWRITE_RAG_INSTRUCTION,
   SYSTEM_INSTRUCTION,
   buildPrompt,
   buildRewritePrompt,
@@ -133,10 +134,17 @@ export async function resolveQuestion(input: {
   platform?: string;
   userId?: string | null;
   signal?: AbortSignal;
+  /** Preferred-guide RAG: longer contextual retrieval query instead of a short web-search string. */
+  forRag?: boolean;
 }): Promise<string> {
   const token = process.env.REPLICATE_API_TOKEN;
   const model = resolveModel();
   if (!token || !model) return input.question;
+
+  const forRag = Boolean(input.forRag);
+  const instruction = forRag ? REWRITE_RAG_INSTRUCTION : REWRITE_INSTRUCTION;
+  const maxOutputTokens = forRag ? 400 : 200;
+  const maxChars = forRag ? 600 : 200;
 
   try {
     const replicate = new Replicate({ auth: token });
@@ -147,9 +155,9 @@ export async function resolveQuestion(input: {
       model,
       {
         prompt,
-        system_instruction: REWRITE_INSTRUCTION,
+        system_instruction: instruction,
         temperature: 0.2,
-        max_output_tokens: 200,
+        max_output_tokens: maxOutputTokens,
         thinking_budget: 0,
       },
       15_000,
@@ -159,7 +167,7 @@ export async function resolveQuestion(input: {
     logLlmCall({
       kind: "rewrite",
       model,
-      system: REWRITE_INSTRUCTION,
+      system: instruction,
       prompt,
       response: rawOutput,
       durationMs,
@@ -174,7 +182,7 @@ export async function resolveQuestion(input: {
       .replace(/\s+/g, " ")
       .replace(/^["']|["']$/g, "")
       .trim()
-      .slice(0, 200);
+      .slice(0, maxChars);
     return rewritten || input.question;
   } catch (error) {
     console.error("Query rewrite failed, using raw question:", error);

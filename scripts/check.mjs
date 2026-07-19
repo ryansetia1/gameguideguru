@@ -6,6 +6,7 @@ import { coerceHighlights, coerceSpoilers, parseSummary } from "../lib/highlight
 import { PLATFORMS, matchPlatforms, tgdbPlatformToLabel } from "../lib/platforms.js";
 import {
   REWRITE_INSTRUCTION,
+  REWRITE_RAG_INSTRUCTION,
   SYSTEM_INSTRUCTION,
   buildPrompt,
   buildRewritePrompt,
@@ -320,7 +321,10 @@ assert.equal(tgdbPlatformToLabel("Some Unknown Console"), "");
 // Follow-up query rewrite: instruction stays English/standalone, and the
 // prompt carries the conversation so references can be resolved.
 assert.match(REWRITE_INSTRUCTION, /standalone web-search query in English/);
-assert.match(REWRITE_INSTRUCTION, /Expand vague phrasing/);
+assert.match(REWRITE_INSTRUCTION, /under 15 words/);
+assert.match(REWRITE_RAG_INSTRUCTION, /standalone retrieval query/);
+assert.match(REWRITE_RAG_INSTRUCTION, /up to about 60 words/);
+assert.match(REWRITE_RAG_INSTRUCTION, /walkthrough to look up/);
 const rewritePrompt = buildRewritePrompt({
   question: "Setelah poin 3 ngapain",
   history: [

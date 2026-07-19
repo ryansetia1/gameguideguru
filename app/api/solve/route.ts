@@ -133,6 +133,7 @@ export async function POST(request: Request) {
       platform,
       userId,
       signal,
+      forRag: Boolean(preferredUrl),
     });
 
     const hasSearchProvider = Boolean(

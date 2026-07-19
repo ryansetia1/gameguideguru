@@ -80,8 +80,9 @@ When `preferredUrl` is empty, only Call 2 runs (today's path). The embed call is
 skipped entirely.
 
 `ponytail:` sequential, not parallel — retrieval must finish before generation.
-The rewrite call (`resolveQuestion`) stays upstream of both; it is not a third
-Replicate embed, it is the existing small Gemini rewrite we already pay per turn.
+The rewrite call (`resolveQuestion`) stays upstream of both. With a preferred
+guide it uses `REWRITE_RAG_INSTRUCTION` (1–2 sentences, ~60 words) for embed
+retrieval; without one it keeps the short web-search rewrite (≤15 words).
 
 ## Cost and latency strategy
 

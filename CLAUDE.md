@@ -259,9 +259,10 @@ do not sync to the cloud or use Storage uploads.
   (`max_output_tokens`, `thinking_budget: 0`) and parses the JSON
   `{ answer, highlights, spoilers, spoilerRisk }` via `lib/highlights.js#parseSummary`.
   `/api/solve` calls `censorSpoilers` when spoilers are OFF and `spoilerRisk` is
-  true (best-effort rewrite; fails open). `resolveQuestion({ question, history })`
-  does a small, low-token call to rewrite any question into a standalone English
-  search query, falling back to the raw question on any failure. Exports the
+  true (best-effort rewrite; fails open). `resolveQuestion({ question, history, forRag? })`
+  does a small Gemini call: short web-search query (≤15 words) by default, or a
+  longer contextual retrieval query (~60 words) when `forRag` is set for preferred-guide
+  RAG embed. Falls back to the raw question on any failure. Exports the
   `Turn`, `Highlight`, `SpoilerReveal`, and `SummaryResult` types.
 - `lib/profile.js`: `display_name` / avatar helpers for the profile menu and page.
   `avatarUrlFromUser` is pref-aware: it honours `user_metadata.avatar_pref`
