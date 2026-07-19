@@ -24,7 +24,7 @@ that guide.
   before exposing multi-guide.
 - **Cost over a long game.** Full-book feeding is linear in turns; a 300-turn
   playthrough on a big guide is ~$2–9 of input. RAG (retrieve a few chunks) is
-  ~$0.55. See cost recap below.
+  ~$0.85 with Qwen3 embeds. See cost recap below.
 - **The retrieval quality is the risk to de-risk.** Single-guide RAG *is*
   multi-guide RAG with the filter `WHERE guide_url = ?`. Chunking, ingest,
   retrieval, prompt — all identical. So one-guide first proves the hard part
@@ -32,15 +32,76 @@ that guide.
 
 ## Decided stack
 
-- **Embedder:** `nomic-embed-text` on Replicate (same provider/key as the LLM,
-  8192-token context, 768-dim, beats OpenAI 3-small on MTEB long-context). NOT
-  CLIP — CLIP's text encoder caps at 77 tokens (~20 effective) and is an
+- **Embedder:** **Qwen3-Embedding-8B** on Replicate (`lucataco/qwen3-embedding-8b`,
+  same provider/key as the LLM). Best accuracy of the candidates we evaluated,
+  32k-token context (handles long guide sections without truncation), 1024-dim.
+  NOT CLIP — CLIP's text encoder caps at 77 tokens (~20 effective) and is an
   image-caption model, useless for guide chunks.
-  - Ingest-ergonomics alt (only if the Replicate model won't batch): OpenAI
+  - See **Embedding model candidates** below for the full comparison and why we
+    picked Qwen3 over Nomic / EmbeddingGemma.
+  - Ingest-ergonomics alt (only if Qwen3 won't batch): OpenAI
     `text-embedding-3-small` batches up to 2048 inputs per call and is per-token
-    cheap, at the cost of one new API key. Default stays nomic-on-Replicate.
+    cheap, at the cost of one new API key. Default stays Qwen3-on-Replicate.
 - **Vector store:** Supabase **pgvector** (already have Supabase; no new infra).
 - **Generation:** Gemini 2.5 Flash on Replicate (unchanged).
+
+## Embedding model candidates (RAG context)
+
+Evaluated on Replicate. All three are viable; **Qwen3-Embedding-8B is the
+project standard** for guide-search accuracy.
+
+| Feature | Nomic Embed v1 | EmbeddingGemma-300m | Qwen3-Embedding-8B |
+| --- | --- | --- | --- |
+| Provider (Replicate) | lucataco | zsxkib | lucataco |
+| Context window | 8,192 tokens | 2,048 tokens | 32,000 tokens |
+| Dimensions (default) | 768 | 768 | 1,024 |
+| MTEB score | 62.39 | — | 70.58 |
+| Cost per run | $0.00022 | $0.00022 | $0.00098 |
+| Main strength | Very cheap, open source | Base64 output (saves bandwidth) | Highest accuracy, long context |
+| License | Free (commercial OK) | Restricted (check Google license) | Open source |
+
+**Why Qwen3:** guide RAG lives or dies on retrieval quality. The extra ~$0.00076
+per embed call is negligible next to a missed chunk on a 300-turn playthrough.
+The 32k context window also means we rarely truncate oversized sections at embed
+time. Nomic remains a reasonable cost-down fallback if we need one later
+(`EMBED_MODEL` env swap + re-ingest).
+
+## Dual-call architecture
+
+Every user chat turn with a preferred guide set triggers **two sequential API
+calls** on Replicate:
+
+1. **Call 1 — Embed:** send the rewritten standalone query (from `resolveQuestion`,
+   which we already compute) to Qwen3-Embedding-8B for vectorization.
+2. **Call 2 — Generate:** send retrieved chunks + query to Gemini 2.5 Flash for
+   the answer.
+
+When `preferredUrl` is empty, only Call 2 runs (today's path). The embed call is
+skipped entirely.
+
+`ponytail:` sequential, not parallel — retrieval must finish before generation.
+The rewrite call (`resolveQuestion`) stays upstream of both; it is not a third
+Replicate embed, it is the existing small Gemini rewrite we already pay per turn.
+
+## Cost and latency strategy
+
+- **Query embed caching:** cache embeddings for repeated or near-identical
+  rewritten queries (same key pattern as `search_cache`: normalized query text).
+  Avoids duplicate Qwen3 calls when a player re-asks or retries the same
+  question. Shared cache table or a column on `search_cache`; TTL ~7 days.
+- **Ingest batching:** use Qwen3's `batch_size` input for initial document
+  ingest so a ~200-chunk book is embedded in a handful of calls instead of ~200
+  serial runs. Falls back to a bounded concurrency pool (~10–20 in flight) only
+  if the model rejects batch input.
+- **Retrieval-first routing:** on high-similarity hits, skip the tiered Tavily
+  search entirely (already in the flow below). That saves more than the embed
+  premium on most turns.
+
+## Maintenance
+
+Qwen3-Embedding-8B runs on Replicate's **Nvidia L40S** GPU infrastructure.
+Budget **~$0.00098 per embed execution** when estimating ingest and per-turn
+costs (see Cost recap). Monitor Replicate model-page pricing if it shifts.
 
 ## The flow
 
@@ -69,7 +130,7 @@ When `preferredUrl` is empty: none of the above runs; the current tiered-search
 path is unchanged.
 
 `ponytail:` `GUIDE_HIT` is a single hand-tuned cosine threshold (start ~0.35 for
-nomic, calibrate on a few real queries), not a learned router. Tune it in one
+Qwen3, calibrate on a few real queries), not a learned router. Tune it in one
 place. It doubles as the hub/thin-page guard.
 
 ## Data model
@@ -85,7 +146,7 @@ create table public.guide_chunks (
   guide_url   text not null,           -- normalized; the retrieval filter key
   chunk_index int  not null,
   chunk_text  text not null,
-  embedding   vector(768) not null,    -- nomic-embed-text dim
+  embedding   vector(1024) not null,   -- Qwen3-Embedding-8B dim
   created_at  timestamptz default now()
 );
 create index on public.guide_chunks (guide_url);
@@ -134,11 +195,11 @@ retrieval misses trace back to bad splits.
 
 ### Embed
 
-Send chunks to `nomic-embed-text`. If the Replicate model takes one text per run,
-embed with a **bounded concurrency pool** (~10–20 in flight) so a ~200-chunk book
-ingests in ~20–40s rather than serially. It's one-time and shared, so a first-
-question "indexing" spinner is acceptable. Prefer a batched embed endpoint if the
-model exposes one (cuts ingest to a few calls).
+Send chunks to Qwen3-Embedding-8B. Prefer **`batch_size`** on ingest (see Cost
+and latency strategy) so a ~200-chunk book lands in a few calls. If the model
+rejects batch input, fall back to a **bounded concurrency pool** (~10–20 in
+flight) so ingest finishes in ~20–40s rather than serially. It's one-time and
+shared, so a first-question "indexing" spinner is acceptable.
 
 ## Prompt fidelity (carries over regardless of retrieval backend)
 
@@ -176,8 +237,8 @@ whether chunks come from RAG or (in the fallback) from web search.
 ## Config / env
 
 - Reuses `REPLICATE_API_TOKEN` (embedder + LLM same provider).
-- New optional: `EMBED_MODEL` (default `nomic-embed-text` owner/name) so the model
-  is swappable like `REPLICATE_MODEL`.
+- New optional: `EMBED_MODEL` (default `lucataco/qwen3-embedding-8b`) so the
+  model is swappable like `REPLICATE_MODEL`. Swapping dims requires re-ingest.
 - pgvector requires the `vector` extension enabled in Supabase (one dashboard
   toggle / the migration's `create extension`).
 - Degrade gracefully: if Supabase/pgvector is unset, the preferred-guide RAG path
@@ -200,12 +261,14 @@ whether chunks come from RAG or (in the fallback) from web search.
 ## Cost recap (Replicate; confirmed on the model pages)
 
 - Gemini 2.5 Flash: **$0.30/1M input**, $2.50/1M output.
-- `nomic-embed-text`: ~$0.0004/run.
+- Qwen3-Embedding-8B: **~$0.00098/run** (L40S GPU).
+- Nomic Embed v1 (fallback alt): ~$0.00022/run.
 
-Per guide (100k-token book, ~200 chunks): ingest ≈ **$0.08 once, shared**. Per
-question: 1 query-embed (~$0.0004) + feeding ~K chunks (~3k tokens ≈ $0.001) to
-Gemini. A 300-turn playthrough ≈ **~$0.55** vs ~$2–9 for full-book. And on the
-high-similarity route we *skip the web search*, so many turns cost less than today.
+Per guide (100k-token book, ~200 chunks): ingest ≈ **~$0.20 once, shared**
+(batched; ~$2 unbatched worst case). Per question: 1 query-embed (~$0.001,
+cacheable) + feeding ~K chunks (~3k tokens ≈ $0.001) to Gemini. A 300-turn
+playthrough ≈ **~$0.85** vs ~$2–9 for full-book. And on the high-similarity
+route we *skip the web search*, so many turns cost less than today.
 
 ## Known ceilings (`ponytail:`)
 
@@ -214,6 +277,8 @@ high-similarity route we *skip the web search*, so many turns cost less than tod
 - Ingest has no single-flight lease (unique index guards dup rows; concurrent
   first-time ingests of the same URL can duplicate upstream embed work). Upgrade:
   a `claim_guide_lease` like the HLTB pattern.
+- Query-embed cache is best-effort (same permissive pattern as `search_cache`).
+  No cache = duplicate Qwen3 calls on retries; not a correctness issue.
 - Retrieval is top-K cosine; an answer spread across many sections can still be
   partially missed. Overlap + a slightly higher K mitigate, not solve.
 - Given page only; hub/multi-page guides rely on the user pasting the real page
