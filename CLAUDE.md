@@ -245,6 +245,8 @@ do not sync to the cloud or use Storage uploads.
   logs. Skips re-ingest client-side when all target pages are indexed. Returns
   `pagesMissing` when bundle sections fail extract/embed. Orphan pre-bundle root
   rows are deleted on ingest.
+- `app/api/guide-ingest/status/route.ts`: lightweight read-only endpoint checking
+  the indexing status (indexed: true/false) of any preferred guide URL without triggering ingest.
 - `lib/gamefaqs-bundle.js`: GameFAQs FAQ autodetect, TOC discovery, bundle
   canonical URL normalization (max 50 pages per bundle). Chunks store optional
   `guide_bundle` (`db/guide-bundle.sql`) for retrieval across all pages.

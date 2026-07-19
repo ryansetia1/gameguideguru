@@ -203,3 +203,29 @@ export function IconDiamond(props: IconProps) {
     </svg>
   );
 }
+
+export function IconCheck(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path {...base} d="M20 6L9 17l-5-5" />
+    </Svg>
+  );
+}
+
+export function IconClock(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle {...base} cx="12" cy="12" r="10" />
+      <path {...base} d="M12 6v6l4 2" />
+    </Svg>
+  );
+}
+
+export function IconAlert(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle {...base} cx="12" cy="12" r="10" />
+      <path {...base} d="M12 8v4M12 16h.01" />
+    </Svg>
+  );
+}

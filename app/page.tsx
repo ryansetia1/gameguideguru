@@ -19,6 +19,9 @@ import {
   IconRefresh,
   IconStop,
   IconX,
+  IconCheck,
+  IconClock,
+  IconAlert,
 } from "./icons";
 import { FUN_ROLES, HERO_LINES } from "@/lib/hero-copy.js";
 import { guideIngestHint, guideIngestHintFromResponse } from "@/lib/guide-hints.js";
@@ -93,11 +96,51 @@ function isBundlePanelLoading(
   return false;
 }
 
+function renderStatusChip(state: string) {
+  if (state === "indexed") {
+    return (
+      <span className="guide-status-chip is-indexed">
+        <IconCheck size={12} /> Indexed
+      </span>
+    );
+  }
+  if (state === "failed") {
+    return (
+      <span className="guide-status-chip is-failed">
+        <IconX size={10} /> Failed
+      </span>
+    );
+  }
+  if (state === "pending") {
+    return (
+      <span className="guide-status-chip is-pending">
+        <IconClock size={12} /> Pending
+      </span>
+    );
+  }
+  if (state === "checking") {
+    return (
+      <span className="guide-status-chip is-checking">
+        <IconClock size={12} /> Checking…
+      </span>
+    );
+  }
+  if (state === "unavailable") {
+    return (
+      <span className="guide-status-chip is-unavailable">
+        <IconAlert size={12} /> N/A
+      </span>
+    );
+  }
+  return null;
+}
+
 function gameCardGuideRow(
   url: string,
   meta: GuideBundleMeta | undefined,
   indexStatus: { pages: { slug: string; title: string; url: string; chunks: number }[] } | undefined,
   panelLoad: { meta: boolean; status: boolean } | undefined,
+  globalIndexState: "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending" | undefined,
 ) {
   const bundle = isActiveGamefaqsBundle(url, meta);
   const bundlePrefs = mergedBundlePrefs(url, meta);
@@ -141,6 +184,23 @@ function gameCardGuideRow(
     missingPages.length > 0 ||
     skippedSlugs.length > 0;
 
+  let state: "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending" = "pending";
+  if (globalIndexState === "unavailable") {
+    state = "unavailable";
+  } else if (globalIndexState === "checking" || panelLoading) {
+    state = "checking";
+  } else if (bundle) {
+    if (indexedPages.length > 0) {
+      state = "indexed";
+    } else if (missingPages.length > 0) {
+      state = globalIndexState === "failed" ? "failed" : "pending";
+    } else {
+      state = globalIndexState || "pending";
+    }
+  } else {
+    state = globalIndexState || "pending";
+  }
+
   return {
     bundle,
     label,
@@ -151,6 +211,7 @@ function gameCardGuideRow(
     skippedSlugs,
     panelLoading,
     showPanel,
+    state,
   };
 }
 
@@ -500,6 +561,9 @@ export default function Home() {
     Record<string, { meta: boolean; status: boolean }>
   >({});
   const [guideChecking, setGuideChecking] = useState(false);
+  const [guideIndexState, setGuideIndexState] = useState<
+    Record<string, "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending">
+  >({});
 
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -1081,6 +1145,58 @@ export default function Home() {
     });
   }, [preferredUrls]);
 
+  // Fetch index status for all preferred URLs (both single page and bundle)
+  useEffect(() => {
+    if (!preferredUrls.length) {
+      setGuideIndexState({});
+      return;
+    }
+
+    let cancelled = false;
+
+    async function fetchStatuses() {
+      try {
+        const response = await fetch(
+          `/api/guide-ingest/status?urls=${encodeURIComponent(preferredUrls.join(","))}`,
+        );
+        if (!response.ok) return;
+        const data: {
+          available: boolean;
+          results: { url: string; indexed: boolean }[];
+        } = await response.json();
+
+        if (cancelled) return;
+
+        setGuideIndexState((prev) => {
+          const next: Record<string, "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending"> = {};
+          // Only keep keys that are still in preferredUrls
+          for (const url of preferredUrls) {
+            const current = prev[url];
+            const item = data.results.find((r) => r.url === url);
+            if (!data.available) {
+              next[url] = "unavailable";
+            } else if (current === "checking" || current === "failed") {
+              // Preserve "checking" or "failed" if set in the current session
+              // unless the DB says it's now successfully indexed
+              next[url] = item?.indexed ? "indexed" : current;
+            } else {
+              next[url] = item?.indexed ? "indexed" : "pending";
+            }
+          }
+          return next;
+        });
+      } catch (err) {
+        console.error("Failed to fetch guide statuses:", err);
+      }
+    }
+
+    void fetchStatuses();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [preferredUrls, bundleStatusRev]);
+
   const applyIngestRowToMeta = useCallback(
     (
       url: string,
@@ -1114,6 +1230,7 @@ export default function Home() {
   const retryBundleIngest = useCallback(
     async (url: string) => {
       setRetryingBundleUrl(url);
+      setGuideIndexState((prev) => ({ ...prev, [url]: "checking" }));
       try {
         const response = await fetch("/api/guide-ingest", {
           method: "POST",
@@ -1126,7 +1243,10 @@ export default function Home() {
             bundlePrefs: buildBundlePrefsBody([url]),
           }),
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          setGuideIndexState((prev) => ({ ...prev, [url]: "failed" }));
+          return;
+        }
         const ingestData = (await response.json()) as {
           results?: Array<Record<string, unknown>>;
         };
@@ -1136,15 +1256,22 @@ export default function Home() {
             const updated = applyIngestRowToMeta(url, row, prev[url]);
             return updated ? { ...prev, [url]: updated } : prev;
           });
+          setGuideIndexState((prev) => ({
+            ...prev,
+            [url]: row.indexed ? "indexed" : "failed",
+          }));
           const hint = guideIngestHintFromResponse({
             available: true,
             results: [row],
           });
           if (hint) setToast(hint);
+        } else {
+          setGuideIndexState((prev) => ({ ...prev, [url]: "failed" }));
         }
         setBundleStatusRev((rev) => rev + 1);
       } catch (error) {
         console.error("Bundle retry ingest failed:", error);
+        setGuideIndexState((prev) => ({ ...prev, [url]: "failed" }));
       } finally {
         setRetryingBundleUrl(null);
       }
@@ -2196,6 +2323,13 @@ export default function Home() {
 
     const runGuideIngest = async (): Promise<string | null> => {
       if (!urlsNeedingIngest.length) return null;
+      setGuideIndexState((prev) => {
+        const next = { ...prev };
+        for (const url of urlsNeedingIngest) {
+          next[url] = "checking";
+        }
+        return next;
+      });
       const ingestResults: Array<Record<string, unknown>> = [];
       let hubWarning = false;
       let bundleMetaForRun = { ...guideBundleMeta };
@@ -2228,8 +2362,16 @@ export default function Home() {
             if (updated) {
               bundleMetaForRun = { ...bundleMetaForRun, [url]: updated };
             }
+            setGuideIndexState((prev) => ({
+              ...prev,
+              [url]: row.indexed ? "indexed" : "failed",
+            }));
           } else if (!controller.signal.aborted) {
             ingestResults.push({ indexed: false });
+            setGuideIndexState((prev) => ({
+              ...prev,
+              [url]: "failed",
+            }));
           }
         }
         if (ingestResults.length) {
@@ -2250,6 +2392,15 @@ export default function Home() {
       } catch (ingestError) {
         if (!(ingestError instanceof DOMException && ingestError.name === "AbortError")) {
           console.error("Guide ingest failed:", ingestError);
+          setGuideIndexState((prev) => {
+            const next = { ...prev };
+            for (const url of urlsNeedingIngest) {
+              if (next[url] === "checking") {
+                next[url] = "failed";
+              }
+            }
+            return next;
+          });
           return guideIngestHint({
             available: true,
             indexed: false,
@@ -2983,18 +3134,20 @@ export default function Home() {
                   guideBundleMeta[url],
                   bundleIndexStatus[url],
                   bundlePanelLoad[url],
+                  guideIndexState[url],
                 );
                 return (
                   <div key={guideUrlDedupeKey(url)} className="game-card-guide-stack">
                     <a
-                      className="game-card-link"
+                      className={`game-card-link is-${row.state}`}
                       href={url}
                       target="_blank"
                       rel="noreferrer"
                       aria-busy={row.bundle && row.panelLoading ? true : undefined}
                     >
-                      <span className="icon-inline">
+                      <span className="icon-inline" style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                         {row.label}
+                        {row.state && row.state !== "unknown" && renderStatusChip(row.state)}
                         {row.bundle && row.panelLoading ? (
                           <span
                             className="game-card-bundle-spinner loader"
@@ -3167,6 +3320,7 @@ export default function Home() {
                   bundleMeta={guideBundleMeta}
                   onBundleMetaChange={setGuideBundleMeta}
                   onGuideCheckChange={setGuideChecking}
+                  guideIndexState={guideIndexState}
                   game={game}
                   platform={platform}
                   disabled={loading}

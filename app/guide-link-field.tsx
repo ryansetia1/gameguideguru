@@ -13,6 +13,7 @@ import {
 } from "@/lib/guide-urls.js";
 import { parseGamefaqsFaqUrl } from "@/lib/gamefaqs-bundle.js";
 import { setBundlePrefs } from "@/lib/bundle-prefs.js";
+import { IconCheck, IconClock, IconAlert, IconX } from "./icons";
 
 type GuideHit = { title: string; url: string; snippet: string };
 
@@ -41,6 +42,7 @@ type Props = {
   bundleMeta?: Record<string, GuideBundleMeta>;
   onBundleMetaChange?: (meta: Record<string, GuideBundleMeta>) => void;
   onGuideCheckChange?: (checking: boolean) => void;
+  guideIndexState?: Record<string, "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending">;
 };
 
 function hostLabel(url: string) {
@@ -49,6 +51,45 @@ function hostLabel(url: string) {
   } catch {
     return url;
   }
+}
+
+function renderStatusChip(state: string) {
+  if (state === "indexed") {
+    return (
+      <span className="guide-status-chip is-indexed">
+        <IconCheck size={12} /> Indexed
+      </span>
+    );
+  }
+  if (state === "failed") {
+    return (
+      <span className="guide-status-chip is-failed">
+        <IconX size={10} /> Failed
+      </span>
+    );
+  }
+  if (state === "pending") {
+    return (
+      <span className="guide-status-chip is-pending">
+        <IconClock size={12} /> Pending
+      </span>
+    );
+  }
+  if (state === "checking") {
+    return (
+      <span className="guide-status-chip is-checking">
+        <IconClock size={12} /> Checking…
+      </span>
+    );
+  }
+  if (state === "unavailable") {
+    return (
+      <span className="guide-status-chip is-unavailable">
+        <IconAlert size={12} /> N/A
+      </span>
+    );
+  }
+  return null;
 }
 
 export function GuideLinkField({
@@ -60,6 +101,7 @@ export function GuideLinkField({
   bundleMeta = {},
   onBundleMetaChange,
   onGuideCheckChange,
+  guideIndexState = {},
 }: Props) {
   const [mode, setMode] = useState<"link" | "search">("link");
   const [draftUrl, setDraftUrl] = useState("");
@@ -360,9 +402,12 @@ export function GuideLinkField({
             return (
               <li key={guideUrlDedupeKey(url)} className="guide-url-row">
                 <div className="guide-url-row-body">
-                  <a href={url} target="_blank" rel="noreferrer" className="guide-url-host">
-                    {bundle ? "GameFAQs bundle" : hostLabel(url)}
-                  </a>
+                  <div className="guide-url-row-header" style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <a href={url} target="_blank" rel="noreferrer" className="guide-url-host">
+                      {bundle ? "GameFAQs bundle" : hostLabel(url)}
+                    </a>
+                    {guideIndexState[url] && guideIndexState[url] !== "unknown" && renderStatusChip(guideIndexState[url])}
+                  </div>
                   <span className="guide-url-path">
                     {bundle && meta
                       ? `${meta.title} · ${meta.pageCount} pages`

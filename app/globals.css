@@ -2841,6 +2841,89 @@ details.sources small {
   overflow-wrap: anywhere;
 }
 
+/* Color-coded guide links based on index status */
+.game-card-link.is-indexed {
+  color: var(--signal-dark);
+}
+
+.game-card-link.is-failed {
+  color: var(--danger);
+}
+
+.game-card-link.is-pending {
+  color: var(--muted);
+}
+
+.game-card-link.is-unavailable {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+/* Guide index status chip — small inline badge beside guide labels */
+.guide-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  font-family: var(--font-sans);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  vertical-align: middle;
+  line-height: 1.4;
+  border: 1px solid transparent;
+  flex-shrink: 0;
+}
+
+.guide-status-chip.is-indexed {
+  color: var(--signal-dark);
+  background: color-mix(in srgb, var(--signal) 14%, transparent);
+  border-color: color-mix(in srgb, var(--signal) 40%, transparent);
+}
+
+.guide-status-chip.is-failed {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.guide-status-chip.is-pending {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+  border-color: color-mix(in srgb, var(--muted) 25%, transparent);
+}
+
+.guide-status-chip.is-unavailable {
+  color: var(--muted);
+  opacity: 0.65;
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+  border-color: color-mix(in srgb, var(--muted) 18%, transparent);
+}
+
+.guide-status-chip.is-checking {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+  border-color: color-mix(in srgb, var(--muted) 20%, transparent);
+}
+
+/* Subtle pulse for the checking chip */
+.guide-status-chip.is-checking {
+  animation: guide-chip-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes guide-chip-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* Status chip inside the guide-url-row (setup form) */
+.guide-url-row .guide-status-chip {
+  margin-top: 2px;
+  align-self: flex-start;
+}
+
 .game-card-bundle-spinner {
   width: 12px;
   height: 12px;
