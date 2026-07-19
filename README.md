@@ -1,4 +1,4 @@
-# GameGuide Guru
+# GameGuide Go
 
 A mobile-first, installable (PWA) game companion. An AI model on Replicate
 (default `google/gemini-2.5-flash`) answers from its own knowledge, and Tavily

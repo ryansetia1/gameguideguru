@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Game Guide Guru",
+    name: "Game Guide Go",
     short_name: "Game Guide",
     description:
       "Tell it where you are stuck in a game and get a clear, sourced guide.",

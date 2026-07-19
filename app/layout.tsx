@@ -32,13 +32,13 @@ const APPLE_SPLASH: { w: number; h: number; dpr: number }[] = [
 ];
 
 export const metadata: Metadata = {
-  title: "Game Guide Guru",
+  title: "Game Guide Go",
   description: "Find your way out when your adventure gets stuck.",
-  applicationName: "Game Guide Guru",
+  applicationName: "Game Guide Go",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Game Guide Guru",
+    title: "Game Guide Go",
   },
 };
 

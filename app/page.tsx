@@ -1772,10 +1772,10 @@ export default function Home() {
               <span aria-hidden="true" />
             </button>
           )}
-          <a className="brand" href="#" aria-label="Game Guide Guru, home">
+          <a className="brand" href="#" aria-label="Game Guide Go, home">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="brand-mark" src="/logo.png" alt="" width={38} height={38} />
-            <span>GAME GUIDE GURU</span>
+            <span>GAME GUIDE GO</span>
           </a>
         </div>
 

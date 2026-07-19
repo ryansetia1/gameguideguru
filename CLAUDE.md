@@ -1,4 +1,4 @@
-# GameGuide Guru
+# GameGuide Go
 
 ## Purpose
 
