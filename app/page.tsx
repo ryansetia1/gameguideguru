@@ -2653,6 +2653,7 @@ export default function Home() {
     };
 
     const ingestPromise = urlsNeedingIngest.length ? runGuideIngest() : null;
+    let streamStarted = false;
 
     try {
       // Finish indexing BEFORE asking solve. solve runs its own safety
@@ -2694,7 +2695,6 @@ export default function Home() {
       let buffer = "";
       let answerData: any = null;
       let streamError: Error | null = null;
-      let streamStarted = false;
 
       if (reader) {
         while (true) {
