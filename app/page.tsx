@@ -4045,11 +4045,11 @@ export default function Home() {
                 {indexingGuideCount
                   ? indexingIsBundlePages || bundlePageTotal > 1
                     ? indexingGuideCount > 0
-                      ? `Reading ${indexingGuideCount} pages. This might take a minute...`
-                      : "Wrapping up reading..."
+                      ? `Memorizing ${indexingGuideCount} pages for the first time. This might take a minute...`
+                      : "Wrapping up memorizing..."
                     : indexingGuideCount > 1
-                      ? `Reading ${indexingGuideCount} guides...`
-                      : "Reading your guide..."
+                      ? `Memorizing ${indexingGuideCount} guides for the first time...`
+                      : "Memorizing your guide for the first time..."
                   : generationStatus ||
                     (preferredUrls.length
                       ? "Writing answer..."
