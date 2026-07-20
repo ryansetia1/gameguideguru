@@ -177,13 +177,18 @@ export default function AdminPage() {
     }
     
     const solveStart = events.find(e => e.event_type === "solve_start");
-    const game = solveStart?.metadata?.game;
-    const question = solveStart?.metadata?.question;
+    const uploadStart = events.find(e => e.event_type === "upload_start");
+    
+    const game = solveStart?.metadata?.game || uploadStart?.metadata?.game;
+    const question = solveStart?.metadata?.question || (uploadStart?.metadata?.filename ? `Uploading: ${uploadStart.metadata.filename}` : undefined);
+    const category = uploadStart ? "Upload" : "Chat";
     
     const isFinished = events.some(e => 
       e.event_type === "generation_complete" || 
+      e.event_type === "upload_complete" ||
       e.event_type === "error" || 
-      e.event_type === "solve_error"
+      e.event_type === "solve_error" ||
+      e.event_type === "upload_error"
     );
     const isNew = !isFinished && events.length <= 3;
     const status = isFinished ? "Finished" : isNew ? "New" : "Processing";
@@ -197,6 +202,7 @@ export default function AdminPage() {
       totalLatencyMs: events.reduce((sum, e) => sum + (e.latency_ms || 0), 0),
       game,
       question,
+      category,
       status,
       statusColor
     };
@@ -233,6 +239,24 @@ export default function AdminPage() {
     }
   };
 
+  const handleDeleteAll = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm("Are you sure you want to delete ALL traces? This cannot be undone.")) return;
+    
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    // A simple hack to delete all rows since supabase delete() requires a filter.
+    // We can filter where trace_id is not null (which is always true).
+    const { error } = await supabase.from("trace_events").delete().not("trace_id", "is", null);
+    if (error) {
+      alert("Failed to delete all traces: " + error.message);
+    } else {
+      setTraces([]);
+    }
+  };
+
   return (
     <main className="profile-page-shell">
       <nav className="nav" aria-label="Brand">
@@ -246,6 +270,14 @@ export default function AdminPage() {
             <span style={{ display: 'inline-block', width: '8px', height: '8px', background: 'var(--signal)', borderRadius: '50%', marginRight: '6px' }}></span>
             Real-time Active
           </span>
+          <button 
+            onClick={handleDeleteAll}
+            className="nav-button"
+            style={{ padding: '4px 8px', fontSize: '0.75rem', minWidth: 'auto', minHeight: 'auto', background: '#ffebee', border: '1px solid #ffcdd2', color: '#c62828' }}
+            title="Delete All Traces"
+          >
+            Delete All
+          </button>
         </div>
       </nav>
 
@@ -292,6 +324,15 @@ export default function AdminPage() {
                           fontWeight: 'bold',
                           textTransform: 'uppercase'
                         }}>{trace.status}</span>
+                        <span style={{
+                          fontSize: '0.65rem',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          background: trace.category === 'Upload' ? 'var(--signal)' : 'var(--muted)',
+                          color: '#fff',
+                          fontWeight: 'bold',
+                          textTransform: 'uppercase'
+                        }}>{trace.category}</span>
                       </div>
                       
                       {trace.game && trace.question && (
@@ -301,7 +342,7 @@ export default function AdminPage() {
                       )}
                       
                       <div className="trace-meta">
-                        {new Date(trace.startTime).toLocaleString()} • {trace.rawEventCount} events • {trace.totalLatencyMs}ms total
+                        {new Date(trace.startTime).toLocaleString()} • {trace.rawEventCount} events • {(trace.totalLatencyMs / 1000).toFixed(2)}s total
                       </div>
                     </div>
                     <div className="trace-actions" style={{ display: 'flex', gap: '8px' }}>
@@ -345,7 +386,7 @@ export default function AdminPage() {
                             <span className="type-badge">{event.event_type}</span>
                           </td>
                           <td className="message-cell">{event.message}</td>
-                          <td className="latency-cell">{event.latency_ms ? `${event.latency_ms}ms` : "-"}</td>
+                          <td className="latency-cell">{event.latency_ms ? `${(event.latency_ms / 1000).toFixed(2)}s` : "-"}</td>
                           <td className="meta-cell" title={JSON.stringify(event.metadata, null, 2)}>
                             {event.metadata ? JSON.stringify(event.metadata) : "{}"}
                           </td>

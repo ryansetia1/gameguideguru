@@ -60,12 +60,19 @@ export async function POST(request: Request) {
   const traceId = request.headers.get("X-Trace-Id") || crypto.randomUUID();
 
   return runWithTrace(traceId, async () => {
+    await logTraceEvent("upload_start", `Started uploading and parsing file: ${file.name}`, undefined, {
+      filename: file.name,
+      game,
+      platform,
+    });
+
     let parsed;
     try {
       const buffer = Buffer.from(await file.arrayBuffer());
       parsed = await parseGuideFile(buffer, file.name);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not parse that file.";
+      await logTraceEvent("upload_error", `Failed to parse file: ${msg}`, undefined, { error: msg });
       return NextResponse.json({ error: msg }, { status: 422 });
     }
 
@@ -83,6 +90,12 @@ export async function POST(request: Request) {
       text: parsed.text,
       signal: request.signal,
       ctx: { game, platform, userId: userId.trim() },
+    });
+
+    await logTraceEvent("upload_complete", `Successfully indexed ${result.chunkCount} chunks.`, undefined, {
+      indexed: result.indexed,
+      chunkCount: result.chunkCount,
+      guideUrl,
     });
 
     return NextResponse.json({
