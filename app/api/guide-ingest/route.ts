@@ -12,6 +12,7 @@ import {
   isGuideRagAvailable,
 } from "@/lib/guide-ingest";
 import { logIngestJourneyToDb } from "@/lib/solve-log";
+import { runWithTrace, logTraceEvent } from "@/lib/trace";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -89,74 +90,70 @@ export async function POST(request: Request) {
     });
   }
 
-  try {
-    const settled = [];
+  const traceId = request.headers.get("X-Trace-Id") || crypto.randomUUID();
+
+  return runWithTrace(traceId, async () => {
+    await logTraceEvent("ingest_start", `Starting guide ingest for ${urls.length} URLs`);
+    const results: Array<Record<string, unknown>> = [];
+    let anyHubWarning = false;
+    let anyError = false;
+
     for (const url of urls) {
+      const start = Date.now();
       const prefs = bundlePrefs[url];
-      const startMs = Date.now();
       try {
         const result = await ensureGuideIngested(url, request.signal, {
           ...ingestCtx,
           skipSlugs: prefs?.skippedSlugs,
           includeSlugs: prefs?.selectedSlugs,
         });
-        settled.push({ url, ...result });
-        
-        logIngestJourneyToDb({
-          userId,
-          game,
-          platform,
+        results.push({ ...result, url });
+        if (result.hubWarning) anyHubWarning = true;
+
+        void logIngestJourneyToDb({
+          userId: ingestCtx.userId,
+          game: ingestCtx.game,
+          platform: ingestCtx.platform,
           url,
-          latencyMs: Date.now() - startMs,
+          latencyMs: Date.now() - start,
           status: "success",
           pagesIndexed: result.pagesIndexed ?? (result.chunkCount > 0 ? 1 : 0),
           hubWarning: result.hubWarning,
-        }).catch(console.error);
-      } catch (err) {
-        settled.push({ url, indexed: false, chunkCount: 0, hubWarning: false });
-        logIngestJourneyToDb({
-          userId,
-          game,
-          platform,
+        });
+        await logTraceEvent("ingest_url_complete", `Ingested URL: ${url}`, Date.now() - start, { result });
+      } catch (err: unknown) {
+        anyError = true;
+        const msg = err instanceof Error ? err.message : String(err);
+        results.push({ url, indexed: false, error: msg });
+        void logIngestJourneyToDb({
+          userId: ingestCtx.userId,
+          game: ingestCtx.game,
+          platform: ingestCtx.platform,
           url,
-          latencyMs: Date.now() - startMs,
+          latencyMs: Date.now() - start,
           status: "error",
-          errorMessage: err instanceof Error ? err.message : String(err),
-        }).catch(console.error);
+          errorMessage: msg,
+        });
+        await logTraceEvent("ingest_url_error", `Error ingesting URL: ${url} - ${msg}`, Date.now() - start, { error: msg });
       }
     }
-    const indexedCount = settled.filter((row) => row.indexed).length;
-    const hubWarning = settled.some((row) => row.hubWarning);
+
+    if (anyError) {
+      return NextResponse.json(
+        { error: "One or more guides failed to index.", results },
+        { status: 500 },
+      );
+    }
+
+    const indexedCount = results.filter((row) => row.indexed !== false).length;
 
     return NextResponse.json({
       available: true,
       indexed: indexedCount === urls.length,
       indexedCount,
       total: urls.length,
-      hubWarning,
-      results: settled,
+      hubWarning: anyHubWarning,
+      results,
     });
-  } catch (error) {
-    console.error("Guide ingest failed:", error);
-    const timedOut =
-      error instanceof Error &&
-      (error.name === "AbortError" || error.name === "TimeoutError");
-      
-    // Log the whole batch failure if something outside the loop threw
-    for (const url of urls) {
-      logIngestJourneyToDb({
-        userId,
-        game,
-        platform,
-        url,
-        status: "error",
-        errorMessage: error instanceof Error ? error.message : String(error),
-      }).catch(console.error);
-    }
-    
-    return NextResponse.json(
-      { error: timedOut ? "Indexing took too long. Try again." : "Couldn't index that guide." },
-      { status: timedOut ? 504 : 502 },
-    );
-  }
+  });
 }

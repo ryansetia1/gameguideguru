@@ -2462,6 +2462,7 @@ export default function Home() {
     targetChatId: string | null,
     images: string[] = [],
   ) {
+    const traceId = crypto.randomUUID();
     setError("");
     if (!navigator.onLine) {
       setError("You are offline. Please check your internet connection.");
@@ -2547,7 +2548,10 @@ export default function Home() {
         for (const url of urlsNeedingIngest) {
           const ingestResponse = await fetch("/api/guide-ingest", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { 
+              "Content-Type": "application/json",
+              "X-Trace-Id": traceId
+            },
             signal: controller.signal,
             body: JSON.stringify({
               preferredUrls: [url],
@@ -2673,6 +2677,7 @@ export default function Home() {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
+          "X-Trace-Id": traceId,
           ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
         },
         signal: controller.signal,

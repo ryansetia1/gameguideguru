@@ -2,6 +2,7 @@ import Replicate from "replicate";
 
 import { parseSummary } from "@/lib/highlights.js";
 import { logLlmCall } from "@/lib/llm-log";
+import { logTraceEvent } from "@/lib/trace";
 import {
   REWRITE_INSTRUCTION,
   REWRITE_RAG_INSTRUCTION,
@@ -121,11 +122,13 @@ async function runModel(
     },
     (prediction: PredictionMetrics & { status?: string }) => {
       metrics = prediction.metrics;
-      if (prediction.status && onProgress) {
+      const status = prediction.status;
+      logTraceEvent("replicate_status", `Replicate prediction status: ${status}`, undefined, { status });
+      if (status && onProgress) {
         let msg = "Thinking...";
-        if (prediction.status === "starting") msg = "Reading up...";
-        else if (prediction.status === "processing") msg = "Writing answer...";
-        else if (prediction.status === "succeeded") msg = "Polishing answer...";
+        if (status === "starting") msg = "Reading up...";
+        else if (status === "processing") msg = "Writing answer...";
+        else if (status === "succeeded") msg = "Polishing answer...";
         onProgress(msg, prediction.id);
       }
       if (prediction.logs) {

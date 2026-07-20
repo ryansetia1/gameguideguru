@@ -1,6 +1,7 @@
 import { cleanSnippet } from "@/lib/clean";
 import { buildGuideDiscoveryQuery } from "@/lib/guide-search.js";
 import { selectSources } from "@/lib/rank";
+import { logTraceEvent } from "@/lib/trace";
 
 const TAVILY_URL = "https://api.tavily.com/search";
 const TAVILY_EXTRACT_URL = "https://api.tavily.com/extract";
@@ -94,6 +95,9 @@ async function runSearch(
   signal?: AbortSignal,
   maxResults = 5,
 ): Promise<SearchResult[]> {
+  const start = Date.now();
+  void logTraceEvent("tavily_search_start", `Tavily Search: ${query}`, undefined, { query, includeDomains, maxResults });
+
   const response = await fetch(TAVILY_URL, {
     method: "POST",
     headers: {
@@ -112,6 +116,9 @@ async function runSearch(
     }),
     signal: combineSignal(12_000, signal),
   });
+
+  const latency = Date.now() - start;
+  void logTraceEvent("tavily_search_end", `Tavily Search Complete (Status ${response.status})`, latency, { status: response.status });
 
   if (!response.ok) {
     const detail = await tavilyResponseDetail(response);
@@ -234,6 +241,9 @@ async function runTavilyExtract(
   const body: { urls: string[]; extract_depth?: string } = { urls };
   if (depth === "advanced") body.extract_depth = "advanced";
 
+  const start = Date.now();
+  void logTraceEvent("tavily_extract_start", `Tavily Extract: ${urls.length} URLs`, undefined, { urlsCount: urls.length, depth });
+
   let response: Response;
   try {
     response = await fetch(TAVILY_EXTRACT_URL, {
@@ -245,6 +255,8 @@ async function runTavilyExtract(
       body: JSON.stringify(body),
       signal: combineSignal(urls.length > 1 ? 60_000 : 30_000, signal),
     });
+    const latency = Date.now() - start;
+    void logTraceEvent("tavily_extract_end", `Tavily Extract Complete (Status ${response.status})`, latency, { status: response.status });
   } catch (error) {
     if (!isAbortError(error)) {
       logTavily("extract", `${depth} request error`, {

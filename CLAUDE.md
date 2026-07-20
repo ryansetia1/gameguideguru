@@ -775,3 +775,5 @@ Sound human, not like AI. Specifically avoid these tells:
 - No rule-of-three padding ("fast, simple, and reliable"), no "seamless",
   "effortless", "elevate", "unlock", "level up", "supercharge", "delve", "robust".
 - Don't over-hedge or over-explain. Say the thing once.
+
+- Admin Trace Dashboard: Created `/admin` route to monitor backend execution via `X-Trace-Id` tracking.

@@ -13,6 +13,7 @@ import {
   normalizeGuideUrlList,
 } from "@/lib/guide-urls.js";
 import type { SearchResult } from "@/lib/tavily";
+import { logTraceEvent } from "@/lib/trace";
 
 
 // ponytail: hand-tuned cosine threshold for Qwen3; tune in one place.
@@ -133,6 +134,7 @@ export async function retrieveFromPreferredGuides(input: {
 
   let matches: MatchRow[] = [];
   try {
+    const start = Date.now();
     const { data, error } = await supabase.rpc("match_guide_chunks", {
       p_guide_urls: guideUrls,
       p_guide_bundles: guideBundles,
@@ -141,6 +143,7 @@ export async function retrieveFromPreferredGuides(input: {
     });
     if (error) throw error;
     matches = (data ?? []) as MatchRow[];
+    void logTraceEvent("rag_db_check", "Checked DB for RAG chunks", Date.now() - start, { matchCount: matches.length });
   } catch (error) {
     console.error("Guide chunk retrieval failed:", error);
     return {
@@ -164,6 +167,7 @@ export async function retrieveFromPreferredGuides(input: {
 
   const topSimilarity = matches[0]?.similarity ?? 0;
   const hit = topSimilarity >= GUIDE_HIT;
+  void logTraceEvent("rag_similarity_score", `Top RAG similarity: ${topSimilarity.toFixed(3)} (Hit: ${hit})`, undefined, { topSimilarity, hit, threshold: GUIDE_HIT });
 
   // Calibration: set RAG_DEBUG=1 to print the retrieval scores per query, so
   // GUIDE_HIT can be tuned to sit between "guide covers this" and "it doesn't".

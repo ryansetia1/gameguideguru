@@ -12,6 +12,7 @@ import { coerceSpoilerPrefs } from "@/lib/spoiler-prefs";
 import { coerceDisplayName } from "@/lib/profile.js";
 import { searchGuides, type SearchResult } from "@/lib/tavily";
 import { logSolveJourneyToDb, type SolveJourneyEntry } from "@/lib/solve-log";
+import { runWithTrace, logTraceEvent } from "@/lib/trace";
 
 export const runtime = "nodejs";
 
@@ -142,8 +143,12 @@ export async function POST(request: Request) {
         }
       };
 
-      const backgroundTask = (async () => {
+      const traceId = request.headers.get("X-Trace-Id") || crypto.randomUUID();
+      sendEvent("prediction_id", { id: traceId }); // Send traceId early for debug if needed
+
+      const backgroundTask = runWithTrace(traceId, async () => {
         const startedAt = Date.now();
+        await logTraceEvent("solve_start", "Started solve generation");
         try {
           let sources: SearchResult[] = [];
           let guideHint: string | undefined;
@@ -175,6 +180,7 @@ export async function POST(request: Request) {
         }
 
         rewriteLatencyMs = Date.now() - rewriteStart;
+        await logTraceEvent("rewrite_complete", "Resolved question into search topic", rewriteLatencyMs, { searchTopic });
 
         const hasSearchProvider = Boolean(
           process.env.TAVILY_API_KEY || process.env.SERPER_API_KEY,
@@ -224,14 +230,19 @@ export async function POST(request: Request) {
           } else if (hasSearchProvider) {
             sendEvent("status", { text: "Searching the web..." });
             pipelineType = "fallback_web";
+            void logTraceEvent("web_search_start", "Starting tiered web search");
             sources = await tieredWebSearch(searchQuery);
+            void logTraceEvent("web_search_complete", "Finished tiered web search", Date.now() - retrievalStart, { sourceCount: sources.length });
           }
         } else if (hasSearchProvider) {
           pipelineType = "web";
           sendEvent("status", { text: "Searching the web..." });
+          void logTraceEvent("web_search_start", "Starting tiered web search");
           sources = await tieredWebSearch(searchQuery);
+          void logTraceEvent("web_search_complete", "Finished tiered web search", Date.now() - retrievalStart, { sourceCount: sources.length });
         }
         retrievalLatencyMs = Date.now() - retrievalStart;
+        await logTraceEvent("retrieval_complete", "Finished gathering sources", retrievalLatencyMs, { sourceCount: sources.length, pipelineType });
 
         sendEvent("status", { text: "Reading and building answer..." });
         const generationStart = Date.now();
@@ -355,7 +366,7 @@ export async function POST(request: Request) {
       } finally {
         try { controller.close() } catch (e) {}
       }
-    })();
+      });
 
     after(() => backgroundTask);
     },
