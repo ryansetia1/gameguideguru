@@ -18,7 +18,7 @@ import {
 import { extractGuidePage, searchDiscoveryUrls } from "@/lib/tavily";
 import { logTraceEvent } from "@/lib/trace";
 
-type BundleDiscovery = Awaited<ReturnType<typeof discoverGamefaqsBundle>>;
+type BundleDiscovery = Awaited<ReturnType<typeof discoverGamefaqsBundle>> & { isBlocked?: boolean };
 type ParsedFaq = NonNullable<ReturnType<typeof parseGamefaqsFaqUrl>>;
 type BundlePage = { title: string; url: string; slug: string };
 
@@ -213,19 +213,31 @@ async function discoverGamefaqsBundleViaExtract(
   rawUrl: string,
   seedPages: BundlePage[],
   signal?: AbortSignal,
-): Promise<{ pages: BundlePage[]; title: string }> {
+): Promise<{ pages: BundlePage[]; title: string; definiteSinglePage?: boolean; isBlocked?: boolean }> {
   let bestTitle = "GameFAQs guide";
+  let definiteSinglePage = false;
+  let isBlocked = false;
 
   for (const url of buildExtractCandidates(parsed, rawUrl)) {
     const extracted = await extractGuidePage(url, signal, true);
-    if (!extracted?.content || isBlockedGuideContent(extracted.content)) continue;
+    if (!extracted?.content) continue;
+    if (isBlockedGuideContent(extracted.content)) {
+      isBlocked = true;
+      continue;
+    }
 
     const title = parseGamefaqsGuideTitle(extracted.content, parsed);
     if (!isGenericGamefaqsBundleTitle(title)) bestTitle = title;
 
     const fromToc = parseGamefaqsTocFromHtml(extracted.content, parsed);
     const merged = mergeGamefaqsBundlePages([...seedPages, ...fromToc]);
-    if (merged.length <= 1) continue;
+    
+    if (merged.length <= 1) {
+      if (url === parsed.canonicalUrl || url === rawUrl) {
+        definiteSinglePage = true;
+      }
+      continue;
+    }
 
     return {
       pages: merged,
@@ -233,21 +245,25 @@ async function discoverGamefaqsBundleViaExtract(
     };
   }
 
-  return { pages: seedPages, title: bestTitle };
+  return { pages: seedPages, title: bestTitle, definiteSinglePage, isBlocked };
 }
 
 async function discoverViaTavily(
   parsed: ParsedFaq,
   signal?: AbortSignal,
   seedPages: BundlePage[] = [],
-): Promise<{ pages: BundlePage[]; title: string }> {
+): Promise<{ pages: BundlePage[]; title: string; isBlocked?: boolean }> {
   const fromExtract = await discoverGamefaqsBundleViaExtract(parsed, parsed.canonicalUrl, seedPages, signal);
   if (fromExtract.pages.length > 1) {
     const enriched = await enrichBundlePagesFromExtracts(parsed, fromExtract.pages, signal);
     return { pages: enriched, title: fromExtract.title };
   }
 
-  // Extract failed to yield a TOC — bounded site-search fallback. Early-exit caps
+  if (fromExtract.definiteSinglePage || fromExtract.isBlocked) {
+    return { pages: seedPages, title: fromExtract.title, isBlocked: fromExtract.isBlocked };
+  }
+
+  // Extract failed to yield a TOC and we couldn't prove it's a single page — bounded site-search fallback.
   // the Tavily fan-out (was up to ~58 advanced calls on a cold refresh).
   const fromSearch = await discoverGamefaqsBundleViaSearch(parsed, signal, seedPages, {
     earlyExitMinPages: 15,
@@ -312,6 +328,13 @@ async function discoverGamefaqsBundleCacheFirst(
     }
   }
 
+  if (extracted.definiteSinglePage || extracted.isBlocked) {
+    if (seedPages.length > 0) {
+      return buildBundleDiscovery(parsed, seedPages, title);
+    }
+    return { bundle: false, isBlocked: extracted.isBlocked };
+  }
+
   // Extract failed to yield a TOC — run all base site-search queries (no early
   // exit at 2) so we don't cache a truncated 2-page list as the complete bundle,
   // which would freeze until a manual refresh.
@@ -348,6 +371,13 @@ async function discoverGamefaqsBundleFull(
 
   // ponytail: dropped the Cloudflare-blocked direct fetch here too.
   const fresh = await discoverViaTavily(parsed, signal, seedPages);
+  if (fresh.isBlocked) {
+    if (seedPages.length > 0) {
+      return buildBundleDiscovery(parsed, seedPages, cached?.title ?? "GameFAQs guide");
+    }
+    return { bundle: false, isBlocked: true };
+  }
+
   const resolvedTitle = await resolveDiscoveryTitle(parsed, fresh.title, signal);
   const merged = await mergeAndCacheDiscovery(parsed, fresh.pages, resolvedTitle);
 

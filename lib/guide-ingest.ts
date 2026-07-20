@@ -498,6 +498,10 @@ async function ingestGamefaqsBundle(
   // ponytail: never full refresh on ingest — manual "Refresh page list" only.
   // Cache-first + light search is enough; full part-query discovery burns 100+ Tavily calls.
   const discovery = discoveryCached;
+  if (discovery.isBlocked) {
+    void logTraceEvent("ingest_bundle_blocked", `GameFAQs anti-bot blocked bundle discovery for ${rawUrl}`, undefined, { bundleKey: parsed.bundleKey });
+    return { indexed: false, chunkCount: 0, hubWarning: false };
+  }
   if (!discovery.bundle || !discovery.pages?.length) {
     return ingestSingleGuidePage(rawUrl, signal, ctx, parsed.bundleKey);
   }
