@@ -24,6 +24,7 @@ import {
   IconAlert,
 } from "./icons";
 import { FUN_ROLES, HERO_LINES } from "@/lib/hero-copy.js";
+import { lerpTilt, mouseToTilt, orientationToTilt, tiltTransform } from "@/lib/hero-tilt.js";
 import { guideIngestHint, guideIngestHintFromResponse } from "@/lib/guide-hints.js";
 import {
   bundleHasPendingPages,
@@ -461,19 +462,161 @@ function displayPlatform(platform: string, coverUrl?: string | null): string {
   return steamAppIdFromCoverUrl(coverUrl ?? "") ? "Steam" : platform;
 }
 
+function HeadlineText({
+  lead,
+  payoff,
+  echo = false,
+}: {
+  lead: string;
+  payoff: string;
+  echo?: boolean;
+}) {
+  return (
+    <>
+      <span className={`hero-headline-lead${echo ? "" : " hero-headline-lead--front"}`}>{lead}</span>
+      <span
+        className={
+          echo
+            ? "hero-headline-payoff-text hero-headline-payoff-text--echo"
+            : "hero-headline-payoff-text"
+        }
+      >
+        {payoff}
+      </span>
+    </>
+  );
+}
+
 function RotatingHeadline() {
   // Pick a random line on mount only, so it changes per refresh/open but not
   // mid-view. Starts at index 0 (matches SSR) then swaps client-side, avoiding
   // a hydration mismatch.
   const [i, setI] = useState(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const linesRef = useRef<HTMLDivElement>(null);
+  const targetRef = useRef({ x: 0, y: 0 });
+  const currentRef = useRef({ x: 0, y: 0 });
+  const rafRef = useRef(0);
+
   useEffect(() => {
     setI(Math.floor(Math.random() * HERO_LINES.length));
   }, []);
+
+  useEffect(() => {
+    const linesEl = linesRef.current;
+    if (!linesEl || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    let alive = true;
+
+    const tick = () => {
+      if (!alive) return;
+      const next = lerpTilt(currentRef.current, targetRef.current);
+      const settled =
+        next.x === targetRef.current.x && next.y === targetRef.current.y;
+      currentRef.current = next;
+      linesEl.style.transform = tiltTransform(next);
+      if (!settled) rafRef.current = requestAnimationFrame(tick);
+    };
+
+    const nudge = () => {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+
+    const cleanup = () => {
+      alive = false;
+      cancelAnimationFrame(rafRef.current);
+      linesEl.style.transform = "";
+    };
+
+    if (window.matchMedia("(pointer: fine)").matches) {
+      const onMove = (event: globalThis.MouseEvent) => {
+        targetRef.current = mouseToTilt(
+          event.clientX,
+          event.clientY,
+          window.innerWidth,
+          window.innerHeight,
+        );
+        nudge();
+      };
+      const onLeave = () => {
+        targetRef.current = { x: 0, y: 0 };
+        nudge();
+      };
+      window.addEventListener("mousemove", onMove, { passive: true });
+      document.addEventListener("mouseleave", onLeave);
+      return () => {
+        window.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseleave", onLeave);
+        cleanup();
+      };
+    }
+
+    const onOrient = (event: DeviceOrientationEvent) => {
+      targetRef.current = orientationToTilt(event.beta, event.gamma);
+      nudge();
+    };
+
+    const startGyro = () => {
+      window.addEventListener("deviceorientation", onOrient, { passive: true });
+    };
+
+    const stopGyro = () => {
+      window.removeEventListener("deviceorientation", onOrient);
+    };
+
+    const DOE = DeviceOrientationEvent as typeof DeviceOrientationEvent & {
+      requestPermission?: () => Promise<PermissionState>;
+    };
+
+    if (typeof DOE.requestPermission === "function") {
+      const wrap = wrapRef.current;
+      if (!wrap) return cleanup;
+      const ask = () => {
+        void DOE.requestPermission!()
+          .then((state) => {
+            if (state === "granted") startGyro();
+          })
+          .catch(() => {});
+      };
+      wrap.addEventListener("pointerdown", ask, { once: true });
+      return () => {
+        wrap.removeEventListener("pointerdown", ask);
+        stopGyro();
+        cleanup();
+      };
+    }
+
+    startGyro();
+    return () => {
+      stopGyro();
+      cleanup();
+    };
+  }, []);
+
   const [lead, payoff] = HERO_LINES[i];
   return (
-    <h1>
-      {lead} <em>{payoff}</em>
-    </h1>
+    <div ref={wrapRef} className="hero-headline-wrap">
+      <h1 className="hero-headline">
+        <div className="hero-headline-inner">
+          <div ref={linesRef} className="hero-headline-lines">
+            <div className="hero-headline-layer hero-headline-layer--back" aria-hidden="true">
+              <HeadlineText lead={lead} payoff={payoff} echo />
+            </div>
+            <div className="hero-headline-layer hero-headline-layer--mid" aria-hidden="true">
+              <HeadlineText lead={lead} payoff={payoff} echo />
+            </div>
+            <div className="hero-headline-layer hero-headline-layer--front">
+              <HeadlineText lead={lead} payoff={payoff} />
+            </div>
+          </div>
+          <span className="hero-headline-highlight" aria-hidden="true">
+            <span className="hero-headline-lead hero-headline-ghost">{lead}</span>
+            <span className="hero-headline-payoff-text hero-headline-ghost">{payoff}</span>
+          </span>
+        </div>
+      </h1>
+    </div>
   );
 }
 

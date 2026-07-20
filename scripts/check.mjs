@@ -101,6 +101,7 @@ import {
   parseHltbSearch,
   pickBestMatch,
 } from "../lib/hltb.js";
+import { lerpTilt, mouseToTilt, orientationToTilt, tiltTransform } from "../lib/hero-tilt.js";
 
 // System instruction carries the persona + safety rules.
 assert.match(SYSTEM_INSTRUCTION, /untrusted data/);
@@ -944,5 +945,12 @@ assert.equal(shouldShowScrollToBottomFab({ scrollTop: 0, scrollHeight: 850, clie
 assert.equal(isNearBottom({ scrollTop: 70, scrollHeight: 900, clientHeight: 800 }, -5), true);
 assert.equal(SCROLL_BOTTOM_THRESHOLD_PX, 72);
 assert.equal(SCROLL_BOTTOM_MIN_OVERFLOW_PX, 96);
+
+assert.match(tiltTransform({ x: 4, y: -2 }), /^perspective\(1200px\) rotateX\(-2\.00deg\) rotateY\(4\.00deg\)$/);
+assert.deepEqual(mouseToTilt(0, 0, 1000, 800), { x: -5, y: 4 });
+assert.deepEqual(mouseToTilt(500, 400, 1000, 800), { x: 0, y: 0 });
+assert.deepEqual(orientationToTilt(45, 0), { x: 0, y: 0 });
+assert.deepEqual(orientationToTilt(45, 36), { x: 6, y: 0 });
+assert.deepEqual(lerpTilt({ x: 0, y: 0 }, { x: 10, y: 8 }, 0.5), { x: 5, y: 4 });
 
 console.log("Self-check passed.");

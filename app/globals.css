@@ -225,8 +225,12 @@ main {
 }
 
 .hero-shell > .hero {
-  overflow: hidden;
+  overflow: visible;
   min-height: 0;
+}
+
+.hero-shell--exit > .hero {
+  overflow: hidden;
 }
 
 .hero-shell--exit {
@@ -255,6 +259,15 @@ main {
 @media (prefers-reduced-motion: reduce) {
   .hero-shell--exit {
     transition-duration: 0.01ms;
+  }
+
+  .hero-headline-lines {
+    transform: none !important;
+  }
+
+  .hero-headline-layer--back,
+  .hero-headline-layer--mid {
+    display: none;
   }
 }
 
@@ -300,6 +313,108 @@ main {
   }
 }
 
+.hero-headline-wrap {
+  margin-inline: -14px;
+  padding-inline: 14px;
+}
+
+.hero-headline,
+.hero-headline-inner {
+  transform-style: preserve-3d;
+}
+
+.hero-headline-inner {
+  display: grid;
+}
+
+.hero-headline-lines,
+.hero-headline-highlight {
+  grid-area: 1 / 1;
+}
+
+.hero-headline-lines {
+  display: grid;
+  z-index: 1;
+  transform-style: preserve-3d;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.hero-headline-layer {
+  grid-area: 1 / 1;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+
+.hero-headline-layer--back {
+  transform: translateZ(-34px);
+  opacity: 0.14;
+}
+
+.hero-headline-layer--mid {
+  transform: translateZ(-17px);
+  opacity: 0.32;
+}
+
+.hero-headline-layer--front {
+  transform: translateZ(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.hero-headline-lead--front {
+  transform: translateZ(-10px);
+}
+
+.hero-headline-lead {
+  display: block;
+}
+
+.hero-headline-layer--front .hero-headline-payoff-text {
+  transform: translateZ(14px);
+}
+
+.hero-headline-highlight {
+  pointer-events: none;
+  z-index: 0;
+  transform: translateZ(-22px);
+  transform-style: preserve-3d;
+}
+
+.hero-headline-ghost {
+  visibility: hidden;
+}
+
+.hero-headline-payoff-text {
+  display: block;
+  color: var(--signal-dark);
+  font-style: italic;
+  padding-bottom: 0.08em;
+}
+
+.hero-headline-payoff-text--echo {
+  color: inherit;
+  text-shadow: none;
+}
+
+.hero-headline-payoff-text.hero-headline-ghost {
+  position: relative;
+}
+
+.hero-headline-payoff-text.hero-headline-ghost::after {
+  content: "";
+  visibility: visible;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.02em;
+  height: 0.22em;
+  background-image: linear-gradient(var(--signal), var(--signal));
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  transform: translateZ(-6px);
+}
+
 h1 {
   max-width: 620px;
   margin: 0;
@@ -313,20 +428,7 @@ h1 {
   user-select: none;
 }
 
-h1 em {
-  display: block;
-  color: var(--signal-dark);
-  font-weight: 400;
-  font-style: italic;
-  text-decoration: none;
-  padding-bottom: 0.08em;
-  background-image: linear-gradient(var(--signal), var(--signal));
-  background-repeat: no-repeat;
-  background-size: 100% 0.22em;
-  background-position: left bottom 0.02em;
-}
-
-:root[data-theme="dark"] h1 em {
+:root[data-theme="dark"] .hero-headline-payoff-text:not(.hero-headline-ghost):not(.hero-headline-payoff-text--echo) {
   color: var(--ink);
   text-shadow:
     0 1px 0 #14181a,
@@ -4337,7 +4439,7 @@ details.sources small {
     background: #2a3134;
   }
 
-  :root:not([data-theme="light"]) h1 em {
+  :root:not([data-theme="light"]) .hero-headline-payoff-text:not(.hero-headline-ghost):not(.hero-headline-payoff-text--echo) {
     color: var(--ink);
     text-shadow:
       0 1px 0 #14181a,
