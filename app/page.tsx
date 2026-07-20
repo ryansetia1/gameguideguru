@@ -305,6 +305,7 @@ type Message = {
   highlights?: Highlight[];
   spoilers?: SpoilerReveal[];
   images?: string[];
+  pipelineType?: string;
 };
 
 const EXAMPLES_DISMISSED_KEY = "gg:examples-dismissed";
@@ -721,6 +722,11 @@ export default function Home() {
   const [guideIndexState, setGuideIndexState] = useState<
     Record<string, "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending">
   >({});
+  const [confirmFallbackModal, setConfirmFallbackModal] = useState<{
+    hint: string;
+    onConfirm: () => void;
+    onCancel: () => void;
+  } | null>(null);
 
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -2672,7 +2678,31 @@ export default function Home() {
         accessToken = sessionData.session?.access_token || "";
       }
 
-      const ingestHint: string | null = ingestPromise ? await ingestPromise : null;
+      let ingestHint: string | null = ingestPromise ? await ingestPromise : null;
+      let userConfirmedFallback = true;
+      if (ingestHint && ingestHint.includes("Couldn't read")) {
+        userConfirmedFallback = await new Promise<boolean>((resolve) => {
+          setConfirmFallbackModal({
+            hint: ingestHint!,
+            onConfirm: () => {
+              setConfirmFallbackModal(null);
+              resolve(true);
+            },
+            onCancel: () => {
+              setConfirmFallbackModal(null);
+              resolve(false);
+            },
+          });
+        });
+      }
+
+      if (!userConfirmedFallback) {
+        setLoading(false);
+        setGenerationStatus(null);
+        setMessages(priorMessages);
+        return;
+      }
+
       const response = await fetch("/api/solve", {
         method: "POST",
         headers: { 
@@ -2769,6 +2799,7 @@ export default function Home() {
         "highlights" in data ? data.highlights : undefined,
       );
       const spoilers = coerceSpoilers("spoilers" in data ? data.spoilers : undefined);
+      const pipelineType = "pipelineType" in data && typeof data.pipelineType === "string" ? data.pipelineType : undefined;
       const nextMessages: Message[] = [
         ...priorMessages,
         userMessage,
@@ -2778,6 +2809,7 @@ export default function Home() {
           sources,
           ...(highlights.length ? { highlights } : {}),
           ...(spoilers.length && spoilerPrefs.major ? { spoilers } : {}),
+          ...(pipelineType ? { pipelineType } : {}),
         },
       ];
       if (activeId) {
@@ -3911,6 +3943,15 @@ export default function Home() {
                     </ol>
                   </details>
                 )}
+                {message.pipelineType && (
+                  <div className="source-pipeline-label" style={{ marginTop: '12px', fontSize: '13px', color: 'var(--text-muted)' }}>
+                    Source: {
+                      message.pipelineType === "rag" ? "Your Guide" :
+                      message.pipelineType === "fallback_web" || message.pipelineType === "web" ? "Web Search" :
+                      "AI Knowledge"
+                    }
+                  </div>
+                )}
               </article>
             ),
           )}
@@ -4069,6 +4110,18 @@ export default function Home() {
       )}
 
       {authOpen && <AuthPanel onClose={dismissOverlay} />}
+
+      {confirmFallbackModal && (
+        <div className="overlay open" onClick={confirmFallbackModal.onCancel}>
+          <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <p className="confirm-message">{confirmFallbackModal.hint}</p>
+            <div className="confirm-actions">
+              <button className="btn" type="button" onClick={confirmFallbackModal.onCancel}>Cancel (Change Guide)</button>
+              <button className="btn primary" type="button" onClick={confirmFallbackModal.onConfirm}>Continue with Web Search</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmState && (
         <div

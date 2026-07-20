@@ -239,8 +239,16 @@ export async function POST(request: Request) {
           sendEvent("status", { text: "Searching the web..." });
           void logTraceEvent("web_search_start", "Starting tiered web search");
           sources = await tieredWebSearch(searchQuery);
+          if (sources.length === 0) {
+            pipelineType = "knowledge_only";
+          }
           void logTraceEvent("web_search_complete", "Finished tiered web search", Date.now() - retrievalStart, { sourceCount: sources.length });
         }
+        
+        if (pipelineType === "knowledge_only") {
+          guideHint = "Couldn't find on the web, answering from knowledge";
+        }
+
         retrievalLatencyMs = Date.now() - retrievalStart;
         await logTraceEvent("retrieval_complete", "Finished gathering sources", retrievalLatencyMs, { sourceCount: sources.length, pipelineType });
 
@@ -287,6 +295,7 @@ export async function POST(request: Request) {
           highlights,
           spoilers: spoilerPrefs.major ? spoilers : [],
           sources: finalSources,
+          pipelineType,
           ...(guideHint ? { guideHint } : {}),
         });
         
