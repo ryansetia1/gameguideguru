@@ -777,3 +777,7 @@ Sound human, not like AI. Specifically avoid these tells:
 - Don't over-hedge or over-explain. Say the thing once.
 
 - Admin Trace Dashboard: Created `/admin` route to monitor backend execution via `X-Trace-Id` tracking.
+
+- Added `AutoRefresh` to Admin Dashboard for secure, background polling every 3 seconds.
+
+- Refactored `/admin` route into a Realtime Client Component authenticated directly via Supabase for `ryansetiawan.works@gmail.com` only.

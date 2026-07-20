@@ -24,4 +24,15 @@ create policy "trace_events_insert_anon"
   to anon, authenticated
   with check (true);
 
--- No public read policy. Admin dashboard will read this using the service-role key.
+-- Only the specified admin email can read the trace events
+drop policy if exists "trace_events_select_admin" on public.trace_events;
+create policy "trace_events_select_admin"
+  on public.trace_events
+  for select
+  to authenticated
+  using (
+    auth.jwt() ->> 'email' = 'ryansetiawan.works@gmail.com'
+  );
+
+-- Enable Supabase Realtime for this table
+alter publication supabase_realtime add table public.trace_events;
