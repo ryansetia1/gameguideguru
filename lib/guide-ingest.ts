@@ -486,10 +486,35 @@ async function ingestGamefaqsBundle(
 
   await deleteOrphanBundleRootChunks(supabase, parsed);
 
+  const { data: existingChunks } = await (supabase as SupabaseClient)
+    .from("guide_chunks")
+    .select("guide_url")
+    .eq("guide_bundle", bundleKey);
+
+  const existingUrlCounts = new Map<string, number>();
+  for (const row of existingChunks ?? []) {
+    if (row.guide_url) {
+      existingUrlCounts.set(row.guide_url, (existingUrlCounts.get(row.guide_url) ?? 0) + 1);
+    }
+  }
+
   let pagesIndexed = 0;
   let chunkCount = 0;
   const indexedSlugs = new Set<string>();
   let resolvedTitle = discovery.title ?? "GameFAQs guide";
+
+  const missingPagesToProcess: typeof targetPages = [];
+  for (const page of targetPages) {
+    const normalized = normalizeGuideUrl(page.url);
+    const count = existingUrlCounts.get(normalized) ?? 0;
+    if (count > 0) {
+      pagesIndexed += 1;
+      chunkCount += count;
+      indexedSlugs.add(page.slug);
+    } else {
+      missingPagesToProcess.push(page);
+    }
+  }
 
   async function processBatch(batch: typeof targetPages, background: boolean) {
     const activeSignal = background ? undefined : signal;
@@ -551,8 +576,10 @@ async function ingestGamefaqsBundle(
   }
 
   // 1. Process FIRST batch synchronously (Fast initial response)
-  const firstBatch = targetPages.slice(0, EXTRACT_BATCH_SIZE);
-  await processBatch(firstBatch, false);
+  const firstBatch = missingPagesToProcess.slice(0, EXTRACT_BATCH_SIZE);
+  if (firstBatch.length > 0) {
+    await processBatch(firstBatch, false);
+  }
 
   // 2. Bookkeeping: Save the TOC so UI knows what's still missing.
   void setCachedBundleDiscovery(bundleKey, {
@@ -566,13 +593,13 @@ async function ingestGamefaqsBundle(
     .map((page) => ({ slug: page.slug, title: page.title, url: page.url }));
 
   // 3. Process remaining batches in the background
-  if (targetPages.length > EXTRACT_BATCH_SIZE) {
+  if (missingPagesToProcess.length > EXTRACT_BATCH_SIZE) {
     after(async () => {
-      for (let offset = EXTRACT_BATCH_SIZE; offset < targetPages.length; offset += EXTRACT_BATCH_SIZE) {
+      for (let offset = EXTRACT_BATCH_SIZE; offset < missingPagesToProcess.length; offset += EXTRACT_BATCH_SIZE) {
         if (INGEST_BATCH_DELAY_MS) {
           await sleep(INGEST_BATCH_DELAY_MS); // No signal, let background task wait naturally
         }
-        const batch = targetPages.slice(offset, offset + EXTRACT_BATCH_SIZE);
+        const batch = missingPagesToProcess.slice(offset, offset + EXTRACT_BATCH_SIZE);
         await processBatch(batch, true);
       }
     });
