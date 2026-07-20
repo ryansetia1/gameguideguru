@@ -475,15 +475,17 @@ async function ingestGamefaqsBundle(
     return ingestSingleGuidePage(rawUrl, signal, ctx);
   }
 
-  // ponytail: If chunks already exist for this bundle, the guide is indexed.
+  // ponytail: If chunks already exist for this bundle OR URL, the guide is indexed.
   // Skip the expensive Tavily-based discovery entirely — it was burning 11+
   // API calls per question on an already-indexed guide (see trace audit).
-  const existingChunkCount = await countBundleChunks(supabase, parsed.bundleKey);
-  if (existingChunkCount > 0) {
-    void logTraceEvent("discovery_skipped", `Skipped discovery: ${existingChunkCount} chunks already indexed for bundle ${parsed.bundleKey}`, undefined, { bundleKey: parsed.bundleKey, existingChunkCount });
+  if (await isGuideIndexed(rawUrl)) {
+    // We already know it's indexed, just get the count for the return value
+    const existingChunkCount = await countBundleChunks(supabase, parsed.bundleKey);
+    const fallbackCount = existingChunkCount > 0 ? existingChunkCount : 1; // Just a fallback if it was indexed by URL only
+    void logTraceEvent("discovery_skipped", `Skipped discovery: guide already indexed for bundle ${parsed.bundleKey} or URL`, undefined, { bundleKey: parsed.bundleKey, url: rawUrl });
     return {
       indexed: true,
-      chunkCount: existingChunkCount,
+      chunkCount: fallbackCount,
       hubWarning: false,
       bundle: true,
       bundleKey: parsed.bundleKey,
