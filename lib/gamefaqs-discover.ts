@@ -16,6 +16,7 @@ import {
   setCachedBundleDiscovery,
 } from "@/lib/guide-bundle-cache.js";
 import { extractGuidePage, searchDiscoveryUrls } from "@/lib/tavily";
+import { logTraceEvent } from "@/lib/trace";
 
 type BundleDiscovery = Awaited<ReturnType<typeof discoverGamefaqsBundle>>;
 type ParsedFaq = NonNullable<ReturnType<typeof parseGamefaqsFaqUrl>>;
@@ -294,8 +295,11 @@ async function discoverGamefaqsBundleCacheFirst(
 ): Promise<BundleDiscovery> {
   const { pages: seedPages, title } = await discoverFromCacheAndDb(parsed);
   if (seedPages.length > 1) {
+    void logTraceEvent("discovery_cache_hit", `Discovery cache hit: ${seedPages.length} pages for ${parsed.bundleKey}`, undefined, { bundleKey: parsed.bundleKey, pageCount: seedPages.length });
     return buildBundleDiscovery(parsed, seedPages, title);
   }
+
+  void logTraceEvent("discovery_cache_miss", `Discovery cache miss for ${parsed.bundleKey}, running Tavily discovery`, undefined, { bundleKey: parsed.bundleKey, seedPageCount: seedPages.length });
 
   // ponytail: dropped the direct GameFAQs fetch — it's Cloudflare-blocked (see
   // header note), so it only cost a guaranteed-failing round-trip on every

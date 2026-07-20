@@ -781,3 +781,15 @@ Sound human, not like AI. Specifically avoid these tells:
 - Added `AutoRefresh` to Admin Dashboard for secure, background polling every 3 seconds.
 
 - Refactored `/admin` route into a Realtime Client Component authenticated directly via Supabase for `ryansetiawan.works@gmail.com` only.
+
+## Trace Audit Fixes (July 2026)
+
+### Fix 1: Discovery Short-Circuit for Indexed Guides
+- In `ingestGamefaqsBundle` (`lib/guide-ingest.ts`), added a `countBundleChunks` check before calling `discoverGamefaqsBundleResolved`. If chunks already exist for the bundle, skip discovery entirely and return `indexed: true` immediately.
+- This eliminates 11+ wasted Tavily API calls per question on already-indexed guides (~23s and ~$0.11 saved per request).
+
+### Fix 3: Full Trace Instrumentation
+- **`lib/embed.ts`**: Added `embed_query_start`, `embed_query_end`, `embed_query_cache_hit`, `embed_texts_start`, `embed_texts_end` trace events. The 96-second black hole (embedding model cold start) is now fully visible.
+- **`lib/gamefaqs-discover.ts`**: Added `discovery_cache_hit` and `discovery_cache_miss` trace events in `discoverGamefaqsBundleCacheFirst`.
+- **`app/api/solve/route.ts`**: Added `generation_complete` trace event after answer generation.
+- **`lib/guide-ingest.ts`**: Added `discovery_skipped` trace event when the short-circuit fires.

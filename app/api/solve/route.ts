@@ -278,6 +278,7 @@ export async function POST(request: Request) {
         }
 
         generationLatencyMs = Date.now() - generationStart;
+        await logTraceEvent("generation_complete", `Answer generated in ${generationLatencyMs}ms`, generationLatencyMs, { pipelineType, sourceCount: sources.length });
         finalAnswer = answer;
         finalSources = sources.map(({ title, url }) => ({ title, url }));
 

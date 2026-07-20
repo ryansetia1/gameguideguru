@@ -21,6 +21,7 @@ import { getCachedBundleDiscovery, setCachedBundleDiscovery } from "@/lib/guide-
 import { parsePositiveInt, sleep } from "@/lib/replicate-retry.js";
 import { extractGuidePage, extractGuidePages, looksLikeHub } from "@/lib/tavily";
 import { getServerClient } from "@/lib/supabase-server";
+import { logTraceEvent } from "@/lib/trace";
 
 const MIN_GUIDE_CHARS = 400;
 // Bigger extract batches + shorter pauses for a funded account (retry backs off on
@@ -454,6 +455,21 @@ async function ingestGamefaqsBundle(
   const parsed = parseGamefaqsFaqUrl(rawUrl);
   if (!parsed) {
     return ingestSingleGuidePage(rawUrl, signal, ctx);
+  }
+
+  // ponytail: If chunks already exist for this bundle, the guide is indexed.
+  // Skip the expensive Tavily-based discovery entirely — it was burning 11+
+  // API calls per question on an already-indexed guide (see trace audit).
+  const existingChunkCount = await countBundleChunks(supabase, parsed.bundleKey);
+  if (existingChunkCount > 0) {
+    void logTraceEvent("discovery_skipped", `Skipped discovery: ${existingChunkCount} chunks already indexed for bundle ${parsed.bundleKey}`, undefined, { bundleKey: parsed.bundleKey, existingChunkCount });
+    return {
+      indexed: true,
+      chunkCount: existingChunkCount,
+      hubWarning: false,
+      bundle: true,
+      bundleKey: parsed.bundleKey,
+    };
   }
 
   const discoveryCached = await discoverGamefaqsBundleResolved(rawUrl, signal, {

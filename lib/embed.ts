@@ -7,6 +7,7 @@ import {
   withReplicateRetry,
 } from "@/lib/replicate-retry.js";
 import { logEmbedCall, type EmbedLogMeta } from "@/lib/embed-log";
+import { logTraceEvent } from "@/lib/trace";
 
 const DEFAULT_EMBED_MODEL =
   "lucataco/qwen3-embedding-8b:42d968487820032a1535d81ea20df16f442ea308ec5abae6b5d6cf4675eb3e2f";
@@ -115,6 +116,8 @@ export async function embedTexts(
   const cleaned = texts.map((t) => t.replace(/\s+/g, " ").trim()).filter(Boolean);
   if (!cleaned.length) return [];
 
+  const kind = logMeta?.purpose === "rag_query" ? "embed_query" : "embed_index";
+  void logTraceEvent("embed_texts_start", `Embedding ${cleaned.length} text(s) via ${model}`, undefined, { kind, textCount: cleaned.length, model });
   const started = Date.now();
   const out: number[][] = [];
 
@@ -136,10 +139,13 @@ export async function embedTexts(
     }
   }
 
+  const durationMs = Date.now() - started;
+  void logTraceEvent("embed_texts_end", `Embedding complete: ${cleaned.length} text(s) in ${durationMs}ms`, durationMs, { kind, textCount: cleaned.length });
+
   logEmbedCall({
-    kind: logMeta?.purpose === "rag_query" ? "embed_query" : "embed_index",
+    kind,
     textCount: cleaned.length,
-    durationMs: Date.now() - started,
+    durationMs,
     sampleText: cleaned[0],
     meta: logMeta,
   });
@@ -158,6 +164,7 @@ export async function embedQuery(
 
   const cached = await getCachedEmbedding(key);
   if (cached?.length) {
+    void logTraceEvent("embed_query_cache_hit", `Embed query cache hit for: ${query.slice(0, 80)}`, undefined, { cached: true });
     logEmbedCall({
       kind: "embed_query",
       textCount: 1,
@@ -169,6 +176,8 @@ export async function embedQuery(
     return cached;
   }
 
+  void logTraceEvent("embed_query_start", `Embedding query: ${query.slice(0, 80)}`, undefined, { query: query.slice(0, 200) });
+  const embedStart = Date.now();
   try {
     const [embedding] = await embedTexts(
       [query],
@@ -176,10 +185,17 @@ export async function embedQuery(
       logMeta ? { ...logMeta, purpose: "rag_query" } : { purpose: "rag_query" },
       QUERY_INSTRUCTION,
     );
-    if (!embedding?.length) return null;
+    const embedDuration = Date.now() - embedStart;
+    if (!embedding?.length) {
+      void logTraceEvent("embed_query_end", `Embed query returned empty`, embedDuration);
+      return null;
+    }
+    void logTraceEvent("embed_query_end", `Embed query complete in ${embedDuration}ms`, embedDuration);
     void setCachedEmbedding(key, embedding);
     return embedding;
   } catch (error) {
+    const embedDuration = Date.now() - embedStart;
+    void logTraceEvent("embed_query_end", `Embed query failed after ${embedDuration}ms: ${error instanceof Error ? error.message : String(error)}`, embedDuration, { error: true });
     console.error("Query embed failed:", error);
     return null;
   }
