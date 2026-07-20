@@ -60,6 +60,16 @@ function withTimeout(ms: number, signal?: AbortSignal): AbortSignal {
   return signal ? AbortSignal.any([timeout, signal]) : timeout;
 }
 
+let replicateInstance: Replicate | null = null;
+
+/** Shared Replicate SDK instance (just holds the auth token). */
+function getReplicate(): Replicate | null {
+  const token = process.env.REPLICATE_API_TOKEN;
+  if (!token) return null;
+  if (!replicateInstance) replicateInstance = new Replicate({ auth: token });
+  return replicateInstance;
+}
+
 function readText(output: unknown): string {
   if (typeof output === "string") return output;
   if (Array.isArray(output)) {
@@ -148,9 +158,9 @@ export async function resolveQuestion(input: {
   /** Preferred-guide RAG: longer contextual retrieval query instead of a short web-search string. */
   forRag?: boolean;
 }): Promise<string> {
-  const token = process.env.REPLICATE_API_TOKEN;
+  const replicate = getReplicate();
   const model = resolveModel();
-  if (!token || !model) return input.question;
+  if (!replicate || !model) return input.question;
 
   const forRag = Boolean(input.forRag);
   const instruction = forRag ? REWRITE_RAG_INSTRUCTION : REWRITE_INSTRUCTION;
@@ -158,7 +168,6 @@ export async function resolveQuestion(input: {
   const maxChars = forRag ? 600 : 200;
 
   try {
-    const replicate = new Replicate({ auth: token });
     const prompt = buildRewritePrompt(input);
     const { output: rawOutput, durationMs, predictTimeMs, inputTokens, outputTokens } =
       await runModel(
@@ -216,8 +225,8 @@ export type SummarizeInput = {
 };
 
 export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
-  const token = process.env.REPLICATE_API_TOKEN;
-  if (!token) {
+  const replicate = getReplicate();
+  if (!replicate) {
     throw new Error("REPLICATE_API_TOKEN is not configured");
   }
 
@@ -227,7 +236,6 @@ export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
   }
 
   const images = (input.images ?? []).filter((url) => typeof url === "string" && url);
-  const replicate = new Replicate({ auth: token });
   const prompt = buildPrompt({
     ...input,
     imageCount: images.length,
@@ -299,12 +307,11 @@ export async function censorSpoilers(input: {
   userId?: string | null;
   signal?: AbortSignal;
 }): Promise<{ answer: string; highlights: Highlight[] } | null> {
-  const token = process.env.REPLICATE_API_TOKEN;
+  const replicate = getReplicate();
   const model = resolveModel();
-  if (!token || !model) return null;
+  if (!replicate || !model) return null;
 
   try {
-    const replicate = new Replicate({ auth: token });
     const prompt = buildSpoilerCensorPrompt(input);
     const { output: rawOutput, durationMs, predictTimeMs, inputTokens, outputTokens } =
       await runModel(

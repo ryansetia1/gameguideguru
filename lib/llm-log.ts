@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { logLlmCallToDb, type LlmDbLogEntry } from "@/lib/llm-db-log";
@@ -28,26 +28,30 @@ export type LlmLogEntry = {
 
 export function logLlmCall(entry: LlmLogEntry): void {
   if (FILE_ENABLED) {
-    try {
-      let log: unknown[] = [];
+    // Fire-and-forget async write so we never block the event loop.
+    void (async () => {
       try {
-        const parsed: unknown = JSON.parse(readFileSync(LOG_PATH, "utf8"));
-        if (Array.isArray(parsed)) log = parsed;
+        let log: unknown[] = [];
+        try {
+          const raw = await readFile(LOG_PATH, "utf8");
+          const parsed: unknown = JSON.parse(raw);
+          if (Array.isArray(parsed)) log = parsed;
+        } catch {
+          // No file yet or unreadable — start fresh.
+        }
+        log.push({
+          at: new Date().toISOString(),
+          ...entry,
+          durationMs: entry.durationMs ?? null,
+          predictTimeMs: entry.predictTimeMs ?? null,
+          inputTokens: entry.inputTokens ?? null,
+          outputTokens: entry.outputTokens ?? null,
+        });
+        await writeFile(LOG_PATH, JSON.stringify(log.slice(-MAX_ENTRIES), null, 2));
       } catch {
-        // No file yet or unreadable — start fresh.
+        // Best-effort: never let logging break a request.
       }
-      log.push({
-        at: new Date().toISOString(),
-        ...entry,
-        durationMs: entry.durationMs ?? null,
-        predictTimeMs: entry.predictTimeMs ?? null,
-        inputTokens: entry.inputTokens ?? null,
-        outputTokens: entry.outputTokens ?? null,
-      });
-      writeFileSync(LOG_PATH, JSON.stringify(log.slice(-MAX_ENTRIES), null, 2));
-    } catch {
-      // Best-effort: never let logging break a request.
-    }
+    })();
   }
 
   const dbEntry: LlmDbLogEntry = {

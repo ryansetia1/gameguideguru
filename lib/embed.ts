@@ -87,6 +87,15 @@ async function runEmbedBatch(
   return embeddings;
 }
 
+let replicateInstance: Replicate | null = null;
+
+function getReplicateEmbed(): Replicate | null {
+  const token = process.env.REPLICATE_API_TOKEN;
+  if (!token) return null;
+  if (!replicateInstance) replicateInstance = new Replicate({ auth: token });
+  return replicateInstance;
+}
+
 /**
  * Embed one or more texts via Replicate. Batches automatically (up to 32).
  * Best-effort: throws when Replicate is unconfigured or the model fails.
@@ -97,9 +106,9 @@ export async function embedTexts(
   logMeta?: EmbedLogMeta,
   instruction = "",
 ): Promise<number[][]> {
-  const token = process.env.REPLICATE_API_TOKEN;
+  const replicate = getReplicateEmbed();
   const model = resolveEmbedModel();
-  if (!token || !model) {
+  if (!replicate || !model) {
     throw new Error("REPLICATE_API_TOKEN or EMBED_MODEL is not configured");
   }
 
@@ -107,7 +116,6 @@ export async function embedTexts(
   if (!cleaned.length) return [];
 
   const started = Date.now();
-  const replicate = new Replicate({ auth: token });
   const out: number[][] = [];
 
   for (let i = 0; i < cleaned.length; i += BATCH_SIZE) {

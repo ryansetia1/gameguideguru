@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { getServerClient } from "@/lib/supabase-server";
 
 import { embedQuery } from "@/lib/embed";
 import { toVectorString } from "@/lib/embed-cache";
@@ -14,25 +14,12 @@ import {
 } from "@/lib/guide-urls.js";
 import type { SearchResult } from "@/lib/tavily";
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 // ponytail: hand-tuned cosine threshold for Qwen3; tune in one place.
 export const GUIDE_HIT = 0.35;
 const RETRIEVE_K = 5;
 
-let client: SupabaseClient | null = null;
 let ragUnavailableLogged = false;
-
-function getClient(): SupabaseClient | null {
-  if (!url || !anonKey) return null;
-  if (!client) {
-    client = createClient(url, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  }
-  return client;
-}
 
 type MatchRow = {
   guide_url: string;
@@ -141,7 +128,7 @@ export async function retrieveFromPreferredGuides(input: {
     };
   }
 
-  const supabase = getClient();
+  const supabase = getServerClient();
   if (!supabase) return null;
 
   let matches: MatchRow[] = [];

@@ -1,31 +1,16 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+import { getServerClient } from "@/lib/supabase-server";
 
 // Guides change slowly, so a long TTL maximises cache hits (the point is saving
 // Tavily credits). Tune here. ponytail: no eviction job — stale rows are simply
 // overwritten on the next miss.
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-let client: SupabaseClient | null = null;
-
-function getClient(): SupabaseClient | null {
-  if (!url || !anonKey) return null;
-  if (!client) {
-    client = createClient(url, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  }
-  return client;
-}
-
 /**
  * Read a cached search result. Best-effort: returns null when Supabase is
  * unconfigured/unreachable, the key is missing, or the row is past its TTL.
  */
 export async function getCachedSearch(key: string): Promise<unknown | null> {
-  const supabase = getClient();
+  const supabase = getServerClient();
   if (!supabase) return null;
   try {
     const { data, error } = await supabase
@@ -46,7 +31,7 @@ export async function getCachedSearch(key: string): Promise<unknown | null> {
 
 /** Write a search result to the cache. Best-effort; failures never block. */
 export async function setCachedSearch(key: string, results: unknown): Promise<void> {
-  const supabase = getClient();
+  const supabase = getServerClient();
   if (!supabase) return;
   try {
     await supabase

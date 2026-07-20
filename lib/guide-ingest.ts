@@ -1,4 +1,4 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { after } from "next/server";
 
 import { chunkGuide } from "@/lib/chunk-guide.js";
@@ -20,9 +20,7 @@ import { isGamefaqsBundleUrl } from "@/lib/guide-urls.js";
 import { getCachedBundleDiscovery, setCachedBundleDiscovery } from "@/lib/guide-bundle-cache.js";
 import { parsePositiveInt, sleep } from "@/lib/replicate-retry.js";
 import { extractGuidePage, extractGuidePages, looksLikeHub } from "@/lib/tavily";
-
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+import { getServerClient } from "@/lib/supabase-server";
 
 const MIN_GUIDE_CHARS = 400;
 // Bigger extract batches + shorter pauses for a funded account (retry backs off on
@@ -30,18 +28,6 @@ const MIN_GUIDE_CHARS = 400;
 // if a low-balance Replicate account starts 429ing.
 const EXTRACT_BATCH_SIZE = parsePositiveInt(process.env.INGEST_EXTRACT_BATCH_SIZE, 8, 10);
 const INGEST_BATCH_DELAY_MS = parsePositiveInt(process.env.INGEST_BATCH_DELAY_MS, 300, 10_000);
-
-let client: SupabaseClient | null = null;
-
-function getClient(): SupabaseClient | null {
-  if (!url || !anonKey) return null;
-  if (!client) {
-    client = createClient(url, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  }
-  return client;
-}
 
 /** Normalize a guide URL for storage and retrieval keys. */
 export function normalizeGuideUrl(raw: string): string {
@@ -54,7 +40,7 @@ export function normalizeGuideUrl(raw: string): string {
 }
 
 export function isGuideRagAvailable(): boolean {
-  return Boolean(url && anonKey && process.env.REPLICATE_API_TOKEN);
+  return Boolean(getServerClient() && process.env.REPLICATE_API_TOKEN);
 }
 
 export type IngestResult = {
@@ -121,7 +107,7 @@ export async function getBundleIndexStatus(
   rawUrl: string,
 ): Promise<BundleIndexStatus | null> {
   const parsed = parseGamefaqsFaqUrl(rawUrl);
-  const supabase = getClient();
+  const supabase = getServerClient();
   if (!parsed || !supabase) return null;
 
   try {
@@ -179,7 +165,7 @@ export async function getBundleIndexStatus(
 
 /** True when guide_chunks already has rows for this URL or bundle. */
 export async function isGuideIndexed(guideUrl: string): Promise<boolean> {
-  const supabase = getClient();
+  const supabase = getServerClient();
   if (!supabase) return false;
   try {
     const parsed = parseGamefaqsFaqUrl(guideUrl);
@@ -418,7 +404,7 @@ async function ingestSingleGuidePage(
   ctx?: IngestContext,
   bundleKey: string | null = null,
 ): Promise<IngestResult> {
-  const supabase = getClient();
+  const supabase = getServerClient();
   if (!supabase || !process.env.REPLICATE_API_TOKEN) {
     return { indexed: false, chunkCount: 0, hubWarning: false };
   }
@@ -460,7 +446,7 @@ async function ingestGamefaqsBundle(
   signal?: AbortSignal,
   ctx?: IngestContext,
 ): Promise<IngestResult> {
-  const supabase = getClient();
+  const supabase = getServerClient();
   if (!supabase || !process.env.REPLICATE_API_TOKEN) {
     return { indexed: false, chunkCount: 0, hubWarning: false };
   }

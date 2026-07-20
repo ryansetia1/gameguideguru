@@ -1,23 +1,7 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+import { getServerClient } from "@/lib/supabase-server";
 
 // Log when Supabase vars are set. Set LLM_DB_LOG=0 to disable (e.g. local tests).
-const ENABLED =
-  process.env.LLM_DB_LOG !== "0" && Boolean(url && anonKey);
-
-let client: SupabaseClient | null = null;
-
-function getClient(): SupabaseClient | null {
-  if (!ENABLED || !url || !anonKey) return null;
-  if (!client) {
-    client = createClient(url, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  }
-  return client;
-}
+const ENABLED = process.env.LLM_DB_LOG !== "0";
 
 export type SolveJourneyEntry = {
   userId?: string | null;
@@ -43,7 +27,8 @@ function coerceInt(value: number | null | undefined): number | null {
 
 /** Best-effort insert into `public.solve_logs`. Never blocks the answer path. */
 export async function logSolveJourneyToDb(entry: SolveJourneyEntry): Promise<void> {
-  const supabase = getClient();
+  if (!ENABLED) return;
+  const supabase = getServerClient();
   if (!supabase) return;
   try {
     const { error } = await supabase.from("solve_logs").insert({
@@ -85,7 +70,8 @@ export type IngestJourneyEntry = {
 
 /** Best-effort insert into `public.ingest_logs`. Never blocks the ingest path. */
 export async function logIngestJourneyToDb(entry: IngestJourneyEntry): Promise<void> {
-  const supabase = getClient();
+  if (!ENABLED) return;
+  const supabase = getServerClient();
   if (!supabase) return;
   try {
     const { error } = await supabase.from("ingest_logs").insert({

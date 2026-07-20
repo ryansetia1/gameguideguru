@@ -264,8 +264,8 @@ do not sync to the cloud or use Storage uploads.
   powers the guide picker (Tavily then Serper fallback). See provider fallback
   notes under Known limits.
 - `lib/search-cache.ts`: best-effort Supabase-backed cache of `searchGuides`
-  output (`getCachedSearch`/`setCachedSearch`, 7-day TTL). Uses a server client
-  built from the `NEXT_PUBLIC_SUPABASE_*` vars (no session); no-ops when unset or
+  output (`getCachedSearch`/`setCachedSearch`, 7-day TTL). Uses the shared
+  `getServerClient()` from `lib/supabase-server.ts`; no-ops when unset or
   on any error so answers never depend on it.
 - `lib/rank.js`: `selectSources(results)` applies a confidence gate (returns
   `[]` when even the best score is below `CONFIDENCE_MIN`, so the model answers
@@ -280,6 +280,8 @@ do not sync to the cloud or use Storage uploads.
   `system_instruction` + `prompt` separately with Gemini fields
   (`max_output_tokens`, `thinking_budget: 0`), polls prediction status to yield granular `status` events (e.g. "Starting AI engine") to the UI during generation, and parses the JSON
   `{ answer, highlights, spoilers, spoilerRisk }` via `lib/highlights.js#parseSummary`.
+  All three Gemini calls (`resolveQuestion`, `summarize`, `censorSpoilers`) share
+  a single `Replicate` SDK instance (`getReplicate()` singleton).
   `/api/solve` calls `censorSpoilers` when spoilers are OFF and `spoilerRisk` is
   true (best-effort rewrite; fails open). `resolveQuestion({ question, history, forRag? })`
   does a small Gemini call: short web-search query (≤15 words) by default, or a
@@ -338,9 +340,17 @@ do not sync to the cloud or use Storage uploads.
   validated as a UUID in `/api/solve`). Kinds: `rewrite`, `summarize`, `censor`,
   plus `embed_index` / `embed_query` from `lib/embed-log.ts` (guide ingest batches
   and per-turn RAG query embeds, including cache hits). File tail in
-  `llm-log.json` (dev / `LLM_LOG=1`); Supabase table `public.llm_calls`
+  `llm-log.json` (dev / `LLM_LOG=1`, async writes to avoid blocking the event
+  loop); Supabase table `public.llm_calls`
   (`db/llm-calls.sql`, patch `db/llm-calls-embed.sql` on older installs) when
   `NEXT_PUBLIC_SUPABASE_*` are set (`LLM_DB_LOG=0` disables). Insert-only RLS — no client reads.
+- `lib/supabase-server.ts`: shared server-side Supabase client
+  (`getServerClient()`, anon key, no session). All server modules — caches
+  (`search-cache`, `embed-cache`, `hltb-cache`, `guide-bundle-cache`), logs
+  (`llm-db-log`, `solve-log`), RAG (`guide-rag`), and ingest (`guide-ingest`) —
+  import from this single module instead of each maintaining a private singleton.
+  Separate from `lib/supabase.ts` (`getSupabase`) which is the browser client
+  used by `page.tsx` (with auth session).
 - `lib/hero-copy.js`: rotating home marketing copy — `FUN_ROLES` (eyebrow
   "Companion for …", cycles on a timer; tap pauses/resumes) and `HERO_LINES`
   (`[hook, payoff]` headline pairs; one picked at random per open; index 0 is the
@@ -579,8 +589,9 @@ The following Tier 3 cleanup tasks were deliberately skipped to prioritize stabi
 - Chat history is sent as plain text inside the prompt and trimmed by turn count,
   not token count.
 - Searches are cached in `public.search_cache` (7-day TTL) keyed by rewritten
-  query + preferred URL, so repeat/popular queries skip Tavily. Every turn pays
-  the `resolveQuestion` rewrite call (needed to build the key) even on a hit.
+  query + preferred URL, so repeat/popular queries skip Tavily. A preliminary
+  cache (`rewrite::hash`) prevents running the `resolveQuestion` rewrite call
+  on exact input cache hits.
   Without Supabase env vars the cache no-ops and every turn re-runs the tiered
   search (up to 4 sequential `advanced` Tavily calls, ~2x credits vs `basic`).
 - `search_cache` has permissive RLS (public select/insert/update via the anon

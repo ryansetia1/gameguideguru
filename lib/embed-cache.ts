@@ -1,21 +1,6 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+import { getServerClient } from "@/lib/supabase-server";
 
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-let client: SupabaseClient | null = null;
-
-function getClient(): SupabaseClient | null {
-  if (!url || !anonKey) return null;
-  if (!client) {
-    client = createClient(url, anonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-  }
-  return client;
-}
 
 // Namespace the cache by embedding model, so swapping EMBED_MODEL (different
 // vector dimension) can't serve a stale wrong-dim vector into match_guide_chunks.
@@ -49,7 +34,7 @@ function parseVector(value: unknown): number[] | null {
 
 /** Read a cached query embedding. Best-effort; null on miss or expiry. */
 export async function getCachedEmbedding(key: string): Promise<number[] | null> {
-  const supabase = getClient();
+  const supabase = getServerClient();
   if (!supabase) return null;
   try {
     const { data, error } = await supabase
@@ -70,7 +55,7 @@ export async function getCachedEmbedding(key: string): Promise<number[] | null> 
 
 /** Write a query embedding to the cache. Best-effort; failures never block. */
 export async function setCachedEmbedding(key: string, embedding: number[]): Promise<void> {
-  const supabase = getClient();
+  const supabase = getServerClient();
   if (!supabase) return;
   try {
     await supabase.from("embed_cache").upsert({

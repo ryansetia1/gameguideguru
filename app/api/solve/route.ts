@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-
+import { createHash } from "node:crypto";
 import { getCachedSearch, setCachedSearch } from "@/lib/search-cache";
 import { censorSpoilers, resolveQuestion, summarize, type Turn } from "@/lib/replicate";
 import { guideIngestHint } from "@/lib/guide-hints.js";
@@ -134,11 +134,11 @@ export async function POST(request: Request) {
         controller.enqueue(new TextEncoder().encode(text));
       };
 
+      const startedAt = Date.now();
       try {
         let sources: SearchResult[] = [];
         let guideHint: string | undefined;
 
-        const startedAt = Date.now();
         let rewriteLatencyMs = 0;
         let retrievalLatencyMs = 0;
         let generationLatencyMs = 0;
@@ -148,15 +148,23 @@ export async function POST(request: Request) {
 
         sendEvent("status", { text: "Understanding your question..." });
         const rewriteStart = Date.now();
-        const searchTopic = await resolveQuestion({
-          question,
-          history,
-          game,
-          platform,
-          userId,
-          signal,
-          forRag: preferredUrls.length > 0,
-        });
+        const forRag = preferredUrls.length > 0;
+        const rawInputs = JSON.stringify({ question, history, game, platform, forRag });
+        const rewriteCacheKey = `rewrite::${createHash("sha256").update(rawInputs).digest("hex")}`;
+        
+        let searchTopic = (await getCachedSearch(rewriteCacheKey)) as string | null;
+        if (typeof searchTopic !== "string") {
+          searchTopic = await resolveQuestion({
+            question,
+            history,
+            game,
+            platform,
+            userId,
+            signal,
+            forRag,
+          });
+          void setCachedSearch(rewriteCacheKey, searchTopic);
+        }
 
         rewriteLatencyMs = Date.now() - rewriteStart;
 
