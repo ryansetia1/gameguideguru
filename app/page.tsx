@@ -2484,6 +2484,7 @@ export default function Home() {
     if (!temporary) {
       activeId = await persistChat(optimistic, targetChatId) || activeId;
     }
+    if (activeId) activeChatIdRef.current = activeId;
 
     if (activeId) {
       backgroundMessagesRef.current[activeId] = optimistic;
@@ -2777,13 +2778,10 @@ export default function Home() {
         setMessages(nextMessages);
       }
       conversationGame.current = game;
-      // We don't persistChat here anymore, the server handles it for logged-in users.
-      // But for anon users, we still need to update localStorage!
-      if (!user) {
-        await persistChat(nextMessages, activeId);
-      } else {
-        void loadChats(); // Just refresh the list
-      }
+      // Dual-write: client updates DB so sidebar is perfectly in sync,
+      // server also updates in background in case client drops early.
+      await persistChat(nextMessages, activeId);
+      void loadChats();
       if (activeId) activeChatIdRef.current = activeId;
       // Temporary chat never persists, so drop this turn's uploaded images from
       // Storage instead of leaving them orphaned.
