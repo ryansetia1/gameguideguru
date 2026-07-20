@@ -342,7 +342,12 @@ async function extractWithAdvancedFallback(
       const originalUrl = blockedUrls[i];
       const waybackUrl = waybackUrls[i];
       const waybackContent = waybackResults.get(waybackUrl);
-      if (waybackContent && !isBlockedGuideContent(waybackContent)) {
+      
+      if (!waybackContent) {
+        void logTraceEvent("tavily_wayback_empty", `Wayback Machine has no readable archive for ${originalUrl}`, undefined, { url: originalUrl });
+      } else if (isBlockedGuideContent(waybackContent)) {
+        void logTraceEvent("tavily_wayback_blocked", `Wayback Machine archive for ${originalUrl} is also blocked or unreadable`, undefined, { url: originalUrl });
+      } else {
         out.set(originalUrl, waybackContent);
       }
     }

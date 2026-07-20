@@ -1,0 +1,402 @@
+[
+  {
+    "event_type": "ingest_start",
+    "message": "Starting guide ingest for 1 URLs",
+    "metadata": null,
+    "created_at": "2026-07-20T20:23:22.994761+00:00"
+  },
+  {
+    "event_type": "discovery_cache_hit",
+    "message": "Discovery cache hit: 2 pages for gamefaqs:76039",
+    "metadata": {
+      "bundleKey": "gamefaqs:76039",
+      "pageCount": 2
+    },
+    "created_at": "2026-07-20T20:23:23.261343+00:00"
+  },
+  {
+    "event_type": "ingest_bundle_batch_start",
+    "message": "Processing batch of 2 pages for bundle gamefaqs:76039 (background: false)",
+    "metadata": {
+      "batchSize": 2,
+      "bundleKey": "gamefaqs:76039",
+      "background": false
+    },
+    "created_at": "2026-07-20T20:23:23.310105+00:00"
+  },
+  {
+    "event_type": "tavily_extract_start",
+    "message": "Tavily Extract: 2 URLs",
+    "metadata": {
+      "depth": "basic",
+      "urlsCount": 2
+    },
+    "created_at": "2026-07-20T20:23:23.31553+00:00"
+  },
+  {
+    "event_type": "tavily_extract_end",
+    "message": "Tavily Extract Complete (Status 200)",
+    "metadata": {
+      "status": 200
+    },
+    "created_at": "2026-07-20T20:23:24.042381+00:00"
+  },
+  {
+    "event_type": "tavily_wayback_fallback",
+    "message": "GameFAQs blocked 2 URLs, falling back to Wayback Machine",
+    "metadata": {
+      "urlsCount": 2
+    },
+    "created_at": "2026-07-20T20:23:24.907472+00:00"
+  },
+  {
+    "event_type": "tavily_extract_start",
+    "message": "Tavily Extract: 2 URLs",
+    "metadata": {
+      "depth": "basic",
+      "urlsCount": 2
+    },
+    "created_at": "2026-07-20T20:23:24.912339+00:00"
+  },
+  {
+    "event_type": "tavily_extract_end",
+    "message": "Tavily Extract Complete (Status 200)",
+    "metadata": {
+      "status": 200
+    },
+    "created_at": "2026-07-20T20:23:28.008219+00:00"
+  },
+  {
+    "event_type": "embed_texts_start",
+    "message": "Embedding 74 text(s) via text-embedding-3-large",
+    "metadata": {
+      "kind": "embed_index",
+      "model": "text-embedding-3-large",
+      "textCount": 74
+    },
+    "created_at": "2026-07-20T20:23:28.785456+00:00"
+  },
+  {
+    "event_type": "ingest_batch_embed_start",
+    "message": "Embedding 74 chunks across 2 pages",
+    "metadata": {
+      "slugs": [
+        "walkthrough",
+        "general-info"
+      ],
+      "pageCount": 2,
+      "totalChunks": 74
+    },
+    "created_at": "2026-07-20T20:23:28.792873+00:00"
+  },
+  {
+    "event_type": "ingest_batch_embed_end",
+    "message": "Batch embedding complete: 74 chunks in 2025ms",
+    "metadata": null,
+    "created_at": "2026-07-20T20:23:30.846836+00:00"
+  },
+  {
+    "event_type": "embed_texts_end",
+    "message": "Embedding complete: 74 text(s) in 2016ms",
+    "metadata": {
+      "kind": "embed_index",
+      "textCount": 74
+    },
+    "created_at": "2026-07-20T20:23:30.862216+00:00"
+  },
+  {
+    "event_type": "ingest_db_insert",
+    "message": "Inserted 68 chunks for https://gamefaqs.gamespot.com/pc/179341-hollow-knight/faqs/76039/walkthrough",
+    "metadata": {
+      "guideUrl": "https://gamefaqs.gamespot.com/pc/179341-hollow-knight/faqs/76039/walkthrough",
+      "bundleKey": "gamefaqs:76039",
+      "chunkCount": 68
+    },
+    "created_at": "2026-07-20T20:23:31.381299+00:00"
+  },
+  {
+    "event_type": "ingest_bundle_batch_end",
+    "message": "Completed batch of 2 pages for bundle gamefaqs:76039",
+    "metadata": {
+      "bundleKey": "gamefaqs:76039",
+      "background": false,
+      "chunkCount": 74,
+      "pagesIndexed": 2
+    },
+    "created_at": "2026-07-20T20:23:31.426013+00:00"
+  },
+  {
+    "event_type": "ingest_db_insert",
+    "message": "Inserted 6 chunks for https://gamefaqs.gamespot.com/pc/179341-hollow-knight/faqs/76039/general-info",
+    "metadata": {
+      "guideUrl": "https://gamefaqs.gamespot.com/pc/179341-hollow-knight/faqs/76039/general-info",
+      "bundleKey": "gamefaqs:76039",
+      "chunkCount": 6
+    },
+    "created_at": "2026-07-20T20:23:31.429794+00:00"
+  },
+  {
+    "event_type": "ingest_url_complete",
+    "message": "Ingested URL: https://gamefaqs.gamespot.com/pc/179341-hollow-knight/faqs/76039",
+    "metadata": {
+      "result": {
+        "bundle": true,
+        "indexed": true,
+        "bundleKey": "gamefaqs:76039",
+        "pageCount": 2,
+        "chunkCount": 74,
+        "hubWarning": false,
+        "pagesIndexed": 2
+      }
+    },
+    "created_at": "2026-07-20T20:23:31.457054+00:00"
+  },
+  {
+    "event_type": "solve_start",
+    "message": "Started solve generation",
+    "metadata": {
+      "game": "Hollow Knight",
+      "platform": "PC",
+      "question": "barang apa lagi yang worth it dibeli dari sly?"
+    },
+    "created_at": "2026-07-20T20:23:31.763591+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: starting",
+    "metadata": {
+      "status": "starting"
+    },
+    "created_at": "2026-07-20T20:23:32.674587+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:32.98073+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: succeeded",
+    "metadata": {
+      "status": "succeeded"
+    },
+    "created_at": "2026-07-20T20:23:34.096633+00:00"
+  },
+  {
+    "event_type": "rewrite_complete",
+    "message": "Resolved question into search topic",
+    "metadata": {
+      "searchTopic": "After buying the Simple Key from Sly in his shop in Dirtmouth, what other worthwhile items should I consider purchasing from him?"
+    },
+    "created_at": "2026-07-20T20:23:34.12873+00:00"
+  },
+  {
+    "event_type": "discovery_skipped",
+    "message": "Skipped discovery: guide already indexed for bundle gamefaqs:76039 or URL",
+    "metadata": {
+      "url": "https://gamefaqs.gamespot.com/pc/179341-hollow-knight/faqs/76039",
+      "bundleKey": "gamefaqs:76039"
+    },
+    "created_at": "2026-07-20T20:23:34.224255+00:00"
+  },
+  {
+    "event_type": "embed_texts_start",
+    "message": "Embedding 1 text(s) via text-embedding-3-large",
+    "metadata": {
+      "kind": "embed_query",
+      "model": "text-embedding-3-large",
+      "textCount": 1
+    },
+    "created_at": "2026-07-20T20:23:34.237542+00:00"
+  },
+  {
+    "event_type": "embed_query_start",
+    "message": "Embedding query: After buying the Simple Key from Sly in his shop in Dirtmouth, what other worthw",
+    "metadata": {
+      "query": "After buying the Simple Key from Sly in his shop in Dirtmouth, what other worthwhile items should I consider purchasing from him?"
+    },
+    "created_at": "2026-07-20T20:23:34.253219+00:00"
+  },
+  {
+    "event_type": "embed_query_end",
+    "message": "Embed query complete in 763ms",
+    "metadata": null,
+    "created_at": "2026-07-20T20:23:34.994942+00:00"
+  },
+  {
+    "event_type": "embed_texts_end",
+    "message": "Embedding complete: 1 text(s) in 761ms",
+    "metadata": {
+      "kind": "embed_query",
+      "textCount": 1
+    },
+    "created_at": "2026-07-20T20:23:35.007267+00:00"
+  },
+  {
+    "event_type": "rag_similarity_score",
+    "message": "Top RAG similarity: 0.608 (Hit: true)",
+    "metadata": {
+      "hit": true,
+      "threshold": 0.35,
+      "topSimilarity": 0.608395651629069
+    },
+    "created_at": "2026-07-20T20:23:35.06568+00:00"
+  },
+  {
+    "event_type": "retrieval_complete",
+    "message": "Finished gathering sources",
+    "metadata": {
+      "sourceCount": 5,
+      "pipelineType": "rag"
+    },
+    "created_at": "2026-07-20T20:23:35.068146+00:00"
+  },
+  {
+    "event_type": "rag_db_check",
+    "message": "Checked DB for RAG chunks",
+    "metadata": {
+      "matchCount": 5
+    },
+    "created_at": "2026-07-20T20:23:35.074266+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: starting",
+    "metadata": {
+      "status": "starting"
+    },
+    "created_at": "2026-07-20T20:23:35.58624+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:35.872864+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:36.821225+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:37.606883+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:38.395006+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:39.158638+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:39.949433+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:40.71302+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:41.490693+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:42.262025+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:43.040441+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:43.826421+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:44.605522+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:45.387676+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: processing",
+    "metadata": {
+      "status": "processing"
+    },
+    "created_at": "2026-07-20T20:23:46.167229+00:00"
+  },
+  {
+    "event_type": "replicate_status",
+    "message": "Replicate prediction status: succeeded",
+    "metadata": {
+      "status": "succeeded"
+    },
+    "created_at": "2026-07-20T20:23:46.952845+00:00"
+  },
+  {
+    "event_type": "generation_complete",
+    "message": "Answer generated in 11859ms",
+    "metadata": {
+      "sourceCount": 5,
+      "pipelineType": "rag"
+    },
+    "created_at": "2026-07-20T20:23:46.963467+00:00"
+  }
+]
