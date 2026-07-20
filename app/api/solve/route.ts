@@ -213,6 +213,7 @@ export async function POST(request: Request) {
               ? await tieredWebSearch(searchQuery, signal)
               : [];
             sources = [...rag.sources, ...web];
+            pipelineType = web.length > 0 ? "fallback_web" : (rag.sources.length > 0 ? "rag" : "knowledge_only");
           } else if (hasSearchProvider) {
             sendEvent("status", { text: "Searching the web..." });
             pipelineType = "fallback_web";
