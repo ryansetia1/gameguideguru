@@ -256,11 +256,16 @@ do not sync to the cloud or use Storage uploads.
 - `lib/guide-rag.ts` + `lib/guide-ingest.ts` + `lib/chunk-guide.js` +
   `lib/embed.ts` + `lib/embed-cache.ts`: preferred-guide RAG. Tavily extract the
   pasted page (`extractGuidePage`), structure-aware chunking (`chunkGuide`),
-  Qwen3-Embedding-8B on Replicate (`EMBED_MODEL`, default pinned
-  `lucataco/qwen3-embedding-8b:42d96848…`), shared `public.guide_chunks` + `match_guide_chunks`
+  text-embedding-3-large on Sumopod (OpenAI-compatible) (`EMBED_MODEL`, default
+  `text-embedding-3-large`), shared `public.guide_chunks` + `match_guide_chunks`
   RPC (pgvector, 1024-dim). Query embeddings cached in `public.embed_cache` (7-day
-  TTL). Fail-open to tiered web search when Supabase/pgvector/Replicate embed is unset.
+  TTL). Fail-open to tiered web search when Supabase/pgvector/Sumopod API key is unset.
+  Also supports **file uploads** (PDF/TXT/MD) via `POST /api/guide-upload` —
+  files are parsed in memory (zero storage), chunked, and embedded into the same
+  `guide_chunks` table with a synthetic `upload://<uid>/<filename>` key.
+  `lib/parse-guide-file.ts` handles PDF extraction (pdf-parse) and plain text.
   Full design: [`docs/preferred-guide.md`](docs/preferred-guide.md).
+  Embedding model specs & migration checklist: [`docs/embedding-models.md`](docs/embedding-models.md).
 - `lib/tavily.ts`: `searchGuides(query)` orchestrates Tavily tiered search then a
   Serper.dev fallback; `extractGuidePage(url)` pulls full page text for RAG ingest
   (**Tavily Extract only** — Serper cannot replace this); `discoverGuideLinks(...)`
@@ -551,10 +556,7 @@ The following Tier 3 cleanup tasks were deliberately skipped to prioritize stabi
   top_chunk=…` per query (scores should have several entries, not one; top_chunk
   should match the question). This is the fastest way to tell a retrieval miss
   (wrong/too-few chunks) from a generation miss (right chunk, model ignored it).
-- `EMBED_QUERY_INSTRUCTION` (default empty = OFF): Qwen3 supports an asymmetric
-  query instruction, but documents are embedded WITHOUT one, so enabling it without
-  recalibrating `GUIDE_HIT` misaligns query vs document vectors and tanks relevance.
-  Keep OFF until calibrated.
+
 
 ### Self-heal cheat sheet
 
@@ -706,7 +708,9 @@ Server-only secrets (never expose via `NEXT_PUBLIC_`, never commit `.env.local`)
 - `SERPER_API_KEY` (optional; Serper.dev fallback when Tavily **Search** fails or
   is unconfigured — snippet-only, **does not** replace Tavily Extract for ingest).
 - `REPLICATE_MODEL` (optional, default `google/gemini-2.5-flash`).
-- `EMBED_MODEL` (optional, default pinned `lucataco/qwen3-embedding-8b:42d96848…`; preferred-guide
+- `SUMOPOD_API_KEY` (required for preferred-guide RAG).
+- `SUMOPOD_BASE_URL` (optional, default `https://ai.sumopod.com/v1`).
+- `EMBED_MODEL` (optional, default `text-embedding-3-large`; preferred-guide
   RAG embedder. Swapping dims requires re-ingest).
 - `LLM_LOG` (optional; `1` enables the `llm-log.json` model-call log in
   production — it is on automatically in dev). `LLM_LOG_PATH` overrides the path.
