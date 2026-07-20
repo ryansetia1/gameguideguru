@@ -2810,10 +2810,14 @@ export default function Home() {
         const supabase = getSupabase();
         if (supabase) {
            let attempts = 0;
-           while (attempts < 60) {
+           while (attempts < 150) {
              if (controller.signal.aborted) break;
              await new Promise((res) => setTimeout(res, 2000));
              attempts++;
+             if (attempts === 30) {
+               backgroundStatusRef.current[activeId] = "Still working in background...";
+               if (activeChatIdRef.current === activeId) setGenerationStatus("Still working in background...");
+             }
              const { data } = await supabase.from("chats").select("messages").eq("id", activeId).single();
              if (data?.messages) {
                const msgs = coerceMessages(data.messages);
@@ -2833,6 +2837,11 @@ export default function Home() {
                }
              }
            }
+           if (attempts >= 150) {
+             // Timeout: leave the optimistic message in place and stop spinning
+             succeeded = true;
+             return;
+           }
         }
       }
 
@@ -2840,6 +2849,9 @@ export default function Home() {
         backgroundMessagesRef.current[activeId] = priorMessages;
         backgroundLoadingRef.current[activeId] = false;
         delete abortRefs.current[activeId];
+        if (!temporary) {
+          await persistChat(priorMessages, activeId).catch(() => {});
+        }
       }
       if (activeChatIdRef.current === activeId) {
         setMessages(priorMessages);
@@ -2855,8 +2867,9 @@ export default function Home() {
         backgroundLoadingRef.current[activeId] = false;
         delete abortRefs.current[activeId];
       }
-      if (activeChatIdRef.current === activeId && !succeeded) {
+      if (activeChatIdRef.current === activeId) {
         setLoading(false);
+        if (succeeded) setGenerationStatus(null);
       }
       // Answer's in: hand focus back to the composer on desktop so a follow-up
       // can be typed right away. Skip on touch-primary devices — focus pops the

@@ -113,7 +113,7 @@ export async function POST(request: Request) {
   const playerName = coerceDisplayName(record.playerName);
   const userId = cleanUuid(record.userId);
   const bundlePrefs = coerceBundlePrefsFromBody(record.bundlePrefs);
-  const chatId = cleanText(record.chatId, 100);
+  const chatId = cleanUuid(record.chatId);
   const authHeader = request.headers.get("Authorization");
   // We explicitly IGNORE request.signal so the AI continues running if the connection drops.
 
@@ -293,17 +293,19 @@ export async function POST(request: Request) {
               .single();
             if (chatData?.messages) {
               const messages = chatData.messages as any[];
-              messages.push({
-                role: "assistant",
-                content: finalAnswer,
-                sources: finalSources,
-                ...(highlights.length ? { highlights } : {}),
-                ...(spoilers.length && spoilerPrefs.major ? { spoilers } : {}),
-              });
-              await supabase
-                .from("chats")
-                .update({ messages, updated_at: new Date().toISOString() })
-                .eq("id", chatId);
+              if (messages.length > 0 && messages[messages.length - 1].role === "user") {
+                messages.push({
+                  role: "assistant",
+                  content: finalAnswer,
+                  sources: finalSources,
+                  ...(highlights.length ? { highlights } : {}),
+                  ...(spoilers.length && spoilerPrefs.major ? { spoilers } : {}),
+                });
+                await supabase
+                  .from("chats")
+                  .update({ messages, updated_at: new Date().toISOString() })
+                  .eq("id", chatId);
+              }
             }
           } catch (err) {
             console.error("Failed to save background chat to Supabase:", err);
