@@ -217,7 +217,7 @@ async function discoverGamefaqsBundleViaExtract(
     if (!extracted?.content) continue;
     if (isBlockedGuideContent(extracted.content)) {
       isBlocked = true;
-      continue;
+      break;
     }
 
     const title = parseGamefaqsGuideTitle(extracted.content, parsed);
@@ -291,11 +291,11 @@ async function mergeAndCacheDiscovery(
 
 async function discoverFromCacheAndDb(
   parsed: ParsedFaq,
-): Promise<{ pages: BundlePage[]; title: string }> {
+) {
   const cached = await getCachedBundleDiscovery(parsed.bundleKey, { allowStale: true });
   const fromDb = await getIndexedBundlePagesFromDb(parsed.bundleKey);
   const pages = mergeGamefaqsBundlePages([...(cached?.pages ?? []), ...fromDb]);
-  return { pages, title: cached?.title ?? "GameFAQs guide" };
+  return { pages, title: cached?.title ?? "GameFAQs guide", cached };
 }
 
 async function discoverGamefaqsBundleCacheFirst(
@@ -303,10 +303,16 @@ async function discoverGamefaqsBundleCacheFirst(
   rawUrl: string,
   signal?: AbortSignal,
 ): Promise<BundleDiscovery> {
-  const { pages: seedPages, title } = await discoverFromCacheAndDb(parsed);
-  if (seedPages.length > 1) {
-    void logTraceEvent("discovery_cache_hit", `Discovery cache hit: ${seedPages.length} pages for ${parsed.bundleKey}`, undefined, { bundleKey: parsed.bundleKey, pageCount: seedPages.length });
-    return buildBundleDiscovery(parsed, seedPages, title);
+  const { pages: seedPages, title, cached } = await discoverFromCacheAndDb(parsed);
+  if (cached) {
+    if (cached.isBlocked) {
+      void logTraceEvent("discovery_cache_hit_blocked", `Blocked discovery cache hit for ${parsed.bundleKey}`);
+      return { bundle: false, isBlocked: true };
+    }
+    if (seedPages.length > 1) {
+      void logTraceEvent("discovery_cache_hit", `Discovery cache hit: ${seedPages.length} pages for ${parsed.bundleKey}`, undefined, { bundleKey: parsed.bundleKey, pageCount: seedPages.length });
+      return buildBundleDiscovery(parsed, seedPages, title);
+    }
   }
 
   void logTraceEvent("discovery_cache_miss", `Discovery cache miss for ${parsed.bundleKey}, running Tavily discovery`, undefined, { bundleKey: parsed.bundleKey, seedPageCount: seedPages.length });
@@ -358,6 +364,7 @@ async function discoverGamefaqsBundleFull(
   signal?: AbortSignal,
 ): Promise<BundleDiscovery> {
   const cached = await getCachedBundleDiscovery(parsed.bundleKey);
+  const bundleKey = parsed.bundleKey;
   const seedPages = mergeGamefaqsBundlePages([
     ...(cached?.pages ?? []),
     ...(await getIndexedBundlePagesFromDb(parsed.bundleKey)),
@@ -366,9 +373,14 @@ async function discoverGamefaqsBundleFull(
   // ponytail: dropped the Cloudflare-blocked direct fetch here too.
   const fresh = await discoverViaTavily(parsed, signal, seedPages);
   if (fresh.isBlocked) {
-    if (seedPages.length > 0) {
-      return buildBundleDiscovery(parsed, seedPages, cached?.title ?? "GameFAQs guide");
-    }
+    void logTraceEvent(
+      "ingest_bundle_blocked",
+      `GameFAQs anti-bot blocked bundle discovery for ${parsed.canonicalUrl}`,
+      undefined,
+      { bundleKey },
+    );
+    // Cache the failure so we don't spam Tavily/GameFAQs within the TTL
+    void setCachedBundleDiscovery(bundleKey, { isBlocked: true });
     return { bundle: false, isBlocked: true };
   }
 
