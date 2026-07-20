@@ -1460,6 +1460,45 @@ details.sources small {
   outline: none;
 }
 
+.composer-placeholder-marquee {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  overflow: hidden;
+  color: var(--placeholder);
+  font-size: 1rem;
+  line-height: 1.5;
+  user-select: none;
+}
+
+.composer-placeholder-marquee .marquee-track {
+  display: flex;
+  width: max-content;
+}
+
+.composer-placeholder-marquee .marquee-content {
+  padding: 9px 12px;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .composer-placeholder-marquee .marquee-track {
+    animation: marquee-scroll 7s linear infinite;
+  }
+}
+
+@keyframes marquee-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
 .composer textarea::placeholder {
   color: var(--placeholder);
 }

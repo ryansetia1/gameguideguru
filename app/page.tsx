@@ -4158,6 +4158,18 @@ export default function Home() {
         )}
         <div className="composer-inner">
           <div className="composer-field">
+            {!input && !voiceListening && hasGame && (
+              <div className="composer-placeholder-marquee" aria-hidden="true">
+                <div className="marquee-track">
+                  <span className="marquee-content">
+                    {started ? "Ask a follow-up... " : "Ask for hints, strategy, or next steps... "}
+                  </span>
+                  <span className="marquee-content">
+                    {started ? "Ask a follow-up... " : "Ask for hints, strategy, or next steps... "}
+                  </span>
+                </div>
+              </div>
+            )}
             <textarea
               ref={composerRef}
               id="query"
@@ -4175,9 +4187,7 @@ export default function Home() {
                   ? ""
                   : !hasGame
                     ? "Enter a game name first"
-                    : started
-                      ? "Ask a follow-up..."
-                      : "Ask for hints, strategy, or next steps..."
+                    : ""
               }
               rows={1}
               maxLength={300}
