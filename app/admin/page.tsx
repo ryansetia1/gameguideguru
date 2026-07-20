@@ -209,6 +209,14 @@ export default function AdminPage() {
   });
   groupedTraces.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
 
+  const totalTraces = groupedTraces.length;
+  const finishedTraces = groupedTraces.filter(t => t.status === "Finished").length;
+  const successRate = totalTraces > 0 ? ((finishedTraces / totalTraces) * 100).toFixed(1) : "0.0";
+  const avgLatencyMs = totalTraces > 0 
+    ? groupedTraces.reduce((sum, t) => sum + t.totalLatencyMs, 0) / totalTraces 
+    : 0;
+  const uniqueGames = new Set(groupedTraces.map(t => t.game).filter(Boolean)).size;
+
   const handleCopy = async (e: React.MouseEvent, text: string) => {
     e.preventDefault();
     e.stopPropagation();
@@ -258,7 +266,7 @@ export default function AdminPage() {
   };
 
   return (
-    <main className="profile-page-shell">
+    <main className="admin-page-shell">
       <nav className="nav" aria-label="Brand">
         <div className="nav-left">
           <Link className="profile-back icon-inline" href="/">
@@ -273,7 +281,7 @@ export default function AdminPage() {
           <button 
             onClick={handleDeleteAll}
             className="nav-button"
-            style={{ padding: '4px 8px', fontSize: '0.75rem', minWidth: 'auto', minHeight: 'auto', background: '#ffebee', border: '1px solid #ffcdd2', color: '#c62828' }}
+            style={{ padding: '6px 12px', fontSize: '0.75rem', background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)' }}
             title="Delete All Traces"
           >
             Delete All
@@ -281,10 +289,29 @@ export default function AdminPage() {
         </div>
       </nav>
 
-      <section className="profile-page" style={{ maxWidth: '1000px', margin: '0 auto', padding: '0 20px', width: '100%' }}>
+      <section className="admin-page">
         <div className="profile-card" style={{ maxWidth: '100%' }}>
-          <h1>Trace Dashboard</h1>
+          <h1 style={{ fontFamily: "'Fira Code', monospace", fontWeight: 600 }}>Trace Dashboard</h1>
           <p className="profile-hint">Granular backend observability</p>
+
+          <div className="kpi-grid">
+            <div className="kpi-card">
+              <div className="kpi-label">Total Traces</div>
+              <div className="kpi-value">{totalTraces}</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Success Rate</div>
+              <div className="kpi-value">{successRate}%</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Avg Latency</div>
+              <div className="kpi-value">{(avgLatencyMs / 1000).toFixed(2)}s</div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-label">Active Games</div>
+              <div className="kpi-value">{uniqueGames}</div>
+            </div>
+          </div>
 
           {errorMsg && (
             <p className="profile-error">Error loading traces: {errorMsg}</p>
@@ -314,24 +341,24 @@ export default function AdminPage() {
                     <span className="trace-indicator">▶</span>
                     <div style={{ flex: 1 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div className="trace-id">{trace.traceId}</div>
+                        <div className="trace-id" style={{ fontFamily: "'Fira Code', monospace" }}>{trace.traceId}</div>
                         <span style={{ 
                           fontSize: '0.65rem', 
                           padding: '2px 6px', 
-                          borderRadius: '4px', 
-                          background: trace.statusColor, 
-                          color: '#fff',
+                          border: `1px solid ${trace.statusColor}`,
+                          color: trace.statusColor,
                           fontWeight: 'bold',
-                          textTransform: 'uppercase'
+                          textTransform: 'uppercase',
+                          backgroundColor: `${trace.statusColor}20` /* 12% opacity roughly */
                         }}>{trace.status}</span>
                         <span style={{
                           fontSize: '0.65rem',
                           padding: '2px 6px',
-                          borderRadius: '4px',
-                          background: trace.category === 'Upload' ? 'var(--signal)' : 'var(--muted)',
-                          color: '#fff',
+                          border: `1px solid ${trace.category === 'Upload' ? 'var(--signal)' : 'var(--muted)'}`,
+                          color: trace.category === 'Upload' ? 'var(--signal)' : 'var(--muted)',
                           fontWeight: 'bold',
-                          textTransform: 'uppercase'
+                          textTransform: 'uppercase',
+                          backgroundColor: trace.category === 'Upload' ? 'color-mix(in srgb, var(--signal) 20%, transparent)' : 'transparent'
                         }}>{trace.category}</span>
                       </div>
                       
@@ -349,7 +376,7 @@ export default function AdminPage() {
                       <button 
                         onClick={(e) => handleCopy(e, trace.traceId)}
                         className="nav-button"
-                        style={{ padding: '4px 8px', fontSize: '0.75rem', minWidth: 'auto', minHeight: 'auto', background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}
+                        style={{ padding: '4px 8px', fontSize: '0.75rem', minWidth: 'auto', minHeight: 'auto', background: 'transparent', border: '1px solid var(--line)', color: 'var(--ink)' }}
                         title="Copy Trace ID"
                       >
                         {copiedId === trace.traceId ? "Copied!" : "Copy ID"}
@@ -357,7 +384,7 @@ export default function AdminPage() {
                       <button 
                         onClick={(e) => handleDelete(e, trace.traceId)}
                         className="nav-button"
-                        style={{ padding: '4px 8px', fontSize: '0.75rem', minWidth: 'auto', minHeight: 'auto', background: '#ffebee', border: '1px solid #ffcdd2', color: '#c62828' }}
+                        style={{ padding: '4px 8px', fontSize: '0.75rem', minWidth: 'auto', minHeight: 'auto', background: 'transparent', border: '1px solid var(--danger)', color: 'var(--danger)' }}
                         title="Delete Trace"
                       >
                         Delete
@@ -402,6 +429,15 @@ export default function AdminPage() {
       </section>
 
       <style dangerouslySetInnerHTML={{__html: `
+        .admin-page-shell { width: min(100% - 32px, 1440px) !important; max-width: 1440px !important; margin: 0 auto; padding: 22px 0 32px; }
+        .admin-page { max-width: 100% !important; margin: 0 auto; padding: 0 20px; width: 100%; }
+        
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 24px 0; }
+        .kpi-card { background: var(--paper-strong); border: 1px solid var(--line); padding: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
+        .kpi-label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; font-weight: 600; }
+        .kpi-value { font-size: 1.8rem; font-family: 'Fira Code', monospace; color: var(--ink); font-weight: 700; margin: 0; }
+
         .trace-list {
           margin-top: 2rem;
           display: flex;
@@ -410,9 +446,13 @@ export default function AdminPage() {
         }
         .trace-details {
           border: 1px solid var(--line);
-          border-radius: 8px;
           background: var(--paper-strong);
           overflow: hidden;
+          transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .trace-details:hover {
+          border-color: var(--text-subtle);
+          box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         }
         .trace-details.status-finished {
           border-left: 4px solid var(--accent);
@@ -456,7 +496,7 @@ export default function AdminPage() {
           transition: transform 0.2s;
         }
         .trace-id {
-          font-family: monospace;
+          font-family: 'Fira Code', monospace;
           font-size: 0.9rem;
           color: var(--ink);
           font-weight: 500;
@@ -492,17 +532,17 @@ export default function AdminPage() {
           border-bottom: none;
         }
         .trace-table tr:hover td {
-          background: var(--paper);
+          background: var(--paper-strong);
         }
         .time-cell {
           color: var(--muted) !important;
           white-space: nowrap;
+          font-family: 'Fira Code', monospace;
         }
         .type-badge {
           background: var(--disabled-bg);
           color: var(--ink);
           padding: 0.25rem 0.5rem;
-          border-radius: 4px;
           font-size: 0.75rem;
           font-weight: 600;
           white-space: nowrap;
@@ -513,11 +553,12 @@ export default function AdminPage() {
         .latency-cell {
           color: var(--muted) !important;
           white-space: nowrap;
+          font-family: 'Fira Code', monospace;
         }
         .meta-cell {
-          font-family: monospace;
+          font-family: 'Fira Code', monospace;
           color: var(--text-subtle) !important;
-          max-width: 250px;
+          max-width: 300px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;

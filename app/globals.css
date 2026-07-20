@@ -2719,6 +2719,17 @@ details.sources small {
   -webkit-overflow-scrolling: touch;
 }
 
+@media (min-width: 768px) {
+  .quick-rail {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    overflow-x: visible;
+    scroll-snap-type: none;
+    margin: 0;
+    padding-inline: 0;
+  }
+}
+
 .quick-card {
   flex: 0 0 150px;
   /* Without this a long game title's nowrap min-content overrides flex-basis and
@@ -2737,6 +2748,13 @@ details.sources small {
   font-family: var(--font-sans);
   cursor: pointer;
   transition: background 120ms ease, transform 120ms ease;
+}
+
+@media (min-width: 768px) {
+  .quick-card {
+    flex: none;
+    width: 100%;
+  }
 }
 
 .quick-card:hover {

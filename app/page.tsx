@@ -3065,7 +3065,7 @@ export default function Home() {
   const quickIdle = showCarousel && !newGameOpen;
   const showHero = isMounted && homeMode;
   const showSetupForm = (isMounted && homeMode && !quickIdle) || (started && editingGame);
-  const QUICK_LIMIT = 4;
+  const QUICK_LIMIT = 7;
   const recentGames = chats.slice(0, QUICK_LIMIT);
   const moreGamesCount = chats.length - recentGames.length;
   const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
