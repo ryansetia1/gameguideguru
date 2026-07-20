@@ -148,7 +148,7 @@ export async function POST(request: Request) {
 
       const backgroundTask = runWithTrace(traceId, async () => {
         const startedAt = Date.now();
-        await logTraceEvent("solve_start", "Started solve generation");
+        await logTraceEvent("solve_start", "Started solve generation", undefined, { question, game, platform });
         try {
           let sources: SearchResult[] = [];
           let guideHint: string | undefined;

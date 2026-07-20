@@ -131,6 +131,8 @@ export default function AdminPage() {
     );
   }
 
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
   // Group traces for display
   const grouped = new Map<string, any[]>();
   for (const row of traces) {
@@ -140,13 +142,64 @@ export default function AdminPage() {
     grouped.get(row.trace_id)!.push(row);
   }
   
-  const groupedTraces = Array.from(grouped.entries()).map(([traceId, events]) => {
-    events.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+  const groupedTraces = Array.from(grouped.entries()).map(([traceId, rawEvents]) => {
+    const events = [...rawEvents].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    
+    const mergedEvents = [];
+    let currentRep: any = null;
+    let repCount = 0;
+    
+    for (const ev of events) {
+      if (ev.event_type === "replicate_status") {
+        if (!currentRep) {
+          currentRep = { ...ev };
+          repCount = 1;
+        } else if (currentRep.message === ev.message) {
+          repCount++;
+        } else {
+          if (repCount > 1) currentRep.message += ` (x${repCount})`;
+          mergedEvents.push(currentRep);
+          currentRep = { ...ev };
+          repCount = 1;
+        }
+      } else {
+        if (currentRep) {
+          if (repCount > 1) currentRep.message += ` (x${repCount})`;
+          mergedEvents.push(currentRep);
+          currentRep = null;
+          repCount = 0;
+        }
+        mergedEvents.push(ev);
+      }
+    }
+    if (currentRep) {
+      if (repCount > 1) currentRep.message += ` (x${repCount})`;
+      mergedEvents.push(currentRep);
+    }
+    
+    const solveStart = events.find(e => e.event_type === "solve_start");
+    const game = solveStart?.metadata?.game;
+    const question = solveStart?.metadata?.question;
+    
+    const isFinished = events.some(e => 
+      e.event_type === "generation_complete" || 
+      e.event_type === "error" || 
+      e.event_type === "solve_error"
+    );
+    const isNew = !isFinished && events.length <= 3;
+    const status = isFinished ? "Finished" : isNew ? "New" : "Processing";
+    const statusColor = isFinished ? "var(--accent)" : isNew ? "var(--action)" : "var(--warn)";
+
     return {
       traceId,
-      events,
+      events: mergedEvents,
+      rawEventCount: events.length,
       startTime: events[0]?.created_at,
       totalLatencyMs: events.reduce((sum, e) => sum + (e.latency_ms || 0), 0),
+      game,
+      question,
+      status,
+      statusColor
     };
   });
   groupedTraces.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
@@ -156,6 +209,8 @@ export default function AdminPage() {
     e.stopPropagation();
     try {
       await navigator.clipboard.writeText(text);
+      setCopiedId(text);
+      setTimeout(() => setCopiedId(null), 2000);
     } catch (err) {}
   };
 
@@ -212,14 +267,42 @@ export default function AdminPage() {
             )}
 
             {groupedTraces.map((trace) => (
-              <details key={trace.traceId} className="trace-details">
-                <summary className="trace-summary">
+              <details key={trace.traceId} className={`trace-details status-${trace.status.toLowerCase()}`}>
+                <summary className="trace-summary" style={{ position: 'relative', overflow: 'hidden' }}>
+                  <div style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    height: '3px',
+                    background: trace.statusColor,
+                    width: trace.status === 'Finished' ? '100%' : '60%',
+                    opacity: 0.8,
+                    animation: trace.status === 'Processing' ? 'pulse 2s infinite' : 'none'
+                  }}></div>
                   <div className="trace-header">
                     <span className="trace-indicator">▶</span>
                     <div style={{ flex: 1 }}>
-                      <div className="trace-id">{trace.traceId}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div className="trace-id">{trace.traceId}</div>
+                        <span style={{ 
+                          fontSize: '0.65rem', 
+                          padding: '2px 6px', 
+                          borderRadius: '4px', 
+                          background: trace.statusColor, 
+                          color: '#fff',
+                          fontWeight: 'bold',
+                          textTransform: 'uppercase'
+                        }}>{trace.status}</span>
+                      </div>
+                      
+                      {trace.game && trace.question && (
+                        <div style={{ fontSize: '0.85rem', color: 'var(--ink)', margin: '4px 0', fontWeight: 500 }}>
+                          <span style={{ color: 'var(--action)', fontWeight: 600 }}>{trace.game}</span>: {trace.question}
+                        </div>
+                      )}
+                      
                       <div className="trace-meta">
-                        {new Date(trace.startTime).toLocaleString()} • {trace.events.length} events • {trace.totalLatencyMs}ms total
+                        {new Date(trace.startTime).toLocaleString()} • {trace.rawEventCount} events • {trace.totalLatencyMs}ms total
                       </div>
                     </div>
                     <div className="trace-actions" style={{ display: 'flex', gap: '8px' }}>
@@ -229,7 +312,7 @@ export default function AdminPage() {
                         style={{ padding: '4px 8px', fontSize: '0.75rem', minWidth: 'auto', minHeight: 'auto', background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}
                         title="Copy Trace ID"
                       >
-                        Copy
+                        {copiedId === trace.traceId ? "Copied!" : "Copy ID"}
                       </button>
                       <button 
                         onClick={(e) => handleDelete(e, trace.traceId)}
@@ -290,6 +373,20 @@ export default function AdminPage() {
           border-radius: 8px;
           background: var(--paper-strong);
           overflow: hidden;
+        }
+        .trace-details.status-finished {
+          border-left: 4px solid var(--accent);
+        }
+        .trace-details.status-processing {
+          border-left: 4px solid var(--warn);
+        }
+        .trace-details.status-new {
+          border-left: 4px solid var(--action);
+        }
+        @keyframes pulse {
+          0% { opacity: 0.4; }
+          50% { opacity: 1; }
+          100% { opacity: 0.4; }
         }
         .trace-details[open] .trace-indicator {
           transform: rotate(90deg);
