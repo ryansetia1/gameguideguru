@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getServerClient } from "@/lib/supabase-server";
 
 import { parseGuideFile } from "@/lib/parse-guide-file";
 import {
@@ -106,4 +107,50 @@ export async function POST(request: Request) {
       filename: file.name,
     });
   });
+}
+
+export async function DELETE(request: Request) {
+  if (!isGuideRagAvailable()) {
+    return NextResponse.json(
+      { error: "Guide RAG is not configured on this server." },
+      { status: 503 },
+    );
+  }
+
+  try {
+    const { guideUrl, userId } = await request.json();
+    if (!guideUrl || !userId || typeof guideUrl !== "string" || typeof userId !== "string") {
+      return NextResponse.json({ error: "Missing guideUrl or userId" }, { status: 400 });
+    }
+
+    if (!guideUrl.startsWith(`upload://${userId.trim()}/`)) {
+      return NextResponse.json({ error: "Unauthorized or invalid guideUrl" }, { status: 403 });
+    }
+
+    const supabase = getServerClient();
+    if (!supabase) {
+      return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+    }
+
+    const traceId = request.headers.get("X-Trace-Id") || crypto.randomUUID();
+    
+    return runWithTrace(traceId, async () => {
+      await logTraceEvent("upload_delete_start", `Deleting guide: ${guideUrl}`, undefined, { guideUrl });
+      
+      const { error } = await supabase
+        .from("guide_chunks")
+        .delete()
+        .eq("guide_url", guideUrl);
+
+      if (error) {
+        await logTraceEvent("upload_delete_error", `Failed to delete guide: ${error.message}`, undefined, { error: error.message, guideUrl });
+        return NextResponse.json({ error: "Failed to delete guide" }, { status: 500 });
+      }
+
+      await logTraceEvent("upload_delete_complete", `Successfully deleted guide: ${guideUrl}`, undefined, { guideUrl });
+      return NextResponse.json({ success: true, guideUrl });
+    });
+  } catch (err) {
+    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  }
 }

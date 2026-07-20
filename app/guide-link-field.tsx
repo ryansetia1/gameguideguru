@@ -261,9 +261,18 @@ export function GuideLinkField({
         delete next[url];
         onBundleMetaChange(next);
       }
+      
+      if (url.startsWith("upload://") && userId) {
+        fetch("/api/guide-upload", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ guideUrl: url, userId }),
+        }).catch(console.error);
+      }
+      
       setAddError("");
     },
-    [bundleMeta, onBundleMetaChange, onChange, value],
+    [bundleMeta, onBundleMetaChange, onChange, value, userId],
   );
 
   const runSearch = useCallback(async () => {
