@@ -2463,6 +2463,10 @@ export default function Home() {
     images: string[] = [],
   ) {
     setError("");
+    if (!navigator.onLine) {
+      setError("You are offline. Please check your internet connection.");
+      return;
+    }
     setLoading(true);
     setGenerationStatus(null);
     setEditingIndex(null);
@@ -2690,11 +2694,13 @@ export default function Home() {
       let buffer = "";
       let answerData: any = null;
       let streamError: Error | null = null;
+      let streamStarted = false;
 
       if (reader) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
+          streamStarted = true;
           buffer += decoder.decode(value, { stream: true });
 
           const parts = buffer.split("\n\n");
@@ -2795,8 +2801,9 @@ export default function Home() {
       const isServerSidePersistent = Boolean(user);
       const isAbort = caught instanceof DOMException && caught.name === "AbortError";
 
-      if (!isAbort && isNetworkDrop && isServerSidePersistent && activeId) {
-        const msg = "Network disconnected. Waiting for background task...";
+      // If stream never started (e.g. no connection at all, backend down), don't pretend it's in background
+      if (!isAbort && isNetworkDrop && isServerSidePersistent && activeId && streamStarted) {
+        const msg = "Continuing process...";
         backgroundStatusRef.current[activeId] = msg;
         if (activeChatIdRef.current === activeId) setGenerationStatus(msg);
         
