@@ -109,7 +109,7 @@ export async function POST(request: Request) {
           url,
           latencyMs: Date.now() - startMs,
           status: "success",
-          pagesIndexed: result.chunkCount > 0 ? 1 : 0, // ensureGuideIngested currently returns chunkCount, but wait, does it return pages_indexed? We don't have accurate pages indexed per ensureGuideIngested without inspecting deep inside, but we know if it succeeded.
+          pagesIndexed: result.pagesIndexed ?? (result.chunkCount > 0 ? 1 : 0),
           hubWarning: result.hubWarning,
         }).catch(console.error);
       } catch (err) {
