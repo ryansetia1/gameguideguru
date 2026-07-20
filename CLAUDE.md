@@ -44,6 +44,8 @@ do not sync to the cloud or use Storage uploads.
   (signed-in saved chats) or a `sessionStorage` draft (`lib/chat-session.js`;
   anon / not-yet-saved). `runTurn`/`persistChat` centralise ask +
   save; `conversationGame` tracks which game the visible thread belongs to.
+  **Server-Side Persistence:** `POST /api/solve` uses Next.js 15 `after()` to detach LLM generation and save directly to Supabase via the user's Auth token, guaranteeing the AI finishes even if the user force-closes the app.
+  **Background Polling:** if the UI drops the SSE stream on network sleep, it smoothly changes status to "Continuing process..." and polls Supabase to reattach to the background result.
   **Temporary chat** (`temporary` flag): entered from the composer "+" menu, or via
   a quick-access incognito button on the saved game card (`.game-card-incognito`)
   and the sticky mini-header (`.sticky-incognito`), both shown when
@@ -61,8 +63,9 @@ do not sync to the cloud or use Storage uploads.
   Uploaded message images are deleted from Storage each turn so nothing orphans.
   `newGame`/`openChat` reset the flag off.
   While a turn runs the Send button becomes a **Stop** button that aborts the
-  `/api/solve` fetch (`abortRef`); the abort propagates via `request.signal` to
-  cancel the Replicate prediction + Tavily search server-side. A promise-based
+  `/api/solve` fetch (`abortRef`); the client also fires a direct call to
+  `/api/solve/cancel` which explicitly aborts the Replicate prediction (saving tokens).
+  This Replicate-native cancel replaces the old `request.signal` abort to allow the background `after()` save to complete uninterrupted when the user merely backgrounds the app. A promise-based
   confirm dialog (`askConfirm(message, confirmLabel?, danger=true)` →
   `confirmState`) guards every destructive action (delete chat from the
   sidebar/game-card/library kebabs, clear cover, and edit/retry when it would drop
@@ -475,8 +478,8 @@ verify actual indexed state before clearing the progress indicator.
 ### Indexing (`lib/guide-ingest.ts`, `POST /api/guide-ingest`)
 
 - Runs before first solve turn per guide URL (and from `lib/guide-rag.ts` on solve).
-- **Resume**: per-page idempotent — existing `guide_chunks` for a URL are skipped;
-  failed/missing pages retried on next turn.
+- **Pre-database check**: queries `guide_chunks` for existing URLs *before* invoking Tavily extract, drastically saving credits and latency on repeat ingest attempts.
+- **Resume**: per-page idempotent — failed/missing pages retried on next turn.
 - **Skip ingest when done**: client skips `POST /api/guide-ingest` when
   `bundleHasPendingPages` is false (all target slugs indexed or skipped) or when local `guideIndexState` confirms a single-page guide is already indexed. Server `isGuideIndexed` includes a canonical URL fallback to gracefully handle GameFAQs single-page URLs submitted with arbitrary query parameters (e.g. `?page=1`).
 - Filters discovery by `skipSlugs` / `includeSlugs` from `bundlePrefs`.
