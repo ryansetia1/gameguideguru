@@ -2791,6 +2791,44 @@ export default function Home() {
         if (ingestHint) setToast(ingestHint);
       }
     } catch (caught) {
+      const isNetworkDrop = caught instanceof TypeError && caught.message.toLowerCase().includes("fetch");
+      const isServerSidePersistent = Boolean(user);
+      const isAbort = caught instanceof DOMException && caught.name === "AbortError";
+
+      if (!isAbort && isNetworkDrop && isServerSidePersistent && activeId) {
+        const msg = "Network disconnected. Waiting for background task...";
+        backgroundStatusRef.current[activeId] = msg;
+        if (activeChatIdRef.current === activeId) setGenerationStatus(msg);
+        
+        const supabase = getSupabase();
+        if (supabase) {
+           let attempts = 0;
+           while (attempts < 60) {
+             if (controller.signal.aborted) break;
+             await new Promise((res) => setTimeout(res, 2000));
+             attempts++;
+             const { data } = await supabase.from("chats").select("messages").eq("id", activeId).single();
+             if (data?.messages) {
+               const msgs = coerceMessages(data.messages);
+               if (msgs.length > optimistic.length) {
+                 backgroundMessagesRef.current[activeId] = msgs;
+                 backgroundLoadingRef.current[activeId] = false;
+                 backgroundStatusRef.current[activeId] = null;
+                 delete abortRefs.current[activeId];
+                 if (activeChatIdRef.current === activeId) {
+                   setMessages(msgs);
+                   setLoading(false);
+                   setGenerationStatus(null);
+                 }
+                 void loadChats();
+                 succeeded = true;
+                 return;
+               }
+             }
+           }
+        }
+      }
+
       if (activeId) {
         backgroundMessagesRef.current[activeId] = priorMessages;
         backgroundLoadingRef.current[activeId] = false;
@@ -2799,18 +2837,18 @@ export default function Home() {
       if (activeChatIdRef.current === activeId) {
         setMessages(priorMessages);
         setLoading(false);
-        if (!(caught instanceof DOMException && caught.name === "AbortError")) {
+        if (!isAbort) {
           setError(
             caught instanceof Error ? caught.message : "An unknown error occurred.",
           );
         }
       }
     } finally {
-      if (activeId) {
+      if (activeId && !succeeded) {
         backgroundLoadingRef.current[activeId] = false;
         delete abortRefs.current[activeId];
       }
-      if (activeChatIdRef.current === activeId) {
+      if (activeChatIdRef.current === activeId && !succeeded) {
         setLoading(false);
       }
       // Answer's in: hand focus back to the composer on desktop so a follow-up
