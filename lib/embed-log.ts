@@ -10,10 +10,7 @@ export type EmbedLogMeta = {
 };
 
 function resolveEmbedModel(): string {
-  return (
-    process.env.EMBED_MODEL ||
-    "lucataco/qwen3-embedding-8b:42d968487820032a1535d81ea20df16f442ea308ec5abae6b5d6cf4675eb3e2f"
-  );
+  return process.env.EMBED_MODEL || "text-embedding-3-large";
 }
 
 /** Best-effort embed audit log (file + llm_calls when Supabase is set). */

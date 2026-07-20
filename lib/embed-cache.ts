@@ -2,9 +2,9 @@ import { getServerClient } from "@/lib/supabase-server";
 
 const TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-// Namespace the cache by embedding model, so swapping EMBED_MODEL (different
-// vector dimension) can't serve a stale wrong-dim vector into match_guide_chunks.
-const MODEL_TAG = (process.env.EMBED_MODEL || "default").split(":")[0];
+// Namespace the cache by embedding model, so swapping EMBED_MODEL can't serve
+// a stale wrong-dimension vector into match_guide_chunks.
+const MODEL_TAG = process.env.EMBED_MODEL || "text-embedding-3-large";
 
 export function embedCacheKey(query: string): string {
   const normalized = query.replace(/\s+/g, " ").trim().toLowerCase();

@@ -41,7 +41,7 @@ export function normalizeGuideUrl(raw: string): string {
 }
 
 export function isGuideRagAvailable(): boolean {
-  return Boolean(getServerClient() && process.env.REPLICATE_API_TOKEN);
+  return Boolean(getServerClient() && process.env.SUMOPOD_API_KEY);
 }
 
 export type IngestResult = {
@@ -419,7 +419,7 @@ async function ingestSingleGuidePage(
   bundleKey: string | null = null,
 ): Promise<IngestResult> {
   const supabase = getServerClient();
-  if (!supabase || !process.env.REPLICATE_API_TOKEN) {
+  if (!supabase || !process.env.SUMOPOD_API_KEY) {
     return { indexed: false, chunkCount: 0, hubWarning: false };
   }
 
@@ -466,7 +466,7 @@ async function ingestGamefaqsBundle(
   ctx?: IngestContext,
 ): Promise<IngestResult> {
   const supabase = getServerClient();
-  if (!supabase || !process.env.REPLICATE_API_TOKEN) {
+  if (!supabase || !process.env.SUMOPOD_API_KEY) {
     return { indexed: false, chunkCount: 0, hubWarning: false };
   }
 

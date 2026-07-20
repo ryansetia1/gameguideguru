@@ -1,85 +1,85 @@
-import Replicate from "replicate";
+import OpenAI from "openai";
 
 import { embedCacheKey, getCachedEmbedding, setCachedEmbedding } from "@/lib/embed-cache";
-import {
-  parsePositiveInt,
-  sleep,
-  withReplicateRetry,
-} from "@/lib/replicate-retry.js";
 import { logEmbedCall, type EmbedLogMeta } from "@/lib/embed-log";
 import { logTraceEvent } from "@/lib/trace";
 
-const DEFAULT_EMBED_MODEL =
-  "lucataco/qwen3-embedding-8b:42d968487820032a1535d81ea20df16f442ea308ec5abae6b5d6cf4675eb3e2f";
-// Qwen3 supports an asymmetric query instruction, BUT it must be validated against
-// GUIDE_HIT before use: documents were embedded WITHOUT an instruction, so an
-// un-matched query instruction shifts the query vector out of alignment with the
-// document vectors and tanks relevance (answers drift off the guide). Default OFF
-// = symmetric with documents = known-aligned. Set EMBED_QUERY_INSTRUCTION to
-// re-enable after calibrating GUIDE_HIT (see docs/preferred-guide.md).
-const QUERY_INSTRUCTION = process.env.EMBED_QUERY_INSTRUCTION ?? "";
+const DEFAULT_EMBED_MODEL = "text-embedding-3-large";
 const EMBED_DIM = 1024;
-const BATCH_SIZE = 32;
-// Defaults tuned for a funded account (withReplicateRetry backs off on 429, so
-// these degrade gracefully). Lower EMBED_CONCURRENCY / raise EMBED_BATCH_DELAY_MS
-// via env if a low-balance account gets throttled.
+// OpenAI embeddings.create accepts up to 2048 inputs, but we keep batches
+// moderate to avoid timeouts and to allow per-batch delay for rate-limit safety.
+const BATCH_SIZE = 256;
+// Defaults tuned for a funded account. Lower EMBED_CONCURRENCY / raise
+// EMBED_BATCH_DELAY_MS via env if throttled.
 const CONCURRENCY = parsePositiveInt(process.env.EMBED_CONCURRENCY, 5, 8);
 const BATCH_DELAY_MS = parsePositiveInt(process.env.EMBED_BATCH_DELAY_MS, 150, 5_000);
 
-type ModelName = `${string}/${string}` | `${string}/${string}:${string}`;
-
-function resolveEmbedModel(): ModelName | null {
-  const model = process.env.EMBED_MODEL || DEFAULT_EMBED_MODEL;
-  if (!/^[^/\s]+\/[^/\s]+(?::[^/\s]+)?$/.test(model)) return null;
-  return model as ModelName;
+function parsePositiveInt(
+  raw: string | undefined,
+  fallback: number,
+  max: number,
+): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 1) return fallback;
+  return Math.min(Math.floor(value), max);
 }
 
-function withTimeout(ms: number, signal?: AbortSignal): AbortSignal {
-  const timeout = AbortSignal.timeout(ms);
-  return signal ? AbortSignal.any([timeout, signal]) : timeout;
-}
-
-type EmbedOutput = {
-  embeddings?: unknown;
-};
-
-function parseEmbeddings(output: unknown): number[][] {
-  if (!output || typeof output !== "object") return [];
-  const embeddings = (output as EmbedOutput).embeddings;
-  if (!Array.isArray(embeddings)) return [];
-  return embeddings.flatMap((row): number[][] => {
-    if (!Array.isArray(row)) return [];
-    const nums = row.filter((n): n is number => typeof n === "number");
-    return nums.length ? [nums] : [];
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (!ms) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    if (signal) {
+      signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+        },
+        { once: true },
+      );
+    }
   });
 }
 
-async function runEmbedBatch(
-  replicate: Replicate,
-  model: ModelName,
-  texts: string[],
-  signal?: AbortSignal,
-  instruction = "",
-): Promise<number[][]> {
-  const raw = await withReplicateRetry(
-    () =>
-      replicate.run(
-        model,
-        {
-          input: {
-            text: texts.length === 1 ? texts[0] : texts,
-            embedding_dim: EMBED_DIM,
-            normalize: true,
-            batch_size: Math.min(BATCH_SIZE, texts.length),
-            ...(instruction ? { instruction } : {}),
-          },
-          signal: withTimeout(120_000, signal),
-        },
-      ),
-    { signal },
-  );
+function resolveEmbedModel(): string {
+  return process.env.EMBED_MODEL || DEFAULT_EMBED_MODEL;
+}
 
-  const embeddings = parseEmbeddings(raw);
+let openaiInstance: OpenAI | null = null;
+
+function getOpenAIEmbed(): OpenAI | null {
+  const apiKey = process.env.SUMOPOD_API_KEY;
+  if (!apiKey) return null;
+  if (!openaiInstance) {
+    openaiInstance = new OpenAI({
+      apiKey,
+      baseURL: process.env.SUMOPOD_BASE_URL || "https://ai.sumopod.com/v1",
+      maxRetries: 3,
+      timeout: 120_000,
+    });
+  }
+  return openaiInstance;
+}
+
+async function runEmbedBatch(
+  client: OpenAI,
+  model: string,
+  texts: string[],
+): Promise<number[][]> {
+  const response = await client.embeddings.create({
+    model,
+    input: texts,
+    dimensions: EMBED_DIM,
+  });
+
+  // OpenAI returns data sorted by index, but sort explicitly to be safe.
+  const sorted = [...response.data].sort((a, b) => a.index - b.index);
+  const embeddings = sorted.map((item) => item.embedding);
+
   if (embeddings.length !== texts.length) {
     throw new Error(
       `Embed model returned ${embeddings.length} vectors for ${texts.length} texts`,
@@ -88,29 +88,20 @@ async function runEmbedBatch(
   return embeddings;
 }
 
-let replicateInstance: Replicate | null = null;
-
-function getReplicateEmbed(): Replicate | null {
-  const token = process.env.REPLICATE_API_TOKEN;
-  if (!token) return null;
-  if (!replicateInstance) replicateInstance = new Replicate({ auth: token });
-  return replicateInstance;
-}
-
 /**
- * Embed one or more texts via Replicate. Batches automatically (up to 32).
- * Best-effort: throws when Replicate is unconfigured or the model fails.
+ * Embed one or more texts via OpenAI-compatible API (Sumopod). Batches
+ * automatically (up to 256 per call). Best-effort: throws when the API
+ * is unconfigured or the model fails.
  */
 export async function embedTexts(
   texts: string[],
   signal?: AbortSignal,
   logMeta?: EmbedLogMeta,
-  instruction = "",
 ): Promise<number[][]> {
-  const replicate = getReplicateEmbed();
+  const client = getOpenAIEmbed();
   const model = resolveEmbedModel();
-  if (!replicate || !model) {
-    throw new Error("REPLICATE_API_TOKEN or EMBED_MODEL is not configured");
+  if (!client) {
+    throw new Error("SUMOPOD_API_KEY is not configured");
   }
 
   const cleaned = texts.map((t) => t.replace(/\s+/g, " ").trim()).filter(Boolean);
@@ -122,14 +113,15 @@ export async function embedTexts(
   const out: number[][] = [];
 
   for (let i = 0; i < cleaned.length; i += BATCH_SIZE) {
+    if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
     const batch = cleaned.slice(i, i + BATCH_SIZE);
     try {
-      out.push(...(await runEmbedBatch(replicate, model, batch, signal, instruction)));
+      out.push(...(await runEmbedBatch(client, model, batch)));
     } catch (batchError) {
-      // ponytail: if batch input fails, fall back to bounded concurrency singles.
+      // If batch fails, fall back to bounded concurrency singles.
       console.error("Batch embed failed, falling back to singles:", batchError);
       const singles = await mapPool(batch, CONCURRENCY, async (text) => {
-        const [vec] = await runEmbedBatch(replicate, model, [text], signal, instruction);
+        const [vec] = await runEmbedBatch(client, model, [text]);
         return vec;
       });
       out.push(...singles);
@@ -183,7 +175,6 @@ export async function embedQuery(
       [query],
       signal,
       logMeta ? { ...logMeta, purpose: "rag_query" } : { purpose: "rag_query" },
-      QUERY_INSTRUCTION,
     );
     const embedDuration = Date.now() - embedStart;
     if (!embedding?.length) {
