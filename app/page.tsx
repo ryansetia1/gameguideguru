@@ -798,7 +798,10 @@ export default function Home() {
   const sessionHydratedRef = useRef(false);
   const steamLinkHandledRef = useRef(false);
   const steamSigninHandledRef = useRef(false);
-  const abortRef = useRef<AbortController | null>(null);
+  const abortRefs = useRef<Record<string, AbortController>>({});
+  const backgroundMessagesRef = useRef<Record<string, Message[]>>({});
+  const backgroundLoadingRef = useRef<Record<string, boolean>>({});
+  const backgroundStatusRef = useRef<Record<string, string | null>>({});
   const conversationGame = useRef("");
   const activeChatIdRef = useRef<string | null>(null);
   // Snapshot of the thread open before entering temporary chat, so turning it off
@@ -1974,7 +1977,10 @@ export default function Home() {
     clearPendingImages();
     setReleaseYear(chat.release_year ?? "");
     setEditingGame(false);
-    setMessages(coerceMessages(chat.messages));
+    const isBgLoading = backgroundLoadingRef.current[chat.id];
+    setMessages(backgroundMessagesRef.current[chat.id] || coerceMessages(chat.messages));
+    setLoading(isBgLoading || false);
+    setGenerationStatus(backgroundStatusRef.current[chat.id] || null);
     conversationGame.current = chat.game;
     setInput("");
     setError("");
@@ -2473,9 +2479,14 @@ export default function Home() {
     };
     const optimistic: Message[] = [...priorMessages, userMessage];
     setMessages(optimistic);
+    if (targetChatId) {
+      backgroundMessagesRef.current[targetChatId] = optimistic;
+      backgroundLoadingRef.current[targetChatId] = true;
+      backgroundStatusRef.current[targetChatId] = null;
+    }
 
     const controller = new AbortController();
-    abortRef.current = controller;
+    if (targetChatId) abortRefs.current[targetChatId] = controller;
 
     const urlsNeedingIngest = guideUrls.filter((url) =>
       guideUrlNeedsIngest(url, guideBundleMeta[url], bundleIndexStatus[url], guideIndexState[url]),
@@ -2681,7 +2692,10 @@ export default function Home() {
               try {
                 const payload = JSON.parse(payloadStr);
                 if (eventName === "status" && payload.text) {
-                  setGenerationStatus(payload.text);
+                  if (targetChatId) backgroundStatusRef.current[targetChatId] = payload.text;
+                  if (targetChatId === activeChatIdRef.current || !targetChatId) {
+                    setGenerationStatus(payload.text);
+                  }
                 } else if (eventName === "result") {
                   answerData = payload;
                 } else if (eventName === "error" && payload.error) {
@@ -2735,7 +2749,14 @@ export default function Home() {
           ...(spoilers.length && spoilerPrefs.major ? { spoilers } : {}),
         },
       ];
-      setMessages(nextMessages);
+      if (targetChatId) {
+        backgroundMessagesRef.current[targetChatId] = nextMessages;
+        backgroundLoadingRef.current[targetChatId] = false;
+        backgroundStatusRef.current[targetChatId] = null;
+      }
+      if (targetChatId === activeChatIdRef.current || !targetChatId) {
+        setMessages(nextMessages);
+      }
       conversationGame.current = game;
       const savedId = await persistChat(nextMessages, targetChatId);
       if (savedId) activeChatIdRef.current = savedId;
@@ -2743,19 +2764,32 @@ export default function Home() {
       // Storage instead of leaving them orphaned.
       if (temporary && images.length) void deleteMessageImages([userMessage]);
       succeeded = true;
-      if (ingestHint) setToast(ingestHint);
+      if (targetChatId === activeChatIdRef.current || !targetChatId) {
+        if (ingestHint) setToast(ingestHint);
+      }
     } catch (caught) {
-      setMessages(priorMessages);
-      // A user-triggered Stop aborts the fetch — treat it as a silent cancel,
-      // not an error.
-      if (!(caught instanceof DOMException && caught.name === "AbortError")) {
-        setError(
-          caught instanceof Error ? caught.message : "An unknown error occurred.",
-        );
+      if (targetChatId) {
+        backgroundMessagesRef.current[targetChatId] = priorMessages;
+        backgroundLoadingRef.current[targetChatId] = false;
+        delete abortRefs.current[targetChatId];
+      }
+      if (activeChatIdRef.current === targetChatId) {
+        setMessages(priorMessages);
+        setLoading(false);
+        if (!(caught instanceof DOMException && caught.name === "AbortError")) {
+          setError(
+            caught instanceof Error ? caught.message : "An unknown error occurred.",
+          );
+        }
       }
     } finally {
-      abortRef.current = null;
-      setLoading(false);
+      if (targetChatId) {
+        backgroundLoadingRef.current[targetChatId] = false;
+        delete abortRefs.current[targetChatId];
+      }
+      if (activeChatIdRef.current === targetChatId) {
+        setLoading(false);
+      }
       // Answer's in: hand focus back to the composer on desktop so a follow-up
       // can be typed right away. Skip on touch-primary devices — focus pops the
       // keyboard over the answer. rAF waits for the textarea to un-disable.
@@ -2771,7 +2805,9 @@ export default function Home() {
   }
 
   function stopGeneration() {
-    abortRef.current?.abort();
+    if (activeChatIdRef.current) {
+      abortRefs.current[activeChatIdRef.current]?.abort();
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
