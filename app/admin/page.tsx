@@ -46,13 +46,17 @@ export default function AdminPage() {
         } else if (data && mounted) {
           setTraces(data);
           
-          // Subscribe to real-time inserts
+          // Subscribe to real-time changes
           channel = supabase!.channel("admin-trace-events")
             .on(
               "postgres_changes",
-              { event: "INSERT", schema: "public", table: "trace_events" },
+              { event: "*", schema: "public", table: "trace_events" },
               (payload) => {
-                setTraces((prev) => [payload.new, ...prev].slice(0, 500));
+                if (payload.eventType === "INSERT") {
+                  setTraces((prev) => [payload.new, ...prev].slice(0, 500));
+                } else if (payload.eventType === "DELETE") {
+                  setTraces((prev) => prev.filter((t) => t.id !== payload.old.id));
+                }
               }
             )
             .subscribe();
@@ -147,6 +151,34 @@ export default function AdminPage() {
   });
   groupedTraces.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
 
+  const handleCopy = async (e: React.MouseEvent, text: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {}
+  };
+
+  const handleDelete = async (e: React.MouseEvent, traceId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm("Delete all events for this trace?")) return;
+    
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    // We do NOT use optimistic UI here anymore because RLS might block it.
+    // We wait for the DB response, and if successful, we let the realtime 
+    // subscription or manual state update handle it.
+    const { error } = await supabase.from("trace_events").delete().eq("trace_id", traceId);
+    if (error) {
+      alert("Failed to delete trace: " + error.message);
+    } else {
+      // Fallback state update in case realtime is slow/disconnected
+      setTraces(prev => prev.filter(t => t.trace_id !== traceId));
+    }
+  };
+
   return (
     <main className="profile-page-shell">
       <nav className="nav" aria-label="Brand">
@@ -184,11 +216,29 @@ export default function AdminPage() {
                 <summary className="trace-summary">
                   <div className="trace-header">
                     <span className="trace-indicator">▶</span>
-                    <div>
+                    <div style={{ flex: 1 }}>
                       <div className="trace-id">{trace.traceId}</div>
                       <div className="trace-meta">
                         {new Date(trace.startTime).toLocaleString()} • {trace.events.length} events • {trace.totalLatencyMs}ms total
                       </div>
+                    </div>
+                    <div className="trace-actions" style={{ display: 'flex', gap: '8px' }}>
+                      <button 
+                        onClick={(e) => handleCopy(e, trace.traceId)}
+                        className="nav-button"
+                        style={{ padding: '4px 8px', fontSize: '0.75rem', minWidth: 'auto', minHeight: 'auto', background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}
+                        title="Copy Trace ID"
+                      >
+                        Copy
+                      </button>
+                      <button 
+                        onClick={(e) => handleDelete(e, trace.traceId)}
+                        className="nav-button"
+                        style={{ padding: '4px 8px', fontSize: '0.75rem', minWidth: 'auto', minHeight: 'auto', background: '#ffebee', border: '1px solid #ffcdd2', color: '#c62828' }}
+                        title="Delete Trace"
+                      >
+                        Delete
+                      </button>
                     </div>
                   </div>
                 </summary>

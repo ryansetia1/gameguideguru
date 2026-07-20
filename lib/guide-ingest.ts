@@ -223,6 +223,7 @@ async function insertGuideChunks(input: {
     embedding: toVectorString(input.embeddings[chunk_index]),
   }));
 
+  const insertStart = Date.now();
   try {
     const { error } = await input.supabase.from("guide_chunks").insert(rows);
     if (error) {
@@ -236,16 +237,20 @@ async function insertGuideChunks(input: {
         ? recount.eq("guide_bundle", input.guideBundle)
         : recount.is("guide_bundle", null));
       if ((count ?? 0) > 0) {
+        void logTraceEvent("ingest_db_insert", `Chunks already exist for ${guideUrl} (${count} rows)`, Date.now() - insertStart, { guideUrl, chunkCount: count, duplicate: true });
         return { indexed: true, chunkCount: count ?? input.chunks.length };
       }
+      void logTraceEvent("ingest_db_insert", `Insert failed for ${guideUrl}: ${error.message}`, Date.now() - insertStart, { guideUrl, error: error.message });
       console.error("Guide ingest insert failed:", error);
       return { indexed: false, chunkCount: 0 };
     }
   } catch (error) {
+    void logTraceEvent("ingest_db_insert", `Insert error for ${guideUrl}: ${error instanceof Error ? error.message : String(error)}`, Date.now() - insertStart, { guideUrl, error: true });
     console.error("Guide ingest insert failed:", error);
     return { indexed: false, chunkCount: 0 };
   }
 
+  void logTraceEvent("ingest_db_insert", `Inserted ${input.chunks.length} chunks for ${guideUrl}`, Date.now() - insertStart, { guideUrl, chunkCount: input.chunks.length, bundleKey: input.guideBundle });
   return { indexed: true, chunkCount: input.chunks.length };
 }
 
@@ -260,6 +265,8 @@ async function storeGuideChunks(input: {
   const chunks = chunkGuide(input.text);
   if (!chunks.length) return { indexed: false, chunkCount: 0 };
 
+  void logTraceEvent("ingest_chunk", `Chunked guide into ${chunks.length} pieces for ${input.guideUrl}`, undefined, { guideUrl: input.guideUrl, chunkCount: chunks.length });
+
   let embeddings: number[][];
   try {
     embeddings = await embedTexts(chunks, input.signal, {
@@ -269,6 +276,7 @@ async function storeGuideChunks(input: {
       ...input.embedLog,
     });
   } catch (error) {
+    void logTraceEvent("ingest_embed_error", `Embedding failed for ${input.guideUrl}: ${error instanceof Error ? error.message : String(error)}`, undefined, { guideUrl: input.guideUrl, error: true });
     console.error("Guide ingest embed failed:", error);
     return { indexed: false, chunkCount: 0 };
   }
@@ -332,6 +340,8 @@ async function storePendingPages(input: {
   if (!input.pages.length) return { pagesIndexed: 0, chunkCount: 0, indexedSlugs: [] };
 
   const flatChunks = input.pages.flatMap((page) => page.chunks);
+  void logTraceEvent("ingest_batch_embed_start", `Embedding ${flatChunks.length} chunks across ${input.pages.length} pages`, undefined, { pageCount: input.pages.length, totalChunks: flatChunks.length, slugs: input.pages.map(p => p.slug) });
+  const batchStart = Date.now();
   let embeddings: number[][];
   try {
     embeddings = await embedTexts(flatChunks, input.signal, {
@@ -343,6 +353,7 @@ async function storePendingPages(input: {
   } catch (error) {
     // One 429/abort must not drop the whole batch (up to EXTRACT_BATCH_SIZE pages).
     // Fall back to embedding + storing each page on its own, best-effort per page.
+    void logTraceEvent("ingest_batch_embed_fallback", `Batch embed failed, falling back to per-page: ${error instanceof Error ? error.message : String(error)}`, Date.now() - batchStart, { error: true });
     console.error("Guide ingest batch embed failed, retrying per page:", error);
     let pagesIndexed = 0;
     let chunkCount = 0;
@@ -373,6 +384,8 @@ async function storePendingPages(input: {
     }
     return { pagesIndexed, chunkCount, indexedSlugs };
   }
+
+  void logTraceEvent("ingest_batch_embed_end", `Batch embedding complete: ${flatChunks.length} chunks in ${Date.now() - batchStart}ms`, Date.now() - batchStart);
 
   let pagesIndexed = 0;
   let chunkCount = 0;
@@ -420,8 +433,11 @@ async function ingestSingleGuidePage(
     return { indexed: true, chunkCount: count ?? 0, hubWarning: false };
   }
 
+  void logTraceEvent("ingest_single_page_start", `Ingesting single guide page: ${guideUrl}`, undefined, { guideUrl });
+  const startMs = Date.now();
   const extracted = await extractGuidePage(guideUrl, signal);
   if (!extracted) {
+    void logTraceEvent("ingest_single_page_error", `Could not extract guide page: ${guideUrl}`, Date.now() - startMs, { guideUrl, error: "Extraction failed" });
     console.error("Guide ingest skipped: could not extract guide page", { guideUrl });
     return { indexed: false, chunkCount: 0, hubWarning: looksLikeHub(guideUrl) };
   }
@@ -437,8 +453,10 @@ async function ingestSingleGuidePage(
     embedLog: embedLogFromContext(ctx),
   });
   if (!stored.indexed) {
+    void logTraceEvent("ingest_single_page_error", `Failed to store guide chunks for: ${guideUrl}`, Date.now() - startMs, { guideUrl, error: "Store failed", hubWarning: true });
     return { indexed: false, chunkCount: 0, hubWarning: true };
   }
+  void logTraceEvent("ingest_single_page_complete", `Successfully ingested single guide page: ${guideUrl}`, Date.now() - startMs, { guideUrl, chunkCount: stored.chunkCount, hubWarning });
   return { indexed: true, chunkCount: stored.chunkCount, hubWarning };
 }
 
@@ -531,8 +549,9 @@ async function ingestGamefaqsBundle(
       missingPagesToProcess.push(page);
     }
   }
-
   async function processBatch(batch: typeof targetPages, background: boolean) {
+    void logTraceEvent("ingest_bundle_batch_start", `Processing batch of ${batch.length} pages for bundle ${bundleKey} (background: ${background})`, undefined, { bundleKey, batchSize: batch.length, background });
+    const batchStart = Date.now();
     const activeSignal = background ? undefined : signal;
     const extracted = await extractGuidePages(
       batch.map((page) => page.url),
@@ -553,7 +572,10 @@ async function ingestGamefaqsBundle(
         .eq("guide_url", normalized)
         .eq("guide_bundle", bundleKey);
       const chunksPreview = content ? chunkGuide(content) : [];
-      if (!content) continue;
+      if (!content) {
+        void logTraceEvent("ingest_bundle_page_error", `Could not extract page ${page.url} in bundle ${bundleKey}`, undefined, { bundleKey, pageUrl: page.url });
+        continue;
+      }
 
       if (
         isGenericGamefaqsBundleTitle(resolvedTitle) &&
@@ -589,6 +611,7 @@ async function ingestGamefaqsBundle(
     pagesIndexed += stored.pagesIndexed;
     chunkCount += stored.chunkCount;
     for (const slug of stored.indexedSlugs) indexedSlugs.add(slug);
+    void logTraceEvent("ingest_bundle_batch_end", `Completed batch of ${batch.length} pages for bundle ${bundleKey}`, Date.now() - batchStart, { bundleKey, pagesIndexed: stored.pagesIndexed, chunkCount: stored.chunkCount, background });
   }
 
   // 1. Process FIRST batch synchronously (Fast initial response)

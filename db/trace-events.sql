@@ -34,5 +34,15 @@ create policy "trace_events_select_admin"
     auth.jwt() ->> 'email' = 'ryansetiawan.works@gmail.com'
   );
 
+-- Only the specified admin email can delete trace events
+drop policy if exists "trace_events_delete_admin" on public.trace_events;
+create policy "trace_events_delete_admin"
+  on public.trace_events
+  for delete
+  to authenticated
+  using (
+    auth.jwt() ->> 'email' = 'ryansetiawan.works@gmail.com'
+  );
+
 -- Enable Supabase Realtime for this table
 alter publication supabase_realtime add table public.trace_events;
