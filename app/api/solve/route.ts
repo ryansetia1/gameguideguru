@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { after } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
 import { getCachedSearch, setCachedSearch } from "@/lib/search-cache";
 import { censorSpoilers, resolveQuestion, summarize, type Turn } from "@/lib/replicate";
@@ -111,7 +113,9 @@ export async function POST(request: Request) {
   const playerName = coerceDisplayName(record.playerName);
   const userId = cleanUuid(record.userId);
   const bundlePrefs = coerceBundlePrefsFromBody(record.bundlePrefs);
-  const signal = request.signal;
+  const chatId = cleanText(record.chatId, 100);
+  const authHeader = request.headers.get("Authorization");
+  // We explicitly IGNORE request.signal so the AI continues running if the connection drops.
 
   if (question.length < 2) {
     return NextResponse.json(
@@ -128,16 +132,21 @@ export async function POST(request: Request) {
   }
 
   const stream = new ReadableStream({
-    async start(controller) {
+    start(controller) {
       const sendEvent = (event: string, data: any) => {
-        const text = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-        controller.enqueue(new TextEncoder().encode(text));
+        try {
+          const text = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+          controller.enqueue(new TextEncoder().encode(text));
+        } catch (e) {
+          // Ignore stream errors (client disconnected)
+        }
       };
 
-      const startedAt = Date.now();
-      try {
-        let sources: SearchResult[] = [];
-        let guideHint: string | undefined;
+      const backgroundTask = (async () => {
+        const startedAt = Date.now();
+        try {
+          let sources: SearchResult[] = [];
+          let guideHint: string | undefined;
 
         let rewriteLatencyMs = 0;
         let retrievalLatencyMs = 0;
@@ -160,7 +169,6 @@ export async function POST(request: Request) {
             game,
             platform,
             userId,
-            signal,
             forRag,
           });
           void setCachedSearch(rewriteCacheKey, searchTopic);
@@ -181,7 +189,6 @@ export async function POST(request: Request) {
           const rag = await retrieveFromPreferredGuides({
             guideUrls: preferredUrls,
             query: searchTopic,
-            signal,
             game,
             platform,
             userId,
@@ -210,19 +217,19 @@ export async function POST(request: Request) {
               sendEvent("status", { text: "Searching the web..." });
             }
             const web = hasSearchProvider
-              ? await tieredWebSearch(searchQuery, signal)
+              ? await tieredWebSearch(searchQuery)
               : [];
             sources = [...rag.sources, ...web];
             pipelineType = web.length > 0 ? "fallback_web" : (rag.sources.length > 0 ? "rag" : "knowledge_only");
           } else if (hasSearchProvider) {
             sendEvent("status", { text: "Searching the web..." });
             pipelineType = "fallback_web";
-            sources = await tieredWebSearch(searchQuery, signal);
+            sources = await tieredWebSearch(searchQuery);
           }
         } else if (hasSearchProvider) {
           pipelineType = "web";
           sendEvent("status", { text: "Searching the web..." });
-          sources = await tieredWebSearch(searchQuery, signal);
+          sources = await tieredWebSearch(searchQuery);
         }
         retrievalLatencyMs = Date.now() - retrievalStart;
 
@@ -238,8 +245,8 @@ export async function POST(request: Request) {
           spoilerPrefs,
           playerName,
           userId,
-          signal,
-          onProgress: (msg: string) => {
+          onProgress: (msg: string, id?: string) => {
+            if (id) sendEvent("prediction_id", { id });
             sendEvent("status", { text: msg });
           },
         });
@@ -271,7 +278,38 @@ export async function POST(request: Request) {
           sources: finalSources,
           ...(guideHint ? { guideHint } : {}),
         });
-        controller.close();
+        
+        // Save to Supabase since we are generating in detached mode!
+        if (chatId && authHeader) {
+          try {
+            const supabase = createClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL!,
+              process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+              { global: { headers: { Authorization: authHeader } } },
+            );
+            const { data: chatData } = await supabase
+              .from("chats")
+              .select("messages")
+              .eq("id", chatId)
+              .single();
+            if (chatData?.messages) {
+              const messages = chatData.messages as any[];
+              messages.push({
+                role: "assistant",
+                content: finalAnswer,
+                sources: finalSources,
+                ...(highlights.length ? { highlights } : {}),
+                ...(spoilers.length && spoilerPrefs.major ? { spoilers } : {}),
+              });
+              await supabase
+                .from("chats")
+                .update({ messages, updated_at: new Date().toISOString() })
+                .eq("id", chatId);
+            }
+          } catch (err) {
+            console.error("Failed to save background chat to Supabase:", err);
+          }
+        }
         
         // Non-blocking log
         logSolveJourneyToDb({
@@ -300,7 +338,6 @@ export async function POST(request: Request) {
             ? "The search took too long. Please try again."
             : "Couldn't build a guide. Please try again shortly.",
         });
-        controller.close();
         
         // Non-blocking log
         logSolveJourneyToDb({
@@ -314,7 +351,12 @@ export async function POST(request: Request) {
           status: "error",
           errorMessage: error instanceof Error ? error.message : String(error),
         }).catch(console.error);
+      } finally {
+        try { controller.close() } catch (e) {}
       }
+    })();
+
+    after(() => backgroundTask);
     },
   });
 

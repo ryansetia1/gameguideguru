@@ -799,6 +799,7 @@ export default function Home() {
   const steamLinkHandledRef = useRef(false);
   const steamSigninHandledRef = useRef(false);
   const abortRefs = useRef<Record<string, AbortController>>({});
+  const predictionIdsRef = useRef<Record<string, string>>({});
   const backgroundMessagesRef = useRef<Record<string, Message[]>>({});
   const backgroundLoadingRef = useRef<Record<string, boolean>>({});
   const backgroundStatusRef = useRef<Record<string, string | null>>({});
@@ -2479,14 +2480,19 @@ export default function Home() {
     };
     const optimistic: Message[] = [...priorMessages, userMessage];
     setMessages(optimistic);
-    if (targetChatId) {
-      backgroundMessagesRef.current[targetChatId] = optimistic;
-      backgroundLoadingRef.current[targetChatId] = true;
-      backgroundStatusRef.current[targetChatId] = null;
+    let activeId = targetChatId;
+    if (!temporary) {
+      activeId = await persistChat(optimistic, targetChatId) || activeId;
+    }
+
+    if (activeId) {
+      backgroundMessagesRef.current[activeId] = optimistic;
+      backgroundLoadingRef.current[activeId] = true;
+      backgroundStatusRef.current[activeId] = null;
     }
 
     const controller = new AbortController();
-    if (targetChatId) abortRefs.current[targetChatId] = controller;
+    if (activeId) abortRefs.current[activeId] = controller;
 
     const urlsNeedingIngest = guideUrls.filter((url) =>
       guideUrlNeedsIngest(url, guideBundleMeta[url], bundleIndexStatus[url], guideIndexState[url]),
@@ -2649,12 +2655,23 @@ export default function Home() {
       // guide (2x Tavily extract + 2x embed, racing each other). Awaiting first
       // makes solve's ingest a no-op skip while keeping the answer grounded in
       // the guide (and the indexing progress UI runs during this await).
+      const supabase = getSupabase();
+      let accessToken = "";
+      if (supabase) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        accessToken = sessionData.session?.access_token || "";
+      }
+
       const ingestHint: string | null = ingestPromise ? await ingestPromise : null;
       const response = await fetch("/api/solve", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
+        },
         signal: controller.signal,
         body: JSON.stringify({
+          chatId: activeId,
           game,
           platform,
           question,
@@ -2692,10 +2709,12 @@ export default function Home() {
               try {
                 const payload = JSON.parse(payloadStr);
                 if (eventName === "status" && payload.text) {
-                  if (targetChatId) backgroundStatusRef.current[targetChatId] = payload.text;
-                  if (targetChatId === activeChatIdRef.current || !targetChatId) {
+                  if (activeId) backgroundStatusRef.current[activeId] = payload.text;
+                  if (activeId === activeChatIdRef.current || !activeId) {
                     setGenerationStatus(payload.text);
                   }
+                } else if (eventName === "prediction_id" && payload.id) {
+                  if (activeId) predictionIdsRef.current[activeId] = payload.id;
                 } else if (eventName === "result") {
                   answerData = payload;
                 } else if (eventName === "error" && payload.error) {
@@ -2749,31 +2768,37 @@ export default function Home() {
           ...(spoilers.length && spoilerPrefs.major ? { spoilers } : {}),
         },
       ];
-      if (targetChatId) {
-        backgroundMessagesRef.current[targetChatId] = nextMessages;
-        backgroundLoadingRef.current[targetChatId] = false;
-        backgroundStatusRef.current[targetChatId] = null;
+      if (activeId) {
+        backgroundMessagesRef.current[activeId] = nextMessages;
+        backgroundLoadingRef.current[activeId] = false;
+        backgroundStatusRef.current[activeId] = null;
       }
-      if (targetChatId === activeChatIdRef.current || !targetChatId) {
+      if (activeId === activeChatIdRef.current || !activeId) {
         setMessages(nextMessages);
       }
       conversationGame.current = game;
-      const savedId = await persistChat(nextMessages, targetChatId);
-      if (savedId) activeChatIdRef.current = savedId;
+      // We don't persistChat here anymore, the server handles it for logged-in users.
+      // But for anon users, we still need to update localStorage!
+      if (!user) {
+        await persistChat(nextMessages, activeId);
+      } else {
+        void loadChats(); // Just refresh the list
+      }
+      if (activeId) activeChatIdRef.current = activeId;
       // Temporary chat never persists, so drop this turn's uploaded images from
       // Storage instead of leaving them orphaned.
       if (temporary && images.length) void deleteMessageImages([userMessage]);
       succeeded = true;
-      if (targetChatId === activeChatIdRef.current || !targetChatId) {
+      if (activeId === activeChatIdRef.current || !activeId) {
         if (ingestHint) setToast(ingestHint);
       }
     } catch (caught) {
-      if (targetChatId) {
-        backgroundMessagesRef.current[targetChatId] = priorMessages;
-        backgroundLoadingRef.current[targetChatId] = false;
-        delete abortRefs.current[targetChatId];
+      if (activeId) {
+        backgroundMessagesRef.current[activeId] = priorMessages;
+        backgroundLoadingRef.current[activeId] = false;
+        delete abortRefs.current[activeId];
       }
-      if (activeChatIdRef.current === targetChatId) {
+      if (activeChatIdRef.current === activeId) {
         setMessages(priorMessages);
         setLoading(false);
         if (!(caught instanceof DOMException && caught.name === "AbortError")) {
@@ -2783,11 +2808,11 @@ export default function Home() {
         }
       }
     } finally {
-      if (targetChatId) {
-        backgroundLoadingRef.current[targetChatId] = false;
-        delete abortRefs.current[targetChatId];
+      if (activeId) {
+        backgroundLoadingRef.current[activeId] = false;
+        delete abortRefs.current[activeId];
       }
-      if (activeChatIdRef.current === targetChatId) {
+      if (activeChatIdRef.current === activeId) {
         setLoading(false);
       }
       // Answer's in: hand focus back to the composer on desktop so a follow-up
@@ -2806,7 +2831,17 @@ export default function Home() {
 
   function stopGeneration() {
     if (activeChatIdRef.current) {
-      abortRefs.current[activeChatIdRef.current]?.abort();
+      const activeId = activeChatIdRef.current;
+      abortRefs.current[activeId]?.abort();
+      
+      const pid = predictionIdsRef.current[activeId];
+      if (pid) {
+        fetch("/api/solve/cancel", { 
+          method: "POST", 
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ predictionId: pid })
+        }).catch(console.error);
+      }
     }
   }
 

@@ -79,6 +79,7 @@ function readText(output: unknown): string {
 }
 
 type PredictionMetrics = {
+  id?: string;
   metrics?: { predict_time?: number; total_time?: number };
   logs?: string;
 };
@@ -106,7 +107,7 @@ async function runModel(
   input: Record<string, unknown>,
   timeoutMs: number,
   signal?: AbortSignal,
-  onProgress?: (logs: string) => void,
+  onProgress?: (logs: string, id?: string) => void,
 ): Promise<RunModelResult> {
   const started = Date.now();
   let metrics: PredictionMetrics["metrics"];
@@ -125,7 +126,7 @@ async function runModel(
         if (prediction.status === "starting") msg = "Reading up...";
         else if (prediction.status === "processing") msg = "Writing answer...";
         else if (prediction.status === "succeeded") msg = "Polishing answer...";
-        onProgress(msg);
+        onProgress(msg, prediction.id);
       }
       if (prediction.logs) {
         logs = prediction.logs;
@@ -221,7 +222,7 @@ export type SummarizeInput = {
   playerName?: string;
   userId?: string | null;
   signal?: AbortSignal;
-  onProgress?: (msg: string) => void;
+  onProgress?: (msg: string, id?: string) => void;
 };
 
 export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
@@ -259,10 +260,10 @@ export async function summarize(input: SummarizeInput): Promise<SummaryResult> {
     },
     50_000,
     input.signal,
-    (logs) => {
+    (logs, id) => {
       if (input.onProgress) {
         const lines = logs.split("\n").map(l => l.trim()).filter(Boolean);
-        if (lines.length) input.onProgress(lines[lines.length - 1]);
+        if (lines.length) input.onProgress(lines[lines.length - 1], id);
       }
     }
   );
