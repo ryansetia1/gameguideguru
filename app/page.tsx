@@ -349,7 +349,15 @@ function pipelineSourceLabel(
   sources?: Source[],
 ): string {
   const uploadLabel = uploadedSourceGuideLabel(sources);
-  if (uploadLabel) return uploadLabel;
+  const hasWebSources = sources?.some((source) => !isUploadedGuideUrl(source.url));
+  
+  if (uploadLabel) {
+    if (pipelineType === "fallback_web" || (hasWebSources && pipelineType !== "rag")) {
+      return `${uploadLabel} + Web search`;
+    }
+    return uploadLabel;
+  }
+  
   if (pipelineType === "rag") return "Your guide";
   if (pipelineType === "fallback_web" || pipelineType === "web") return "Web search";
   return "AI knowledge";
@@ -2861,19 +2869,28 @@ export default function Home() {
         "sources" in data && Array.isArray(data.sources)
           ? (data.sources as Source[])
           : [];
+      const pipelineType = "pipelineType" in data && typeof data.pipelineType === "string" ? data.pipelineType : undefined;
+      let finalToast: string | undefined = undefined;
+      
       if (
         "guideHint" in data &&
         typeof data.guideHint === "string" &&
         data.guideHint &&
         data.guideHint !== ingestResult?.hint
       ) {
-        setToast(data.guideHint);
+        finalToast = data.guideHint;
       }
+      if (pipelineType === "fallback_web") {
+        const uploadLabel = uploadedSourceGuideLabel(sources);
+        if (uploadLabel) {
+          finalToast = `Answered from ${uploadLabel.toLowerCase()} + web search`;
+        }
+      }
+      
       const highlights = coerceHighlights(
         "highlights" in data ? data.highlights : undefined,
       );
       const spoilers = coerceSpoilers("spoilers" in data ? data.spoilers : undefined);
-      const pipelineType = "pipelineType" in data && typeof data.pipelineType === "string" ? data.pipelineType : undefined;
       const nextMessages: Message[] = [
         ...priorMessages,
         userMessage,
@@ -2905,7 +2922,8 @@ export default function Home() {
       if (temporary && images.length) void deleteMessageImages([userMessage]);
       succeeded = true;
       if (activeId === activeChatIdRef.current || !activeId) {
-        if (ingestResult?.hint) setToast(ingestResult.hint);
+        if (finalToast) setToast(finalToast);
+        else if (ingestResult?.hint) setToast(ingestResult.hint);
       }
     } catch (caught) {
       const isNetworkDrop = caught instanceof TypeError && caught.message.toLowerCase().includes("fetch");
