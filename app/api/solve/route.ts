@@ -116,6 +116,12 @@ export async function POST(request: Request) {
   const bundlePrefs = coerceBundlePrefsFromBody(record.bundlePrefs);
   const chatId = cleanUuid(record.chatId);
   const authHeader = request.headers.get("Authorization");
+  const retryContext = record.retryContext as {
+    searchTopic?: string;
+    sources?: SearchResult[];
+    pipelineType?: string;
+    guideHint?: string;
+  } | undefined;
   // We explicitly IGNORE request.signal so the AI continues running if the connection drops.
 
   if (question.length < 2) {
@@ -166,7 +172,7 @@ export async function POST(request: Request) {
         const rawInputs = JSON.stringify({ question, history, game, platform, forRag });
         const rewriteCacheKey = `rewrite::${createHash("sha256").update(rawInputs).digest("hex")}`;
         
-        let searchTopic = (await getCachedSearch(rewriteCacheKey)) as string | null;
+        let searchTopic = retryContext?.searchTopic || (await getCachedSearch(rewriteCacheKey)) as string | null;
         if (typeof searchTopic !== "string") {
           searchTopic = await resolveQuestion({
             question,
@@ -190,7 +196,11 @@ export async function POST(request: Request) {
           .join(" ");
 
         const retrievalStart = Date.now();
-        if (preferredUrls.length) {
+        if (retryContext?.sources) {
+          sources = retryContext.sources;
+          pipelineType = retryContext.pipelineType as SolveJourneyEntry["pipelineType"] || "knowledge_only";
+          guideHint = retryContext.guideHint;
+        } else if (preferredUrls.length) {
           sendEvent("status", { text: "Searching your guide..." });
           const rag = await retrieveFromPreferredGuides({
             guideUrls: preferredUrls,
@@ -250,6 +260,15 @@ export async function POST(request: Request) {
         }
 
         retrievalLatencyMs = Date.now() - retrievalStart;
+
+        // Emit context so frontend can cache it for potential retry
+        sendEvent("context_ready", {
+          searchTopic,
+          sources,
+          pipelineType,
+          guideHint
+        });
+
         await logTraceEvent("retrieval_complete", "Finished gathering sources", retrievalLatencyMs, { sourceCount: sources.length, pipelineType });
 
         sendEvent("status", { text: "Reading and building answer..." });

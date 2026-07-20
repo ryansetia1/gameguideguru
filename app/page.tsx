@@ -703,6 +703,7 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState("");
+  const [retryAction, setRetryAction] = useState<(() => void) | null>(null);
   const [loading, setLoading] = useState(false);
   const [generationStatus, setGenerationStatus] = useState<string | null>(null);
   const [showScrollFab, setShowScrollFab] = useState(false);
@@ -2471,9 +2472,11 @@ export default function Home() {
     priorMessages: Message[],
     targetChatId: string | null,
     images: string[] = [],
+    retryContext: any = null,
   ) {
     const traceId = crypto.randomUUID();
     setError("");
+    setRetryAction(null);
     if (!navigator.onLine) {
       setError("You are offline. Please check your internet connection.");
       return;
@@ -2727,6 +2730,7 @@ export default function Home() {
           playerName: user ? displayNameFromMetadata(user.user_metadata) : "",
           userId: user?.id ?? null,
           bundlePrefs: buildBundlePrefsBody(guideUrls, guideBundleMeta),
+          retryContext,
         }),
       });
       const reader = response.body?.getReader();
@@ -2734,6 +2738,7 @@ export default function Home() {
       let buffer = "";
       let answerData: any = null;
       let streamError: Error | null = null;
+      let currentContext: any = null;
 
       if (reader) {
         while (true) {
@@ -2761,6 +2766,8 @@ export default function Home() {
                   }
                 } else if (eventName === "prediction_id" && payload.id) {
                   if (activeId) predictionIdsRef.current[activeId] = payload.id;
+                } else if (eventName === "context_ready") {
+                  currentContext = payload;
                 } else if (eventName === "result") {
                   answerData = payload;
                 } else if (eventName === "error" && payload.error) {
@@ -2901,6 +2908,7 @@ export default function Home() {
           setError(
             caught instanceof Error ? caught.message : "An unknown error occurred.",
           );
+          setRetryAction(() => () => void runTurn(question, priorMessages, activeId, images, currentContext));
         }
       }
     } finally {
@@ -3988,9 +3996,22 @@ export default function Home() {
           )}
 
           {error && (
-            <div className="error-card" role="alert">
-              <span aria-hidden="true">!</span>
-              <p>{error}</p>
+            <div className="error-card" role="alert" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span aria-hidden="true">!</span>
+                <p>{error}</p>
+              </div>
+              {retryAction && (
+                <button
+                  type="button"
+                  className="btn-icon"
+                  style={{ color: 'var(--text-muted)' }}
+                  onClick={() => retryAction()}
+                  aria-label="Retry"
+                >
+                  <IconRefresh />
+                </button>
+              )}
             </div>
           )}
           <div ref={feedRef} />
