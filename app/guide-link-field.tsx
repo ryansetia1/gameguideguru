@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import {
   MAX_GUIDE_URLS,
@@ -109,6 +110,9 @@ export function GuideLinkField({
   guideIndexState = {},
 }: Props) {
   const [mode, setMode] = useState<"link" | "search" | "upload">("link");
+  const [showInfo, setShowInfo] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true) }, []);
   const [draftUrl, setDraftUrl] = useState("");
   const [addError, setAddError] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -572,26 +576,37 @@ export function GuideLinkField({
 
       {mode === "link" && (
         <form className="guide-url-add-form" onSubmit={onAddSubmit} role="tabpanel">
-          <input
-            id={inputId}
-            type="url"
-            inputMode="url"
-            aria-label="Guide URL to add"
-            value={draftUrl}
-            onChange={(event) => {
-              setDraftUrl(event.target.value);
-              if (addError) setAddError("");
-              if (bundlePreview) setBundlePreview(null);
-            }}
-            placeholder={
-              atMax
-                ? `Up to ${MAX_GUIDE_URLS} guides added`
-                : "Paste a GameFAQs or walkthrough link"
-            }
-            maxLength={300}
-            autoComplete="off"
-            disabled={disabled || atMax || previewLoading}
-          />
+          <div className="guide-url-input-wrapper">
+            <input
+              id={inputId}
+              type="url"
+              inputMode="url"
+              aria-label="Guide URL to add"
+              value={draftUrl}
+              onChange={(event) => {
+                setDraftUrl(event.target.value);
+                if (addError) setAddError("");
+                if (bundlePreview) setBundlePreview(null);
+              }}
+              placeholder={
+                atMax
+                  ? `Up to ${MAX_GUIDE_URLS} guides added`
+                  : "Paste a GameFAQs or walkthrough link"
+              }
+              maxLength={300}
+              autoComplete="off"
+              disabled={disabled || atMax || previewLoading}
+            />
+            <button
+              type="button"
+              className="guide-url-info-btn"
+              onClick={() => setShowInfo(true)}
+              aria-label="Guide Link Best Practices"
+              title="Guide Link Best Practices"
+            >
+              ?
+            </button>
+          </div>
           <button
             type="submit"
             className="nav-button"
@@ -733,6 +748,44 @@ export function GuideLinkField({
           : `Add up to ${MAX_GUIDE_URLS} trusted guides. Non-GameFAQs links add directly; GameFAQs chapter links open the page picker when we have a cached bundle.`}
       </p>
       {addError && <p className="guide-search-error">{addError}</p>}
+
+      {showInfo && mounted && createPortal(
+        <div
+          className="confirm-overlay"
+          role="presentation"
+        >
+          <div className="confirm-modal" role="dialog" aria-modal="true" style={{ textAlign: "left", maxWidth: "480px" }}>
+            <h3 style={{ marginTop: 0, marginBottom: "16px" }}>Guide Link Best Practices</h3>
+            <ul style={{ paddingLeft: "20px", fontSize: "14px", lineHeight: "1.6", display: "flex", flexDirection: "column", gap: "10px", margin: "0 0 24px 0", color: "var(--text)" }}>
+              <li>
+                <strong>Try Alternatives First:</strong> GameFAQs aggressively blocks AI bots. Whenever possible, use links from other wikis (like IGN, Fandom) or upload a PDF/TXT.
+              </li>
+              <li>
+                <strong>Risk of Block:</strong> If you use GameFAQs, there&apos;s a high risk of getting blocked (<em>Failed to memorize</em>). The AI might fail to read the page.
+              </li>
+              <li>
+                <strong>Use Single Pages:</strong> If you must use GameFAQs, single-page HTML guides work best. Multi-page bundles take a very long time and often fail midway.
+              </li>
+              <li>
+                <strong>Text-Only:</strong> AI cannot watch videos or read images. Avoid YouTube links or image-heavy walkthroughs.
+              </li>
+              <li>
+                <strong>Be Specific (Wikis):</strong> For large wikis (e.g., Fandom), paste the exact page URL (like the &quot;Weapons&quot; page) instead of the main wiki link. The AI won&apos;t crawl the whole site.
+              </li>
+            </ul>
+            <div className="confirm-actions" style={{ justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                className="nav-button confirm"
+                onClick={() => setShowInfo(false)}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

@@ -3238,9 +3238,44 @@ details.sources small {
   align-items: stretch;
 }
 
-.guide-url-add-form input {
+.guide-url-input-wrapper {
+  position: relative;
   flex: 1;
   min-width: 0;
+  display: flex;
+}
+
+.guide-url-input-wrapper input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 40px; /* Space for the info button */
+}
+
+.guide-url-info-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-hover);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.guide-url-info-btn:hover {
+  background: var(--bg-active);
+  color: var(--text);
+  border-color: var(--border-hover);
 }
 
 .game-card-guides {
