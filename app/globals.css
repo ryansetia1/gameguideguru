@@ -1431,6 +1431,29 @@ details.sources small {
   padding: 10px;
 }
 
+.composer-inner.expanded {
+  flex-direction: column;
+}
+
+.composer-input-row {
+  display: flex;
+  flex: 1;
+  width: 100%;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.composer-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.composer-inner.expanded .composer-actions {
+  width: 100%;
+  justify-content: flex-end;
+}
+
 /* Wraps the textarea so the voice visualizer can overlay it exactly, regardless
    of the composer button widths. */
 .composer-field {

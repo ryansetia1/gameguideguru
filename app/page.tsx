@@ -4394,8 +4394,9 @@ export default function Home() {
             ))}
           </div>
         )}
-        <div className="composer-inner">
-          <div className="composer-field">
+        <div className={`composer-inner ${input.includes('\n') || input.length > 60 ? 'expanded' : ''}`}>
+          <div className="composer-input-row">
+            <div className="composer-field">
             {!input && !voiceListening && hasGame && (
               <div className="composer-placeholder-marquee" aria-hidden="true">
                 <div className="marquee-track">
@@ -4457,6 +4458,8 @@ export default function Home() {
             label="Clear message"
             className="composer-clear"
           />
+          </div>
+          <div className="composer-actions">
           {temporary && (
             <button
               type="button"
@@ -4517,10 +4520,10 @@ export default function Home() {
               </button>
             </>
           )}
+          </div>
         </div>
       </form>
       )}
-
       {!hasRecent && homeMode && !examplesDismissed && (
         <div className="examples-block" aria-label="Examples">
           <div className="examples-head">
