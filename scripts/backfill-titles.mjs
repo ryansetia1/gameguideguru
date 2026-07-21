@@ -6,6 +6,7 @@ import { dirname, join } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const env = readFileSync(join(__dirname, "../.env.local"), "utf8");
 
+/** @param {string} key */
 const getEnv = (key) => {
   const match = env.match(new RegExp(`^${key}=(.*)$`, "m"));
   return match ? match[1].replace(/['"]/g, "") : null;
@@ -57,7 +58,8 @@ async function run() {
          console.log(`  -> Fetch failed: ${res.status}`);
       }
     } catch (e) {
-      console.log(`  -> Error: ${e.message}`);
+      const errorMsg = e instanceof Error ? e.message : String(e);
+      console.log(`  -> Error: ${errorMsg}`);
     }
   }
   

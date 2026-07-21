@@ -13,7 +13,6 @@ import {
   IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
-  IconCornerDownLeft,
   IconDiamond,
   IconDotsVertical,
   IconGrid,

@@ -7,7 +7,7 @@ import { logLlmCallToDb, type LlmDbLogEntry } from "@/lib/llm-db-log";
 const FILE_ENABLED =
   process.env.NODE_ENV !== "production" || process.env.LLM_LOG === "1";
 const LOG_PATH =
-  process.env.LLM_LOG_PATH || path.join(process.cwd(), "llm-log.json");
+  process.env.LLM_LOG_PATH || (process.cwd() + "/llm-log.json");
 // One turn = rewrite + summarize, so 10 ≈ 5 turns.
 const MAX_ENTRIES = 10;
 
