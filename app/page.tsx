@@ -245,6 +245,7 @@ import { PlatformSelect } from "./platform-select";
 import { SteamLibrary, type SteamGame } from "./steam-library";
 import { ProfileMenu } from "./profile-menu";
 import { VoiceVisualizer } from "./voice-visualizer";
+import { Lightbox } from "./lightbox";
 import {
   KINDS,
   KIND_LABELS,
@@ -748,7 +749,9 @@ export default function Home() {
   const [showSticky, setShowSticky] = useState(false);
   const [pendingImages, setPendingImages] = useState<{ blob?: Blob; preview: string; isExisting?: boolean }[]>([]);
   const [dragActive, setDragActive] = useState(false);
+  const [lightboxState, setLightboxState] = useState<{ images: string[]; index: number } | null>(null);
   const [input, setInput] = useState("");
+  const [composerHeight, setComposerHeight] = useState(0);
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState("");
   const [retryAction, setRetryAction] = useState<(() => void) | null>(null);
@@ -823,7 +826,6 @@ export default function Home() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [examplesDismissed, setExamplesDismissed] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [editingText, setEditingText] = useState("");
   const [globalSpoilerMajor, setGlobalSpoilerMajor] = useState(false);
   const [gameSpoilerMajor, setGameSpoilerMajor] = useState(false);
   const spoilerPrefs = effectiveSpoilerPrefs(globalSpoilerMajor, gameSpoilerMajor);
@@ -881,7 +883,6 @@ export default function Home() {
   const userRef = useRef<User | null>(null);
   // Guard so the Steam release-year backfill runs at most once per mount.
   const steamBackfillRef = useRef(false);
-  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   // Path of a previously-uploaded cover that a new pick will replace, deleted once
   // the replacement is saved so the bucket doesn't keep the orphan.
@@ -932,12 +933,21 @@ export default function Home() {
 
   // Grow the composer to fit its text (down to one line when empty), capped by
   // the CSS max-height which then scrolls. Runs on every input + after clearing.
+  const isExpanded = composerHeight > 50;
+  
   useEffect(() => {
     const el = composerRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, [input]);
+    const height = el.scrollHeight;
+    el.style.height = `${height}px`;
+    
+    setComposerHeight((prev) => {
+      if (height > 50) return height;
+      if (prev > 50 && (input.length >= 20 || input.includes('\n'))) return prev;
+      return height;
+    });
+  }, [input, isExpanded]);
 
   function pushOverlayHistory() {
     if (typeof window === "undefined") return;
@@ -1199,7 +1209,6 @@ export default function Home() {
       setInput("");
       setError("");
       setEditingIndex(null);
-      setEditingText("");
       // ?chat= restore is signed-in only; anon relies on this draft, so don't
       // push a local id into the URL.
       if (draft.activeChatId && user) setChatUrl(draft.activeChatId);
@@ -1891,7 +1900,6 @@ export default function Home() {
 
   useEffect(() => {
     if (editingIndex === null) return;
-    editTextareaRef.current?.focus();
   }, [editingIndex]);
 
   // Show the compact sticky header once the game card/fields scroll out of view.
@@ -1961,7 +1969,6 @@ export default function Home() {
     setInput("");
     setError("");
     setEditingIndex(null);
-    setEditingText("");
     conversationGame.current = "";
     setSidebarOpen(false);
     setMenuOpenId(null);
@@ -1984,7 +1991,6 @@ export default function Home() {
       setInput("");
       setError("");
       setEditingIndex(null);
-      setEditingText("");
     };
 
     if (!temporary) {
@@ -2076,7 +2082,6 @@ export default function Home() {
     setInput("");
     setError("");
     setEditingIndex(null);
-    setEditingText("");
     setSidebarOpen(false);
     setMenuOpenId(null);
     setTemporary(false);
@@ -2341,7 +2346,6 @@ export default function Home() {
     setInput("");
     setError("");
     setEditingIndex(null);
-    setEditingText("");
     conversationGame.current = game.name;
 
     // Fallback only when the shelf had no year (game missing from GetItems).
@@ -2586,7 +2590,6 @@ export default function Home() {
     setLoading(true);
     setGenerationStatus(null);
     setEditingIndex(null);
-    setEditingText("");
     let succeeded = false;
     const guideUrls = normalizeGuideUrlList(preferredUrls);
 
@@ -4093,52 +4096,8 @@ export default function Home() {
                 ref={index === lastUserIndex ? lastUserRef : undefined}
               >
                 {editingIndex === index ? (
-                  <div className="edit-box">
-                    {message.images && message.images.length > 0 && (
-                      <div className="msg-images" style={{ marginBottom: 12 }}>
-                        {message.images.map((url, i) => (
-                          <a key={i} href={url} target="_blank" rel="noreferrer">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img className="msg-image" src={url} alt="Attached" loading="lazy" />
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                    <textarea
-                      ref={editTextareaRef}
-                      className="edit-textarea"
-                      value={editingText}
-                      onChange={(event) => setEditingText(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                          event.preventDefault();
-                          if (!loading && editingText.trim().length >= 2) {
-                            void saveEdit(index);
-                          }
-                        }
-                      }}
-                      rows={5}
-                      maxLength={300}
-                      disabled={loading}
-                    />
-                    <div className="edit-actions">
-                      <button
-                        type="button"
-                        className="turn-action"
-                        onClick={() => void saveEdit(index)}
-                        disabled={loading || editingText.trim().length < 2}
-                      >
-                        Send
-                      </button>
-                      <button
-                        type="button"
-                        className="turn-action turn-action-muted"
-                        onClick={cancelEdit}
-                        disabled={loading}
-                      >
-                        Cancel
-                      </button>
-                    </div>
+                  <div style={{ opacity: 0.6, fontStyle: "italic", padding: "8px 0" }}>
+                    <p>Your message will start from here...</p>
                   </div>
                 ) : (
                   <>
@@ -4147,7 +4106,17 @@ export default function Home() {
                         {message.images.map((url, i) => (
                           // eslint-disable-next-line @next/next/no-img-element
                           <a key={i} href={url} target="_blank" rel="noreferrer">
-                            <img className="msg-image" src={url} alt="Attached" loading="lazy" />
+                            <img 
+                                className="msg-image" 
+                                src={url} 
+                                alt="Attached" 
+                                loading="lazy" 
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  setLightboxState({ images: message.images!, index: i });
+                                }}
+                                style={{ cursor: "zoom-in" }}
+                            />
                           </a>
                         ))}
                       </div>
@@ -4334,6 +4303,12 @@ export default function Home() {
         </button>
       )}
 
+      <Lightbox 
+        images={lightboxState?.images || []} 
+        initialIndex={lightboxState?.index || 0}
+        onClose={() => setLightboxState(null)} 
+      />
+
       {/* Composer is useless in the idle carousel state (no game field visible);
           it returns once "+ New game" reveals the setup form. */}
       {!quickIdle && (
@@ -4381,7 +4356,12 @@ export default function Home() {
             {pendingImages.map((img, i) => (
               <div key={i} className="attachment-thumb">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={img.preview} alt="Attachment preview" />
+                <img 
+                  src={img.preview} 
+                  alt="Attachment preview" 
+                  onClick={() => setLightboxState({ images: pendingImages.map(p => p.preview), index: i })}
+                  style={{ cursor: "zoom-in" }}
+                />
                 <button
                   type="button"
                   aria-label="Remove image"
@@ -4394,7 +4374,7 @@ export default function Home() {
             ))}
           </div>
         )}
-        <div className={`composer-inner ${input.includes('\n') || input.length > 60 ? 'expanded' : ''}`}>
+        <div className={`composer-inner ${isExpanded ? 'expanded' : ''}`}>
           <div className="composer-input-row">
             <div className="composer-field">
             {!input && !voiceListening && hasGame && (
@@ -4499,12 +4479,11 @@ export default function Home() {
             <>
               {editingIndex !== null && (
                 <button
-                  className="submit"
+                  className="composer-attach"
                   type="button"
                   onClick={cancelEdit}
                   aria-label="Cancel edit"
                   title="Cancel edit"
-                  style={{ background: "var(--surface)", borderColor: "var(--line)" }}
                 >
                   <IconX />
                 </button>
