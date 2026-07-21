@@ -87,6 +87,11 @@ import {
   WRITING_ANSWER_PLACEHOLDER,
 } from "../lib/chat-messages.js";
 import {
+  buildAssistantVariantBody,
+  mergeAssistantIntoMessages,
+  serverOwnsAssistantPersist,
+} from "../lib/chat-persist.js";
+import {
   CHAT_QUERY_PARAM,
   coerceSessionDraft,
   getChatIdFromUrl,
@@ -677,7 +682,7 @@ assert.equal(tgdbPlatformToLabel("Some Unknown Console"), "");
 assert.match(REWRITE_INSTRUCTION, /standalone web-search query in English/);
 assert.match(REWRITE_INSTRUCTION, /under 15 words/);
 assert.match(REWRITE_RAG_INSTRUCTION, /standalone retrieval query/);
-assert.match(REWRITE_RAG_INSTRUCTION, /up to about 60 words/);
+assert.match(REWRITE_RAG_INSTRUCTION, /up to about 120 words/);
 assert.match(REWRITE_RAG_INSTRUCTION, /walkthrough to look up/);
 const rewritePrompt = buildRewritePrompt({
   question: "Setelah poin 3 ngapain",
@@ -1033,5 +1038,47 @@ assert.equal(
   "x",
 );
 assert.equal(coerceMessageVariant({ content: 42 }), null);
+
+assert.ok(
+  serverOwnsAssistantPersist({
+    hasUser: true,
+    isTemporary: false,
+    hasChatId: true,
+    hasAuthToken: true,
+  }),
+);
+assert.equal(
+  serverOwnsAssistantPersist({
+    hasUser: false,
+    isTemporary: false,
+    hasChatId: true,
+    hasAuthToken: true,
+  }),
+  false,
+);
+
+const mergeNewTurn = [{ role: "user", content: "q?" }];
+const mergeBody = buildAssistantVariantBody({
+  content: "answer",
+  sources: [],
+  spoilerMajor: false,
+});
+assert.ok(mergeAssistantIntoMessages(mergeNewTurn, mergeBody));
+assert.equal(mergeNewTurn.length, 2);
+assert.equal(mergeNewTurn[1].content, "answer");
+assert.equal(/** @type {any} */ (mergeNewTurn[1]).variants, undefined);
+
+const mergeRegen = [
+  { role: "user", content: "q?" },
+  {
+    role: "assistant",
+    content: WRITING_ANSWER_PLACEHOLDER,
+    variants: [{ content: "old answer" }],
+  },
+];
+assert.ok(mergeAssistantIntoMessages(mergeRegen, mergeBody));
+assert.equal(mergeRegen[1].content, "answer");
+assert.equal(/** @type {any} */ (mergeRegen[1]).variants?.length, 2);
+assert.equal(/** @type {any} */ (mergeRegen[1]).activeVariantIndex, 1);
 
 console.log("Self-check passed.");

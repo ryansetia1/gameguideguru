@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
-import { WRITING_ANSWER_PLACEHOLDER } from "@/lib/chat-messages.js";
+import {
+  buildAssistantVariantBody,
+  mergeAssistantIntoMessages,
+} from "@/lib/chat-persist.js";
 import { getCachedSearch, setCachedSearch } from "@/lib/search-cache";
 import { censorSpoilers, resolveQuestion, summarize, type Turn } from "@/lib/replicate";
 import { guideIngestHint } from "@/lib/guide-hints.js";
@@ -356,51 +359,20 @@ export async function POST(request: Request) {
               .single();
             if (chatData?.messages) {
               const messages = chatData.messages as any[];
-              if (messages.length > 0) {
-                const lastMessage = messages[messages.length - 1];
-                const variantBody = {
-                  content: finalAnswer,
-                  sources: finalSources,
-                  ...(highlights.length ? { highlights } : {}),
-                  ...(spoilers.length && spoilerPrefs.major ? { spoilers } : {}),
-                  ...(pipelineType ? { pipelineType } : {}),
-                };
-                const newAssistantState = {
-                  role: "assistant" as const,
-                  ...variantBody,
-                };
-                
-                let shouldUpdate = false;
-                if (lastMessage.role === "user") {
-                  messages.push(newAssistantState);
-                  shouldUpdate = true;
-                } else if (
-                  lastMessage.role === "assistant" &&
-                  lastMessage.content === WRITING_ANSWER_PLACEHOLDER
-                ) {
-                  const pastVariants = Array.isArray(lastMessage.variants)
-                    ? lastMessage.variants.filter(
-                        (variant: unknown) =>
-                          variant &&
-                          typeof variant === "object" &&
-                          typeof (variant as { content?: unknown }).content === "string" &&
-                          (variant as { content: string }).content !== WRITING_ANSWER_PLACEHOLDER,
-                      )
-                    : [];
-                  messages[messages.length - 1] = {
-                    ...newAssistantState,
-                    variants: [...pastVariants, variantBody],
-                    activeVariantIndex: pastVariants.length,
-                  };
-                  shouldUpdate = true;
-                }
+              const variantBody = buildAssistantVariantBody({
+                content: finalAnswer,
+                sources: finalSources,
+                highlights,
+                spoilers,
+                pipelineType,
+                spoilerMajor: spoilerPrefs.major,
+              });
 
-                if (shouldUpdate) {
-                  await supabase
-                    .from("chats")
-                    .update({ messages, updated_at: new Date().toISOString() })
-                    .eq("id", chatId);
-                }
+              if (mergeAssistantIntoMessages(messages, variantBody)) {
+                await supabase
+                  .from("chats")
+                  .update({ messages, updated_at: new Date().toISOString() })
+                  .eq("id", chatId);
               }
             }
           } catch (err) {

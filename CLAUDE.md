@@ -50,7 +50,7 @@ do not sync to the cloud or use Storage uploads.
   (signed-in saved chats) or a `sessionStorage` draft (`lib/chat-session.js`;
   anon / not-yet-saved). `runTurn`/`persistChat` centralise ask +
   save; `conversationGame` tracks which game the visible thread belongs to.
-  **Server-Side Persistence:** `POST /api/solve` uses Next.js 15 `after()` to detach LLM generation and save directly to Supabase via the user's Auth token, guaranteeing the AI finishes even if the user force-closes the app.
+  **Server-Side Persistence:** `POST /api/solve` uses Next.js 15 `after()` to detach LLM generation and save directly to Supabase via the user's Auth token, guaranteeing the AI finishes even if the user force-closes the app. Signed-in saved chats: server is the canonical writer for the final assistant message (`lib/chat-persist.js`); client writes optimistic placeholders, polls `pollUntilMessagesRecovered`, and falls back to `persistChat` on timeout. Anon stays client-only (`localStorage`).
   **Background Polling:** if the UI drops the SSE stream on network sleep, it smoothly changes status to "Continuing process..." and polls Supabase to reattach to the background result.
   **Temporary chat** (`temporary` flag): entered from the composer "+" menu, or via
   a quick-access incognito button on the saved game card (`.game-card-incognito`)

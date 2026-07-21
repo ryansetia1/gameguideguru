@@ -27,6 +27,12 @@ import {
   IconAlert,
 } from "./icons";
 import {
+  buildAssistantVariantBody,
+  buildTurnMessagesWithAssistant,
+  pollUntilMessagesRecovered,
+  serverOwnsAssistantPersist,
+} from "@/lib/chat-persist.js";
+import {
   WRITING_ANSWER_PLACEHOLDER,
   coerceMessages,
   messageShowsVariantNav,
@@ -2966,36 +2972,22 @@ export default function Home() {
       );
       const spoilers = coerceSpoilers("spoilers" in data ? data.spoilers : undefined);
       
-      const newAssistantState = {
+      const variantBody = buildAssistantVariantBody({
         content: data.answer as string,
         sources,
-        ...(highlights.length ? { highlights } : {}),
-        ...(spoilers.length && spoilerPrefs.major ? { spoilers } : {}),
-        ...(pipelineType ? { pipelineType } : {}),
-      };
+        highlights,
+        spoilers,
+        pipelineType,
+        spoilerMajor: spoilerPrefs.major,
+      });
 
-      let finalAssistantMessage: Message;
-      if (oldAssistantMessage) {
-        const pastVariants = snapshotAssistantVariants(oldAssistantMessage) as NonNullable<Message["variants"]>;
-        
-        finalAssistantMessage = {
-          role: "assistant",
-          ...newAssistantState,
-          variants: [...pastVariants, newAssistantState],
-          activeVariantIndex: pastVariants.length,
-        };
-      } else {
-        finalAssistantMessage = {
-          role: "assistant",
-          ...newAssistantState,
-        };
-      }
-
-      const nextMessages: Message[] = [
-        ...priorMessages,
+      const nextMessages = buildTurnMessagesWithAssistant({
+        priorMessages,
         userMessage,
-        finalAssistantMessage,
-      ];
+        oldAssistantMessage,
+        variantBody,
+      }) as Message[];
+
       if (activeId) {
         backgroundMessagesRef.current[activeId] = nextMessages;
         backgroundLoadingRef.current[activeId] = false;
@@ -3005,9 +2997,40 @@ export default function Home() {
         setMessages(nextMessages);
       }
       conversationGame.current = game;
-      // Dual-write: client updates DB so sidebar is perfectly in sync,
-      // server also updates in background in case client drops early.
-      await persistChat(nextMessages, activeId);
+
+      const serverPersistsAssistant = serverOwnsAssistantPersist({
+        hasUser: Boolean(user),
+        isTemporary: temporary,
+        hasChatId: Boolean(activeId),
+        hasAuthToken: Boolean(accessToken),
+      });
+
+      if (serverPersistsAssistant && activeId) {
+        const supabase = getSupabase();
+        const synced = supabase
+          ? await pollUntilMessagesRecovered({
+              fetchMessages: async () => {
+                const { data: row } = await supabase
+                  .from("chats")
+                  .select("messages")
+                  .eq("id", activeId)
+                  .single();
+                return row?.messages ? parseStoredMessages(row.messages) : null;
+              },
+              optimistic,
+              signal: controller.signal,
+            })
+          : null;
+        if (synced) {
+          const syncedMessages = synced as Message[];
+          backgroundMessagesRef.current[activeId] = syncedMessages;
+          if (activeChatIdRef.current === activeId) setMessages(syncedMessages);
+        } else {
+          await persistChat(nextMessages, activeId);
+        }
+      } else {
+        await persistChat(nextMessages, activeId);
+      }
       void loadChats();
       if (activeId) activeChatIdRef.current = activeId;
       // Temporary chat never persists, and images are base64, so no need to clean up Storage.

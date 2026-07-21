@@ -109,10 +109,16 @@ navigator for chats that have `variants.length > 1` in DB.
 
 #### 1a. Single writer for durable messages
 
+**Status:** Done (July 2026)
+
 **Decision:** Server `after()` owns the final assistant message when `chatId` +
 auth token are present. Client `persistChat` writes user turns and optimistic
-placeholders only; on SSE `result`, client updates React state but **defers**
-the final assistant blob to the server (or polls until server write lands).
+placeholders only; on SSE `result`, client updates React state then polls for the
+server write (`lib/chat-persist.js#pollUntilMessagesRecovered`). Client falls back
+to `persistChat` if the poll times out.
+
+Implementation: `lib/chat-persist.js` (`serverOwnsAssistantPersist`,
+`mergeAssistantIntoMessages`, `buildTurnMessagesWithAssistant`).
 
 ```
 Client                          Server after()
@@ -132,28 +138,12 @@ Client                          Server after()
 
 #### 1b. Background poll detects regenerate completion
 
-Replace:
-
-```ts
-if (msgs.length > optimistic.length)
-```
-
-With something like:
-
-```ts
-const last = msgs.at(-1);
-const optimisticLast = optimistic.at(-1);
-const regenDone =
-  optimisticLast?.content === "Writing answer..." &&
-  last?.role === "assistant" &&
-  last.content !== "Writing answer...";
-const newTurn = msgs.length > optimistic.length;
-if (newTurn || regenDone) { ... }
-```
+**Status:** Done (Phase 0) — `pollRecoveredMessages()` in `lib/chat-messages.js`,
+used in network-drop recovery and post-success server sync poll.
 
 #### 1c. Message coercion tests
 
-Add assertions to `scripts/check.mjs` (or a tiny `lib/messages.test.mjs`):
+**Status:** Done — `scripts/check.mjs` (Phase 0 + Phase 1 merge tests).
 
 - Round-trip `variants` + `activeVariantIndex`
 - Strip unknown roles; keep valid assistant variant payloads
@@ -161,8 +151,7 @@ Add assertions to `scripts/check.mjs` (or a tiny `lib/messages.test.mjs`):
 
 #### 1d. Align server variant shape
 
-Server `after()` should push variant objects **without** `role: "assistant"`
-inside `variants[]` (match client shape).
+**Status:** Done (Phase 0) — `buildAssistantVariantBody()`; variants array has no `role`.
 
 **Exit criteria:**
 
@@ -338,10 +327,10 @@ Phase 0  [x] coerceMessages variants (lib/chat-messages.js)
          [x] server variant shape (no role in variants[])
          [ ] manual QA on FF8 chat
 
-Phase 1  [ ] single canonical writer (server after)
-         [ ] background poll regen detection
-         [ ] check.mjs message coercion tests
-         [ ] server variant shape (no role in variants[])
+Phase 1  [x] single canonical writer (lib/chat-persist.js)
+         [x] post-success pollUntilMessagesRecovered
+         [x] mergeAssistantIntoMessages shared server/client shape
+         [x] check.mjs merge + serverOwnsAssistantPersist tests
 
 Phase 2  [ ] SQL migration files in db/
          [ ] lib/chat-thread.ts read/write
