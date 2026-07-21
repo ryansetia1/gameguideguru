@@ -25,14 +25,31 @@ function clearOpenIdState(res: NextResponse, secure: boolean) {
   });
 }
 
+// Popup flow (mobile PWA): the callback lands in a `window.open` browser tab, not
+// the PWA window. Post the result to the opener (the PWA) and close, so the whole
+// sign-in stays inside GGG. `intent`/`origin` are server-controlled, not user text.
+function popupResult(origin: string, payload: string) {
+  const target = JSON.stringify(origin);
+  return new NextResponse(
+    `<!doctype html><meta charset="utf-8"><title>Steam</title><script>` +
+      `try{if(window.opener)window.opener.postMessage(${payload},${target});}catch(e){}` +
+      `window.close();</script>` +
+      `<p style="font-family:system-ui;padding:24px">You can close this window.</p>`,
+    { headers: { "content-type": "text/html; charset=utf-8" } },
+  );
+}
+
 export async function GET(request: Request) {
   const origin = getAuthOrigin(request);
   const secure = origin.startsWith("https");
   const url = new URL(request.url);
   const incoming = url.searchParams;
+  const popup = incoming.get("p") === "1";
 
   const fail = () => {
-    const res = NextResponse.redirect(`${origin}/?steam=error`);
+    const res = popup
+      ? popupResult(origin, `{gg:"steam",error:true}`)
+      : NextResponse.redirect(`${origin}/?steam=error`);
     clearOpenIdState(res, secure);
     return res;
   };
@@ -67,7 +84,9 @@ export async function GET(request: Request) {
   // "signin" returns to the login-bridge handler; "link" (default) to the
   // attach-to-account handler. Both carry the same verified gg_steam cookie.
   const intent = incoming.get("i") === "signin" ? "signin" : "linked";
-  const response = NextResponse.redirect(`${origin}/?steam=${intent}`);
+  const response = popup
+    ? popupResult(origin, `{gg:"steam",intent:${JSON.stringify(intent)}}`)
+    : NextResponse.redirect(`${origin}/?steam=${intent}`);
   clearOpenIdState(response, secure);
   try {
     response.cookies.set(STEAM_SESSION_COOKIE, signSteamSession(steamId), {

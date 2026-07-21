@@ -118,7 +118,13 @@ export function AuthPanel({ onClose }: Props) {
           type="button"
           className="auth-steam"
           onClick={() => {
-            window.location.href = "/api/steam/login?intent=signin";
+            // Open in a browser tab, not this window: from an installed PWA a
+            // top-level nav to steamcommunity.com gets handed to the native Steam
+            // app (which then returns to the browser, not us). A popup stays in
+            // the browser and posts the result back here. Blocked -> full redirect.
+            const url = "/api/steam/login?intent=signin";
+            const w = window.open(`${url}&popup=1`, "gg_steam_auth", "width=520,height=700");
+            if (!w) window.location.href = url;
           }}
           disabled={busy}
         >

@@ -1619,42 +1619,24 @@ export default function Home() {
     void refreshSteamStatus();
   }, [refreshSteamStatus]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const steam = params.get("steam");
-    if (!steam) return;
-
-    const stripParam = () => {
-      params.delete("steam");
-      const rest = params.toString();
-      window.history.replaceState(
-        {},
-        "",
-        `${window.location.pathname}${rest ? `?${rest}` : ""}`,
-      );
-    };
-
-    if (steam === "error") {
-      stripParam();
-      setError("Steam sign-in failed. Try again.");
-      return;
-    }
-    if (steam === "signin") {
-      // "Sign in with Steam" return: bridge the gg_steam cookie into a Supabase
-      // session. Runs once, independent of the (still signed-out) user state.
-      if (steamSigninHandledRef.current) return;
-      steamSigninHandledRef.current = true;
-      stripParam();
-      void loginWithSteam();
-      return;
-    }
-    if (steam === "linked") {
-      // Linking needs the signed-in Supabase user, whose session loads async.
-      // Wait for it before consuming the param, or we'd strip it and no-op.
+  const handleSteamReturn = useCallback(
+    (result: "signin" | "linked" | "error") => {
+      if (result === "error") {
+        setError("Steam sign-in failed. Try again.");
+        return;
+      }
+      if (result === "signin") {
+        // Bridge the gg_steam cookie into a Supabase session. Runs once,
+        // independent of the (still signed-out) user state.
+        if (steamSigninHandledRef.current) return;
+        steamSigninHandledRef.current = true;
+        void loginWithSteam();
+        return;
+      }
+      // "linked": needs the signed-in Supabase user; the popup opener always has
+      // it, and the full-redirect effect below only calls us once `user` is set.
       if (!user || steamLinkHandledRef.current) return;
       steamLinkHandledRef.current = true;
-      stripParam();
       void (async () => {
         const status = await linkSteamToAccount();
         // This Steam already has its own account, so it can't also be attached
@@ -1668,8 +1650,47 @@ export default function Home() {
           if (ok) await loginWithSteam();
         }
       })();
+    },
+    [user, linkSteamToAccount, loginWithSteam, askConfirm],
+  );
+
+  // Popup flow (mobile PWA): the Steam callback runs in a browser tab and posts
+  // its result back here instead of navigating this window. See startSteamAuth.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return;
+      const data = event.data as { gg?: string; intent?: string; error?: boolean };
+      if (!data || data.gg !== "steam") return;
+      handleSteamReturn(
+        data.error ? "error" : data.intent === "signin" ? "signin" : "linked",
+      );
     }
-  }, [user, linkSteamToAccount, loginWithSteam, askConfirm]);
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [handleSteamReturn]);
+
+  // Full-redirect fallback (popup blocked): the callback lands back on `/?steam=`.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const steam = params.get("steam");
+    if (!steam) return;
+    // "linked" needs `user` loaded; wait rather than strip the param and no-op.
+    if (steam === "linked" && !user) return;
+
+    params.delete("steam");
+    const rest = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${rest ? `?${rest}` : ""}`,
+    );
+
+    if (steam === "error") handleSteamReturn("error");
+    else if (steam === "signin") handleSteamReturn("signin");
+    else if (steam === "linked") handleSteamReturn("linked");
+  }, [user, handleSteamReturn]);
 
   // On sign-in, only REFRESH status (surfaces an already-linked account's Steam).
   // Linking happens solely on the explicit `?steam=linked` return above, so a
@@ -2269,7 +2290,11 @@ export default function Home() {
       pushOverlayHistory();
       return;
     }
-    window.location.href = "/api/steam/login?intent=link";
+    // Popup so an installed PWA doesn't hand the steamcommunity.com nav to the
+    // native Steam app; the callback posts back here. Blocked -> full redirect.
+    const url = "/api/steam/login?intent=link";
+    const w = window.open(`${url}&popup=1`, "gg_steam_auth", "width=520,height=700");
+    if (!w) window.location.href = url;
   }
 
   function startFromSteamGame(game: SteamGame) {
