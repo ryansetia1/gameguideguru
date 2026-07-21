@@ -1,7 +1,4 @@
 
-\restrict J2Why9L2Utj6zs26at1dr8YuSgpRDbbQhqaMPhphFJ3grJMRw3B05I35eRrhX8G
-
-
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
@@ -1754,7 +1751,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 
 
 
-
-\unrestrict J2Why9L2Utj6zs26at1dr8YuSgpRDbbQhqaMPhphFJ3grJMRw3B05I35eRrhX8G
 
 RESET ALL;
