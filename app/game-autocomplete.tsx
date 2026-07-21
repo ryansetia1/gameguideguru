@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { tgdbPlatformToLabel } from "@/lib/platforms.js";
 
+import { ClearButton } from "./clear-button";
+
 type Game = {
   id: number;
   name: string;
@@ -98,6 +100,7 @@ export function GameAutocomplete({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const rootRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   // Only real keystrokes trigger a lookup. Programmatic value changes (a picked
   // result, opening a saved chat, a Steam import) must not fetch or open the panel.
   const userTyped = useRef(false);
@@ -212,8 +215,9 @@ export function GameAutocomplete({
   const showGroupHeaders = grouped.length > 1;
 
   return (
-    <div className="combo" ref={rootRef}>
+    <div className="combo field-clear-wrap" ref={rootRef}>
       <input
+        ref={inputRef}
         id="game"
         name="game"
         className={`combo-input${loading ? " loading" : ""}`}
@@ -235,6 +239,16 @@ export function GameAutocomplete({
         disabled={disabled}
       />
       {loading && <span className="combo-spinner loader" aria-hidden="true" />}
+      <ClearButton
+        show={value.length > 0 && !loading && !disabled}
+        onClear={() => {
+          userTyped.current = true;
+          onChange("");
+          setOpen(false);
+          inputRef.current?.focus();
+        }}
+        label="Clear game name"
+      />
       {showPanel && (
         <div className="combo-panel">
           <ul className="combo-list" role="listbox">

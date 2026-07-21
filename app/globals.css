@@ -1393,6 +1393,25 @@ details.sources small {
 
 .composer {
   margin-top: 20px;
+  position: relative;
+}
+
+/* Desktop drag-and-drop: highlight the composer and show a drop hint. */
+.composer.drag-active {
+  outline: 2px dashed var(--signal);
+  outline-offset: 3px;
+}
+.composer-dropzone {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--paper-strong) 82%, transparent);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 0.9rem;
+  pointer-events: none;
 }
 
 .composer.docked {
@@ -4988,4 +5007,55 @@ details.sources small {
   font-size: 0.9rem;
   font-weight: 600;
   animation: rise 200ms ease-out backwards;
+}
+
+/* Trailing "clear the field" button, shared by text/search/url inputs.
+   Wrap the input in `.field-clear-wrap` (position:relative). */
+.field-clear-wrap {
+  position: relative;
+}
+.field-clear {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  z-index: 2;
+}
+.field-clear:hover {
+  color: var(--ink);
+}
+.field-clear:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+/* Reserve room so typed text never runs under the button. Match the specificity
+   of `.field input:not(...)` above so this wins by source order. */
+.field-clear-wrap input:not([type="checkbox"]):not([type="radio"]) {
+  padding-right: 38px;
+}
+
+/* Composer clear: a real flex sibling (not an overlay) so it never covers the
+   growing textarea. Sits just left of the "+" / Send controls. */
+.composer-clear {
+  flex: 0 0 auto;
+  align-self: flex-end;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.composer-clear:hover {
+  color: var(--ink);
 }

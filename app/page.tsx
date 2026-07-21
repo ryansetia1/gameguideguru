@@ -4,6 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { AuthPanel } from "./auth-panel";
+import { ClearButton } from "./clear-button";
 import { ComposerExtras } from "./composer-extras";
 import { GameAutocomplete } from "./game-autocomplete";
 import {
@@ -282,7 +283,7 @@ import {
   setChatUrl,
 } from "@/lib/chat-session.js";
 import {
-  shouldShowScrollToBottomFab,
+  shouldShowScrollFabForBubble,
   windowScrollMetrics,
 } from "@/lib/chat-scroll.js";
 
@@ -746,6 +747,7 @@ export default function Home() {
   const [uploadingCover, setUploadingCover] = useState(false);
   const [showSticky, setShowSticky] = useState(false);
   const [pendingImages, setPendingImages] = useState<{ blob: Blob; preview: string }[]>([]);
+  const [dragActive, setDragActive] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [error, setError] = useState("");
@@ -848,6 +850,7 @@ export default function Home() {
 
   const feedRef = useRef<HTMLDivElement>(null);
   const lastUserRef = useRef<HTMLDivElement>(null);
+  const lastGuideRef = useRef<HTMLElement>(null);
   const topRef = useRef<HTMLElement>(null);
   const jumpRef = useRef(false);
   const chatHistoryPushed = useRef(false);
@@ -1054,9 +1057,9 @@ export default function Home() {
   // "Sign in with Steam" return: the gg_steam cookie holds a verified SteamID;
   // the bridge route mints/reuses the matching Supabase account and hands back a
   // session for us to adopt. Library then loads from the account's steam_id.
-  const loginWithSteam = useCallback(async () => {
+  const loginWithSteam = useCallback(async (): Promise<boolean> => {
     const supabase = getSupabase();
-    if (!supabase) return;
+    if (!supabase) return false;
     const res = await fetch("/api/steam/session", {
       method: "POST",
       credentials: "include",
@@ -1069,7 +1072,7 @@ export default function Home() {
     } = await res.json().catch(() => ({}));
     if (!res.ok || !payload.ok || !payload.access_token || !payload.refresh_token) {
       setError("Steam sign-in isn't available right now. Try Google or email.");
-      return;
+      return false;
     }
     await supabase.auth.setSession({
       access_token: payload.access_token,
@@ -1081,6 +1084,7 @@ export default function Home() {
     if (data.session?.user) setUser(data.session.user);
     if (payload.steamId) setSteamId(payload.steamId);
     setToast("Signed in with Steam ✓");
+    return true;
   }, []);
 
   useEffect(() => {
@@ -1630,7 +1634,11 @@ export default function Home() {
         // independent of the (still signed-out) user state.
         if (steamSigninHandledRef.current) return;
         steamSigninHandledRef.current = true;
-        void loginWithSteam();
+        void loginWithSteam().then((ok) => {
+          // Popup flow: this window never reloaded, so the auth modal is still
+          // open behind it. Pop the pushed overlay entry to close it on success.
+          if (ok && authOpen) window.history.back();
+        });
         return;
       }
       // "linked": needs the signed-in Supabase user; the popup opener always has
@@ -1651,7 +1659,7 @@ export default function Home() {
         }
       })();
     },
-    [user, linkSteamToAccount, loginWithSteam, askConfirm],
+    [user, authOpen, linkSteamToAccount, loginWithSteam, askConfirm],
   );
 
   // Popup flow (mobile PWA): the Steam callback runs in a browser tab and posts
@@ -1908,7 +1916,8 @@ export default function Home() {
       return;
     }
     const update = () => {
-      setShowScrollFab(shouldShowScrollToBottomFab(windowScrollMetrics()));
+      const top = lastGuideRef.current?.getBoundingClientRect().top ?? null;
+      setShowScrollFab(shouldShowScrollFabForBubble(windowScrollMetrics(), top));
     };
     update();
     let raf = 0;
@@ -3134,6 +3143,7 @@ export default function Home() {
   const recentGames = chats.slice(0, QUICK_LIMIT);
   const moreGamesCount = chats.length - recentGames.length;
   const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
+  const lastGuideIndex = messages.map((m) => m.role).lastIndexOf("assistant");
 
   return (
     <main>
@@ -3344,7 +3354,7 @@ export default function Home() {
                         : chats;
                       return (
                         <>
-                          <div className="library-search-wrap">
+                          <div className="library-search-wrap field-clear-wrap">
                             <input
                               id="saved-library-search"
                               type="search"
@@ -3354,6 +3364,14 @@ export default function Home() {
                               onChange={(event) => setLibrarySearch(event.target.value)}
                               autoComplete="off"
                               aria-label="Search saved games"
+                            />
+                            <ClearButton
+                              show={librarySearch.length > 0}
+                              onClear={() => {
+                                setLibrarySearch("");
+                                document.getElementById("saved-library-search")?.focus();
+                              }}
+                              label="Clear search"
                             />
                           </div>
                           {shown.length === 0 ? (
@@ -4018,39 +4036,6 @@ export default function Home() {
         </section>
       ) : null}
 
-      {!hasRecent && homeMode && !examplesDismissed && (
-        <div className="examples-block" aria-label="Examples">
-          <div className="examples-head">
-            <span className="examples-label">Try an example</span>
-            <button
-              type="button"
-              className="examples-dismiss"
-              aria-label="Hide examples"
-              onClick={dismissExamples}
-            >
-              <IconX />
-            </button>
-          </div>
-          <div className="examples">
-            {examples.map((example) => (
-              <button
-                key={example.q}
-                type="button"
-                onClick={() => {
-                  setGame(example.game);
-                  setPlatform(example.platform);
-                  setInput(example.q);
-                }}
-                disabled={loading}
-              >
-                <strong>{example.game}</strong>
-                <span>{example.q}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       {started && (
         <section className="feed" aria-live="polite">
           {messages.map((message, index) =>
@@ -4124,7 +4109,11 @@ export default function Home() {
                 )}
               </div>
             ) : (
-              <article className="turn guide" key={index}>
+              <article
+                className="turn guide"
+                key={index}
+                ref={index === lastGuideIndex ? lastGuideRef : undefined}
+              >
                 <div className="guide-head">
                   <div className="guide-tag icon-inline">
                     <IconDiamond /> ANSWER
@@ -4292,9 +4281,44 @@ export default function Home() {
           it returns once "+ New game" reveals the setup form. */}
       {!quickIdle && (
       <form
-        className={`composer${started || preferredUrls.length > 0 ? " docked" : ""}${temporary ? " temporary" : ""}`}
+        className={`composer${started || preferredUrls.length > 0 ? " docked" : ""}${temporary ? " temporary" : ""}${dragActive ? " drag-active" : ""}`}
         onSubmit={handleSubmit}
+        // Desktop drag-and-drop: attach dropped image files (signed-in only).
+        // selectMessageImages already filters to image/* and enforces the cap.
+        onDragOver={
+          coverEnabled && !composerLocked
+            ? (event) => {
+                if (!event.dataTransfer.types.includes("Files")) return;
+                event.preventDefault();
+                if (!dragActive) setDragActive(true);
+              }
+            : undefined
+        }
+        onDragLeave={
+          coverEnabled && !composerLocked
+            ? (event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                  setDragActive(false);
+                }
+              }
+            : undefined
+        }
+        onDrop={
+          coverEnabled && !composerLocked
+            ? (event) => {
+                if (!event.dataTransfer.types.includes("Files")) return;
+                event.preventDefault();
+                setDragActive(false);
+                void selectMessageImages(event.dataTransfer.files);
+              }
+            : undefined
+        }
       >
+        {dragActive && (
+          <div className="composer-dropzone" aria-hidden="true">
+            Drop images to attach
+          </div>
+        )}
         {coverEnabled && pendingImages.length > 0 && (
           <div className="composer-attachments">
             {pendingImages.map((img, i) => (
@@ -4339,6 +4363,19 @@ export default function Home() {
                   event.currentTarget.form?.requestSubmit();
                 }
               }}
+              onPaste={(event) => {
+                // Desktop: paste image files straight into attachments (signed-in,
+                // unlocked). Text pastes fall through untouched.
+                if (!coverEnabled || composerLocked) return;
+                const files = event.clipboardData.files;
+                if (
+                  files.length > 0 &&
+                  Array.from(files).some((file) => file.type.startsWith("image/"))
+                ) {
+                  event.preventDefault();
+                  void selectMessageImages(files);
+                }
+              }}
               placeholder={
                 voiceListening
                   ? ""
@@ -4353,6 +4390,16 @@ export default function Home() {
             />
             <VoiceVisualizer active={voiceListening} />
           </div>
+          <ClearButton
+            show={input.length > 0 && !loading}
+            onClear={() => {
+              setInput("");
+              composerRef.current?.focus();
+            }}
+            disabled={composerLocked}
+            label="Clear message"
+            className="composer-clear"
+          />
           {temporary && (
             <button
               type="button"
@@ -4400,6 +4447,39 @@ export default function Home() {
           )}
         </div>
       </form>
+      )}
+
+      {!hasRecent && homeMode && !examplesDismissed && (
+        <div className="examples-block" aria-label="Examples">
+          <div className="examples-head">
+            <span className="examples-label">Try an example</span>
+            <button
+              type="button"
+              className="examples-dismiss"
+              aria-label="Hide examples"
+              onClick={dismissExamples}
+            >
+              <IconX />
+            </button>
+          </div>
+          <div className="examples">
+            {examples.map((example) => (
+              <button
+                key={example.q}
+                type="button"
+                onClick={() => {
+                  setGame(example.game);
+                  setPlatform(example.platform);
+                  setInput(example.q);
+                }}
+                disabled={loading}
+              >
+                <strong>{example.game}</strong>
+                <span>{example.q}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {!quickIdle && (

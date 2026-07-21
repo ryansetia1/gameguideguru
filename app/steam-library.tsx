@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getSupabase } from "@/lib/supabase";
+import { ClearButton } from "./clear-button";
 import { IconSort, IconX } from "./icons";
 
 export type SteamGame = {
@@ -291,16 +292,26 @@ export function SteamLibrary({ open, onClose, onPick, cacheKey = "" }: Props) {
               {games.length > 0 && (
                 <div className="library-search-wrap">
                   <div className="library-search-row">
-                    <input
-                      id="steam-library-search"
-                      type="search"
-                      className="library-search"
-                      placeholder="Search your games…"
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      autoComplete="off"
-                      aria-label="Search Steam games"
-                    />
+                    <div className="field-clear-wrap" style={{ flex: 1, minWidth: 0 }}>
+                      <input
+                        id="steam-library-search"
+                        type="search"
+                        className="library-search"
+                        placeholder="Search your games…"
+                        value={query}
+                        onChange={(event) => setQuery(event.target.value)}
+                        autoComplete="off"
+                        aria-label="Search Steam games"
+                      />
+                      <ClearButton
+                        show={query.length > 0}
+                        onClear={() => {
+                          setQuery("");
+                          document.getElementById("steam-library-search")?.focus();
+                        }}
+                        label="Clear search"
+                      />
+                    </div>
                     <div className="library-sort" ref={sortWrapRef}>
                       <button
                         type="button"

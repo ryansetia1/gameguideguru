@@ -18,6 +18,7 @@ import {
 import { parseGamefaqsFaqUrl } from "@/lib/gamefaqs-bundle.js";
 import { setBundlePrefs } from "@/lib/bundle-prefs.js";
 import { IconCheck, IconClock, IconAlert, IconX, IconClipboard } from "./icons";
+import { ClearButton } from "./clear-button";
 
 type GuideHit = { title: string; url: string; snippet: string };
 
@@ -692,22 +693,35 @@ export function GuideLinkField({
           ) : (
             <>
               <form className="guide-search-form" onSubmit={onSearchSubmit}>
-                <input
-                  id={searchInputId}
-                  type="search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder={
-                    canSearch
-                      ? `Refine search for ${trimmedGame} (optional)`
-                      : "Enter a game name above to search the web"
-                  }
-                  maxLength={120}
-                  autoComplete="off"
-                  readOnly={!canSearch}
-                  disabled={disabled || searching || previewLoading || Boolean(bundlePreview)}
-                  tabIndex={canSearch ? undefined : -1}
-                />
+                <div
+                  className="field-clear-wrap"
+                  style={{ flex: 1, minWidth: 0, display: "flex" }}
+                >
+                  <input
+                    id={searchInputId}
+                    type="search"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder={
+                      canSearch
+                        ? `Refine search for ${trimmedGame} (optional)`
+                        : "Enter a game name above to search the web"
+                    }
+                    maxLength={120}
+                    autoComplete="off"
+                    readOnly={!canSearch}
+                    disabled={disabled || searching || previewLoading || Boolean(bundlePreview)}
+                    tabIndex={canSearch ? undefined : -1}
+                  />
+                  <ClearButton
+                    show={canSearch && query.length > 0 && !searching}
+                    onClear={() => {
+                      setQuery("");
+                      document.getElementById(searchInputId)?.focus();
+                    }}
+                    label="Clear search"
+                  />
+                </div>
                 {canSearch && (
                   <button type="submit" className="nav-button" disabled={disabled || searching}>
                     {searching ? (

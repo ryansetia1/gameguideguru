@@ -5,6 +5,7 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { AuthPanel } from "@/app/auth-panel";
+import { ClearButton } from "@/app/clear-button";
 import { IconArrowLeft } from "@/app/icons";
 import { ProfileMenu } from "@/app/profile-menu";
 import { compressImage } from "@/lib/image.js";
@@ -220,14 +221,25 @@ export default function ProfilePage() {
                 <p className="field-hint">
                   The guide uses this in replies — e.g. &ldquo;Hey Ryan, try this&hellip;&rdquo;
                 </p>
-                <input
-                  type="text"
-                  value={displayName}
-                  maxLength={MAX_DISPLAY_NAME_LENGTH}
-                  placeholder="What should we call you?"
-                  onChange={(event) => setDisplayName(event.target.value)}
-                  autoComplete="nickname"
-                />
+                <div className="field-clear-wrap">
+                  <input
+                    id="profile-display-name"
+                    type="text"
+                    value={displayName}
+                    maxLength={MAX_DISPLAY_NAME_LENGTH}
+                    placeholder="What should we call you?"
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    autoComplete="nickname"
+                  />
+                  <ClearButton
+                    show={displayName.length > 0}
+                    onClear={() => {
+                      setDisplayName("");
+                      document.getElementById("profile-display-name")?.focus();
+                    }}
+                    label="Clear display name"
+                  />
+                </div>
               </label>
               {error && <p className="profile-error">{error}</p>}
               {notice && <p className="profile-notice">{notice}</p>}

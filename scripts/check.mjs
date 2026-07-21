@@ -91,6 +91,7 @@ import {
   SCROLL_BOTTOM_MIN_OVERFLOW_PX,
   SCROLL_BOTTOM_THRESHOLD_PX,
   shouldShowScrollToBottomFab,
+  shouldShowScrollFabForBubble,
 } from "../lib/chat-scroll.js";
 import {
   buildHltbData,
@@ -961,6 +962,15 @@ assert.equal(shouldShowScrollToBottomFab({ scrollTop: 0, scrollHeight: 850, clie
 assert.equal(isNearBottom({ scrollTop: 70, scrollHeight: 900, clientHeight: 800 }, -5), true);
 assert.equal(SCROLL_BOTTOM_THRESHOLD_PX, 72);
 assert.equal(SCROLL_BOTTOM_MIN_OVERFLOW_PX, 96);
+// Bubble-aware FAB: hide once the last answer bubble is in view (top above the
+// viewport bottom), show while it's still below.
+assert.equal(shouldShowScrollFabForBubble(scrollFar, 1500), true); // bubble below viewport
+assert.equal(shouldShowScrollFabForBubble(scrollFar, 100), false); // bubble reached
+assert.equal(shouldShowScrollFabForBubble(scrollFar, null), true); // falls back to page rule
+assert.equal(
+  shouldShowScrollFabForBubble({ scrollTop: 0, scrollHeight: 850, clientHeight: 800 }, 100),
+  false,
+); // no overflow => never show
 
 assert.match(tiltTransform({ x: 4, y: -2 }), /^perspective\(1200px\) rotateX\(-2\.00deg\) rotateY\(4\.00deg\)$/);
 assert.deepEqual(mouseToTilt(0, 0, 1000, 800), { x: -5, y: 4 });

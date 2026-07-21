@@ -33,14 +33,20 @@ do not sync to the cloud or use Storage uploads.
   platform·year) with a per-row kebab -> Edit/Delete menu and a Library button that
   opens a 2-column cover-art grid,   per-message image attachments (signed-in only: compressed client-side, one
   paperclip menu beside Send for photo library or camera, uploaded to the `covers` bucket at send time, sent
-  to Gemini via Replicate's `images` field`; edit/retry drops truncated turns'
+  to Gemini via Replicate's `images` field`; also **desktop drag-and-drop** and
+  **paste** of image files into the composer (`dragActive` +
+  `.composer.drag-active`/`.composer-dropzone` for drop, textarea `onPaste` for paste;
+  both reuse `selectMessageImages`, signed-in + unlocked only); edit/retry drops truncated turns'
   Storage images), profile avatar menu (theme, spoilers, sign out) and `/profile`
   page for `user_metadata.display_name` (LLM uses it in prompts), theme via
   `gg:theme` / `user_metadata.theme`,
   light-markdown rendering of answers (`lib/markdown.js`: bold/lists/headings),
   a dismissable examples strip
-  (remembered in `localStorage`), and auto-scroll (smooth on new turns, instant
-  jump to the last user message when opening a saved game; scroll-to-bottom FAB hides cleanly when bottom is reached). Refresh restores the open thread via `?chat=<id>`
+  (remembered in `localStorage`; on home it renders **below** the composer so the
+  composer stays above the fold), and auto-scroll (smooth on new turns, instant
+  jump to the last user message when opening a saved game; scroll-to-bottom FAB
+  hides once the last answer bubble is in view via `shouldShowScrollFabForBubble`
+  in `lib/chat-scroll.js` + `lastGuideRef`, not only at page bottom). Refresh restores the open thread via `?chat=<id>`
   (signed-in saved chats) or a `sessionStorage` draft (`lib/chat-session.js`;
   anon / not-yet-saved). `runTurn`/`persistChat` centralise ask +
   save; `conversationGame` tracks which game the visible thread belongs to.
@@ -161,7 +167,15 @@ do not sync to the cloud or use Storage uploads.
   `STEAM_API_KEY`) holding the verified numeric SteamID — Steam OpenID never
   returns an email, so accounts never merge by email.
   Flow: `app/api/steam/login` -> Steam OpenID -> `callback` verifies and sets the
-  `gg_steam` cookie, then redirects `/?steam=linked`. The client links **only**
+  `gg_steam` cookie, then redirects `/?steam=linked`. **Mobile-PWA popup flow:** both
+  Steam entry points open `/api/steam/login?...&popup=1` in a `window.open` browser
+  tab (not a top-level PWA nav, which the OS hands to the native Steam app and then
+  returns to the browser instead of the PWA). With `popup=1` the callback returns a
+  tiny self-closing HTML page that `postMessage`s `{gg:"steam",intent|error}` to the
+  opener and closes; `page.tsx` handles it via a `message` listener + shared
+  `handleSteamReturn` (the old `?steam=` redirect stays as the popup-blocked
+  fallback). A successful `signin` also closes the still-open auth modal
+  (`loginWithSteam` returns a boolean). The client links **only**
   on that explicit return (`linkSteamToAccount` writes `steam_id` via
   `POST /api/steam/link` with bearer + `refresh_token` so the route can
   `setSession` before `updateUser` — see `docs/troubleshooting.md` if link
@@ -304,6 +318,14 @@ do not sync to the cloud or use Storage uploads.
   (`picture`/`avatar_url`, `avatar_steam`, `avatar_upload`) for the `/profile`
   photo picker. The picker uploads to the `covers` bucket (`<uid>/avatar-*.jpg`)
   and writes `avatar_upload` + `avatar_pref`.
+- `app/clear-button.tsx`: shared trailing "clear the field" button (`ClearButton`).
+  Wrap a text input in `.field-clear-wrap` (position:relative) and drop it after the
+  input; renders nothing when empty. Used on the game-name field, platform search,
+  saved + Steam library search, guide web-search, and profile display name; the
+  composer uses it as a flex sibling (`.composer-clear`) so it never overlays the
+  growing textarea. `preventDefault` on mousedown keeps comboboxes from blurring
+  before clear. Skipped: auth email/password and the guide-URL paste field (already
+  has paste/info controls + an Add button that clears it).
 - `lib/image.js`: `compressImage(file, maxDim, quality)` — client-side canvas
   downscale + JPEG re-encode shared by covers, message images, and avatar upload.
 - `lib/spoiler-prefs.js`: global **major spoiler** toggle (`major`, default off)

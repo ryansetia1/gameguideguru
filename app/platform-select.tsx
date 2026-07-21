@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { matchPlatforms } from "@/lib/platforms";
+import { ClearButton } from "./clear-button";
 import { IconChevronDown, IconX } from "./icons";
 
 type Props = {
@@ -98,17 +99,27 @@ export function PlatformSelect({ value, onChange, disabled }: Props) {
 
       {open && (
         <div className="combo-panel">
-          <input
-            ref={searchRef}
-            className="combo-search"
-            type="text"
-            value={query}
-            placeholder="Search platform..."
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={onSearchKeyDown}
-            aria-label="Search platform"
-            autoComplete="off"
-          />
+          <div className="field-clear-wrap">
+            <input
+              ref={searchRef}
+              className="combo-search"
+              type="text"
+              value={query}
+              placeholder="Search platform..."
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={onSearchKeyDown}
+              aria-label="Search platform"
+              autoComplete="off"
+            />
+            <ClearButton
+              show={query.length > 0}
+              onClear={() => {
+                setQuery("");
+                searchRef.current?.focus();
+              }}
+              label="Clear search"
+            />
+          </div>
           <ul className="combo-list" id={listId} role="listbox">
             {flat.length === 0 && (
               <li className="combo-empty">No matching platforms</li>
