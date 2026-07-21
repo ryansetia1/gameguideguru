@@ -122,7 +122,7 @@ export default function AdminPage() {
               }
             </p>
             {!user && (
-              <Link href="/profile" className="nav-button" style={{ display: "inline-block", textAlign: "center" }}>
+              <Link href="/profile" className="nav-button" style={{ display: "flex", justifyContent: "center", alignItems: "center", padding: "12px", fontSize: "0.85rem" }}>
                 Go to Profile to Sign In
               </Link>
             )}

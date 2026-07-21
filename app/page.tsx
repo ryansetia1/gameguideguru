@@ -3631,89 +3631,125 @@ export default function Home() {
             )}
             <HltbRow title={game} appId={steamAppIdFromCoverUrl(cover)?.toString()} />
           </div>
-          {preferredUrls.length > 0 ? (
-            <div className="game-card-guides">
-              {preferredUrls.map((url) => {
-                const row = gameCardGuideRow(
-                  url,
-                  guideBundleMeta[url],
-                  bundleIndexStatus[url],
-                  bundlePanelLoad[url],
-                  guideIndexState[url],
-                );
-                return (
-                  <div key={guideUrlDedupeKey(url)} className="game-card-guide-stack">
-                    {row.uploaded ? (
-                      <div className={`game-card-link is-${row.state}`}>
-                        <span className="icon-inline" style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                          {row.label}
-                          {row.state && row.state !== "unknown" && renderStatusChip(row.state)}
-                          {row.isBlocked && (
-                            <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}>
-                              <IconAlert size={12} /> Blocked
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                    ) : (
-                    <a
-                      className={`game-card-link is-${row.state}`}
-                      href={url}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-busy={row.bundle && row.panelLoading ? true : undefined}
-                    >
-                      <span className="icon-inline" style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                        {row.label}
-                        {row.state && row.state !== "unknown" && renderStatusChip(row.state)}
+          {(() => {
+            if (preferredUrls.length === 0) return null;
+
+            const renderGuideStack = (url: string) => {
+              const row = gameCardGuideRow(
+                url,
+                guideBundleMeta[url],
+                bundleIndexStatus[url],
+                bundlePanelLoad[url],
+                guideIndexState[url],
+              );
+              return (
+                <div key={guideUrlDedupeKey(url)} className="game-card-guide-stack">
+                  {row.uploaded ? (
+                    <div className={`game-card-link is-${row.state}`}>
+                      <span className="icon-inline" style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "nowrap", overflow: "hidden", width: "100%" }}>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{row.label}</span>
+                        {row.state && row.state !== "unknown" && <span style={{ flexShrink: 0 }}>{renderStatusChip(row.state)}</span>}
                         {row.isBlocked && (
-                          <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}>
+                          <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)", flexShrink: 0 }}>
                             <IconAlert size={12} /> Blocked
                           </span>
                         )}
-                        {row.bundle && row.panelLoading ? (
-                          <span
-                            className="game-card-bundle-spinner loader"
-                            aria-hidden="true"
-                          />
-                        ) : null}
-                        <IconArrowUpRight />
+                        <span style={{ flexShrink: 0, width: '20px', display: 'flex' }} />
                       </span>
-                    </a>
+                    </div>
+                  ) : (
+                  <a
+                    className={`game-card-link is-${row.state}`}
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-busy={row.bundle && row.panelLoading ? true : undefined}
+                  >
+                    <span className="icon-inline" style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "nowrap", overflow: "hidden", width: "100%" }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{row.label}</span>
+                      {row.state && row.state !== "unknown" && <span style={{ flexShrink: 0 }}>{renderStatusChip(row.state)}</span>}
+                      {row.isBlocked && (
+                        <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)", flexShrink: 0 }}>
+                          <IconAlert size={12} /> Blocked
+                        </span>
+                      )}
+                      {row.bundle && row.panelLoading ? (
+                        <span
+                          className="game-card-bundle-spinner loader"
+                          aria-hidden="true"
+                          style={{ flexShrink: 0 }}
+                        />
+                      ) : null}
+                      <span style={{ flexShrink: 0, display: 'flex' }}><IconArrowUpRight /></span>
+                    </span>
+                  </a>
+                  )}
+                  {row.bundle && !row.panelLoading && row.showPanel ? (
+                    <BundleIndexPanel
+                      discoveredPages={row.discoveredPages}
+                      indexedPages={row.indexedPages}
+                      missingPages={row.missingPages}
+                      skippedSlugs={row.skippedSlugs}
+                      selectionLocked={row.selectionLocked}
+                      onSkipPage={(slug) => handleSkipBundlePage(url, slug)}
+                      onUnskipPage={(slug) => handleUnskipBundlePage(url, slug)}
+                      onSkipAllMissing={
+                        row.missingPages.length
+                          ? () =>
+                              handleSkipAllMissingBundlePages(
+                                url,
+                                row.missingPages.map((page) => page.slug),
+                              )
+                          : undefined
+                      }
+                      onRetryMissing={
+                        row.missingPages.length
+                          ? () => void retryBundleIngest(url)
+                          : undefined
+                      }
+                      onRefreshList={() => void refreshBundleDiscovery(url)}
+                      retrying={retryingBundleUrl === url}
+                      refreshingList={refreshingBundleUrl === url}
+                    />
+                  ) : null}
+                </div>
+              );
+            };
+
+            if (preferredUrls.length <= 2) {
+              return (
+                <div className="game-card-guides">
+                  {preferredUrls.map(renderGuideStack)}
+                </div>
+              );
+            }
+
+            const hasBlocked = preferredUrls.some((url) => guideBundleMeta[url]?.isBlocked);
+            const hasFailed = preferredUrls.some((url) => guideIndexState[url] === "failed");
+
+            return (
+              <div className="game-card-guides">
+                <details className="sources game-card-guides-hidden">
+                  <summary style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                    <span style={{ flex: 1 }}>Guides ({preferredUrls.length})</span>
+                    {hasBlocked && (
+                      <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}>
+                        <IconAlert size={12} /> Blocked
+                      </span>
                     )}
-                    {row.bundle && !row.panelLoading && row.showPanel ? (
-                      <BundleIndexPanel
-                        discoveredPages={row.discoveredPages}
-                        indexedPages={row.indexedPages}
-                        missingPages={row.missingPages}
-                        skippedSlugs={row.skippedSlugs}
-                        selectionLocked={row.selectionLocked}
-                        onSkipPage={(slug) => handleSkipBundlePage(url, slug)}
-                        onUnskipPage={(slug) => handleUnskipBundlePage(url, slug)}
-                        onSkipAllMissing={
-                          row.missingPages.length
-                            ? () =>
-                                handleSkipAllMissingBundlePages(
-                                  url,
-                                  row.missingPages.map((page) => page.slug),
-                                )
-                            : undefined
-                        }
-                        onRetryMissing={
-                          row.missingPages.length
-                            ? () => void retryBundleIngest(url)
-                            : undefined
-                        }
-                        onRefreshList={() => void refreshBundleDiscovery(url)}
-                        retrying={retryingBundleUrl === url}
-                        refreshingList={refreshingBundleUrl === url}
-                      />
-                    ) : null}
+                    {hasFailed && (
+                      <span className="guide-status-chip is-failed">
+                        <IconX size={10} /> Failed
+                      </span>
+                    )}
+                  </summary>
+                  <div className="game-card-guides" style={{ marginTop: '8px' }}>
+                    {preferredUrls.map(renderGuideStack)}
                   </div>
-                );
-              })}
-            </div>
-          ) : null}
+                </details>
+              </div>
+            );
+          })()}
           <div className="game-card-spoiler spoiler-panel">
             <SpoilerToggle
               prefs={{ major: gameSpoilerMajor }}
