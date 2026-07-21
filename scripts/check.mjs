@@ -92,11 +92,17 @@ import {
   buildTurnMessagesWithAssistant,
   mergeAssistantIntoMessages,
   serverOwnsAssistantPersist,
+  shouldApplySyncedMessages,
 } from "../lib/chat-persist.js";
 import {
   buildMessagesFromNormalized,
   derivePersistContext,
   lastUserTurnIndex,
+  pairMessagesIntoTurns,
+  pickRicherThread,
+  priorMessagesForRegen,
+  userTurnCount,
+  variantRowsFromPersistedAssistant,
 } from "../lib/chat-thread.js";
 import {
   CHAT_QUERY_PARAM,
@@ -1167,14 +1173,83 @@ assert.equal(/** @type {any} */ (rebuilt[3]).variants?.length, 2);
 assert.equal(/** @type {any} */ (rebuilt[3]).activeVariantIndex, 1);
 
 const mergedForPersist = buildTurnMessagesWithAssistant({
-  priorMessages: [],
+  priorMessages: [{ role: "user", content: "q" }],
   userMessage: { role: "user", content: "q" },
   oldAssistantMessage: { role: "assistant", content: "old", sources: [] },
   variantBody: mergeBody,
 });
+assert.equal(mergedForPersist.length, 2);
+assert.equal(mergedForPersist[0].role, "user");
+assert.equal(mergedForPersist[1].role, "assistant");
 const persistCtx = derivePersistContext(mergedForPersist);
 assert.equal(persistCtx?.turnIndex, 0);
 assert.equal(persistCtx?.variantIndex, 1);
 assert.equal(lastUserTurnIndex(mergedForPersist), 0);
+
+const mergedAssistant = mergedForPersist.at(-1);
+assert.ok(mergedAssistant);
+const persistRows = variantRowsFromPersistedAssistant(mergedAssistant, "trace-1");
+assert.equal(persistRows.length, 2);
+assert.equal(persistRows[0].body.content, "old");
+assert.equal(persistRows[1].body.content, "answer");
+assert.equal(persistRows[1].trace_id, "trace-1");
+
+const legacyRich = [
+  { role: "user", content: "q" },
+  {
+    role: "assistant",
+    content: "new",
+    variants: [{ content: "old" }, { content: "new" }],
+    activeVariantIndex: 1,
+  },
+];
+const normalizedPoor = [
+  { role: "user", content: "q" },
+  { role: "assistant", content: "new" },
+];
+assert.equal(pickRicherThread(normalizedPoor, legacyRich), legacyRich);
+assert.equal(pickRicherThread(legacyRich, normalizedPoor), legacyRich);
+
+assert.equal(shouldApplySyncedMessages(legacyRich, normalizedPoor), false);
+assert.equal(
+  shouldApplySyncedMessages(
+    legacyRich,
+    [{ role: "assistant", content: "new", variants: [{ content: "old" }] }],
+  ),
+  false,
+);
+assert.equal(shouldApplySyncedMessages(legacyRich, legacyRich), false);
+
+const regenPrior = priorMessagesForRegen([{ role: "user", content: "q" }], {
+  role: "user",
+  content: "q",
+});
+assert.equal(regenPrior.length, 1);
+
+const duplicatePoor = [
+  { role: "user", content: "same" },
+  { role: "assistant", content: "a1", variants: [{ content: "a1" }, { content: "a2" }], activeVariantIndex: 1 },
+  { role: "user", content: "same" },
+  { role: "assistant", content: "a3" },
+];
+const singleTurnRich = [
+  { role: "user", content: "same" },
+  {
+    role: "assistant",
+    content: "a2",
+    variants: [{ content: "a1" }, { content: "a2" }],
+    activeVariantIndex: 1,
+  },
+];
+assert.equal(pickRicherThread(duplicatePoor, singleTurnRich), singleTurnRich);
+
+const paired = pairMessagesIntoTurns([
+  { role: "user", content: "one" },
+  { role: "assistant", content: "ans" },
+  { role: "user", content: "two" },
+  { role: "assistant", content: "ans2" },
+]);
+assert.equal(paired.length, 2);
+assert.equal(userTurnCount(duplicatePoor), 2);
 
 console.log("Self-check passed.");

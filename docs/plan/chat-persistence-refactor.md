@@ -165,8 +165,10 @@ used in network-drop recovery and post-success server sync poll.
 
 **Status:** Done (July 2026) — `db/chat-threads.sql`, `lib/chat-thread.js`,
 `lib/chat-thread-persist.js`. Uses `chat_id` → `chats.id` (no `chat_threads` table
-until Phase 3). Server `persistAssistantResponse` writes normalized rows + rebuilds
-`chats.messages` cache; `openChat` prefers normalized read via `resolveThreadMessages`.
+until Phase 3). Server `persistAssistantResponse` writes **all** variant rows from
+`variantRowsFromPersistedAssistant`, rebuilds `chats.messages` cache; `openChat` uses
+`pickRicherThread` via `resolveThreadMessages`; poll sync uses `shouldApplySyncedMessages`
+so incomplete normalized rows never clobber local variant nav.
 
 **Goal:** Canonical history for turns and variants; JSONB becomes a cache.
 

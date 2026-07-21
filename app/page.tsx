@@ -27,17 +27,18 @@ import {
   IconAlert,
 } from "./icons";
 import {
-  assistantTailDiffers,
   buildAssistantVariantBody,
   buildTurnMessagesWithAssistant,
   pollUntilMessagesRecovered,
   serverOwnsAssistantPersist,
+  shouldApplySyncedMessages,
 } from "@/lib/chat-persist.js";
 import {
   fetchNormalizedThread,
   resolveThreadMessages,
   syncVariantStateFromMessages,
 } from "@/lib/chat-thread-persist.js";
+import { pickRicherThread, priorMessagesForRegen } from "@/lib/chat-thread.js";
 import {
   WRITING_ANSWER_PLACEHOLDER,
   coerceMessages,
@@ -2633,8 +2634,7 @@ export default function Home() {
     };
     const optimistic: Message[] = oldAssistantMessage
       ? [
-          ...priorMessages,
-          userMessage,
+          ...(priorMessagesForRegen(priorMessages, userMessage) as Message[]),
           {
             ...oldAssistantMessage,
             content: WRITING_ANSWER_PLACEHOLDER,
@@ -2858,7 +2858,11 @@ export default function Home() {
       if (!userConfirmedFallback) {
         setLoading(false);
         setGenerationStatus(null);
-        setMessages(oldAssistantMessage ? [...priorMessages, userMessage, oldAssistantMessage] : priorMessages);
+        setMessages(
+          oldAssistantMessage
+            ? ([...priorMessagesForRegen(priorMessages, userMessage), oldAssistantMessage] as Message[])
+            : priorMessages,
+        );
         
         if (priorMessages.length > 0) {
           setEditingGame(true);
@@ -3040,13 +3044,14 @@ export default function Home() {
             const synced = await pollUntilMessagesRecovered({
               fetchMessages: async () => {
                 const normalized = await fetchNormalizedThread(supabase, syncChatId);
-                if (normalized?.length) return normalized;
                 const { data: row } = await supabase
                   .from("chats")
                   .select("messages")
                   .eq("id", syncChatId)
                   .single();
-                return row?.messages ? parseStoredMessages(row.messages) : null;
+                const legacy = row?.messages ? parseStoredMessages(row.messages) : [];
+                const merged = pickRicherThread(normalized, legacy);
+                return merged.length ? merged : null;
               },
               optimistic,
             });
@@ -3055,7 +3060,7 @@ export default function Home() {
               backgroundMessagesRef.current[syncChatId] = syncedMessages;
               if (
                 activeChatIdRef.current === syncChatId &&
-                assistantTailDiffers(nextMessages, syncedMessages)
+                shouldApplySyncedMessages(nextMessages, syncedMessages)
               ) {
                 setMessages(syncedMessages);
               }
@@ -3132,7 +3137,11 @@ export default function Home() {
         }
       }
       if (activeChatIdRef.current === activeId) {
-        setMessages(oldAssistantMessage ? [...priorMessages, userMessage, oldAssistantMessage] : priorMessages);
+        setMessages(
+          oldAssistantMessage
+            ? ([...priorMessagesForRegen(priorMessages, userMessage), oldAssistantMessage] as Message[])
+            : priorMessages,
+        );
         setLoading(false);
         if (!isAbort) {
           setError(
@@ -3266,7 +3275,7 @@ export default function Home() {
     const dropped = messages.slice(index + 1);
     if (!(await confirmDropImages(dropped))) return;
     await deleteMessageImages(dropped);
-    await runTurn(question, messages.slice(0, index - 1), activeChatIdRef.current, existingImages, null, messages[index]);
+    await runTurn(question, messages.slice(0, index), activeChatIdRef.current, existingImages, null, messages[index]);
   }
 
   function onNavigateVariant(msgIndex: number, variantIndex: number) {
