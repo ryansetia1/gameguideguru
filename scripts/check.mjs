@@ -87,7 +87,9 @@ import {
   WRITING_ANSWER_PLACEHOLDER,
 } from "../lib/chat-messages.js";
 import {
+  assistantTailDiffers,
   buildAssistantVariantBody,
+  buildTurnMessagesWithAssistant,
   mergeAssistantIntoMessages,
   serverOwnsAssistantPersist,
 } from "../lib/chat-persist.js";
@@ -1033,6 +1035,13 @@ const loadedRegen = [
 assert.ok(pollRecoveredMessages(optimisticRegen, loadedRegen));
 assert.ok(!pollRecoveredMessages(optimisticRegen, optimisticRegen));
 
+const optimisticNewTurn = [{ role: "user", content: "q?" }];
+const loadedNewTurn = [
+  { role: "user", content: "q?" },
+  { role: "assistant", content: "answer" },
+];
+assert.ok(pollRecoveredMessages(optimisticNewTurn, loadedNewTurn));
+
 assert.equal(
   coerceMessageVariant({ role: "assistant", content: "x", pipelineType: "rag" })?.content,
   "x",
@@ -1080,5 +1089,32 @@ assert.ok(mergeAssistantIntoMessages(mergeRegen, mergeBody));
 assert.equal(mergeRegen[1].content, "answer");
 assert.equal(/** @type {any} */ (mergeRegen[1]).variants?.length, 2);
 assert.equal(/** @type {any} */ (mergeRegen[1]).activeVariantIndex, 1);
+
+const turnMessages = buildTurnMessagesWithAssistant({
+  priorMessages: [{ role: "user", content: "first" }],
+  userMessage: { role: "user", content: "second" },
+  variantBody: mergeBody,
+});
+assert.equal(turnMessages.length, 3);
+assert.equal(turnMessages[2].content, "answer");
+
+const staleMerge = [{ role: "assistant", content: "old answer" }];
+assert.equal(mergeAssistantIntoMessages(staleMerge, mergeBody), false);
+
+const malformedBody = buildAssistantVariantBody({
+  content: "answer",
+  sources: [],
+  highlights: [{ kind: "not-a-kind", title: "x" }],
+  spoilerMajor: false,
+});
+assert.equal(malformedBody.highlights, undefined);
+
+assert.equal(assistantTailDiffers(loadedNewTurn, loadedNewTurn), false);
+assert.ok(
+  assistantTailDiffers(
+    [{ role: "assistant", content: "local" }],
+    [{ role: "assistant", content: "server" }],
+  ),
+);
 
 console.log("Self-check passed.");

@@ -373,6 +373,18 @@ export async function POST(request: Request) {
                   .from("chats")
                   .update({ messages, updated_at: new Date().toISOString() })
                   .eq("id", chatId);
+              } else {
+                const last = messages.at(-1);
+                console.warn("[chat-persist] Server merge skipped", {
+                  chatId,
+                  traceId,
+                  messageCount: messages.length,
+                  lastRole: last?.role,
+                  lastContent:
+                    typeof last?.content === "string"
+                      ? last.content.slice(0, 48)
+                      : undefined,
+                });
               }
             }
           } catch (err) {

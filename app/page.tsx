@@ -27,6 +27,7 @@ import {
   IconAlert,
 } from "./icons";
 import {
+  assistantTailDiffers,
   buildAssistantVariantBody,
   buildTurnMessagesWithAssistant,
   pollUntilMessagesRecovered,
@@ -2997,6 +2998,14 @@ export default function Home() {
         setMessages(nextMessages);
       }
       conversationGame.current = game;
+      if (activeId) delete abortRefs.current[activeId];
+      succeeded = true;
+      if (activeId === activeChatIdRef.current || !activeId) {
+        setLoading(false);
+        setGenerationStatus(null);
+        if (finalToast) setToast(finalToast);
+        else if (ingestResult?.hint) setToast(ingestResult.hint);
+      }
 
       const serverPersistsAssistant = serverOwnsAssistantPersist({
         hasUser: Boolean(user),
@@ -3006,39 +3015,45 @@ export default function Home() {
       });
 
       if (serverPersistsAssistant && activeId) {
+        const syncChatId = activeId;
         const supabase = getSupabase();
-        const synced = supabase
-          ? await pollUntilMessagesRecovered({
+        if (supabase) {
+          void (async () => {
+            const synced = await pollUntilMessagesRecovered({
               fetchMessages: async () => {
                 const { data: row } = await supabase
                   .from("chats")
                   .select("messages")
-                  .eq("id", activeId)
+                  .eq("id", syncChatId)
                   .single();
                 return row?.messages ? parseStoredMessages(row.messages) : null;
               },
               optimistic,
-              signal: controller.signal,
-            })
-          : null;
-        if (synced) {
-          const syncedMessages = synced as Message[];
-          backgroundMessagesRef.current[activeId] = syncedMessages;
-          if (activeChatIdRef.current === activeId) setMessages(syncedMessages);
+            });
+            if (synced) {
+              const syncedMessages = synced as Message[];
+              backgroundMessagesRef.current[syncChatId] = syncedMessages;
+              if (
+                activeChatIdRef.current === syncChatId &&
+                assistantTailDiffers(nextMessages, syncedMessages)
+              ) {
+                setMessages(syncedMessages);
+              }
+            } else {
+              await persistChat(nextMessages, syncChatId);
+            }
+            void loadChats();
+          })();
         } else {
           await persistChat(nextMessages, activeId);
+          void loadChats();
         }
       } else {
         await persistChat(nextMessages, activeId);
+        void loadChats();
       }
-      void loadChats();
       if (activeId) activeChatIdRef.current = activeId;
       // Temporary chat never persists, and images are base64, so no need to clean up Storage.
-      succeeded = true;
-      if (activeId === activeChatIdRef.current || !activeId) {
-        if (finalToast) setToast(finalToast);
-        else if (ingestResult?.hint) setToast(ingestResult.hint);
-      }
     } catch (caught) {
       const isNetworkDrop = caught instanceof TypeError && caught.message.toLowerCase().includes("fetch");
       const isServerSidePersistent = Boolean(user);
