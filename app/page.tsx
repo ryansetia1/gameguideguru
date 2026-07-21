@@ -11,6 +11,9 @@ import {
   IconArrowLeft,
   IconArrowUpRight,
   IconChevronDown,
+  IconChevronLeft,
+  IconChevronRight,
+  IconCornerDownLeft,
   IconDiamond,
   IconDotsVertical,
   IconGrid,
@@ -318,6 +321,8 @@ type Message = {
   spoilers?: SpoilerReveal[];
   images?: string[];
   pipelineType?: string;
+  variants?: Omit<Message, "role" | "variants" | "activeVariantIndex">[];
+  activeVariantIndex?: number;
 };
 
 const EXAMPLES_DISMISSED_KEY = "gg:examples-dismissed";
@@ -2595,6 +2600,7 @@ export default function Home() {
     targetChatId: string | null,
     images: string[] = [],
     retryContext: any = null,
+    oldAssistantMessage?: Message,
   ) {
     const traceId = crypto.randomUUID();
     setError("");
@@ -2617,7 +2623,9 @@ export default function Home() {
       content: question,
       ...(images.length ? { images } : {}),
     };
-    const optimistic: Message[] = [...priorMessages, userMessage];
+    const optimistic: Message[] = oldAssistantMessage
+      ? [...priorMessages, userMessage, { ...oldAssistantMessage, content: "Writing answer..." }]
+      : [...priorMessages, userMessage];
     setMessages(optimistic);
     let activeId = targetChatId;
     if (!temporary) {
@@ -2834,7 +2842,7 @@ export default function Home() {
       if (!userConfirmedFallback) {
         setLoading(false);
         setGenerationStatus(null);
-        setMessages(priorMessages);
+        setMessages(oldAssistantMessage ? [...priorMessages, userMessage, oldAssistantMessage] : priorMessages);
         
         if (priorMessages.length > 0) {
           setEditingGame(true);
@@ -2966,17 +2974,42 @@ export default function Home() {
         "highlights" in data ? data.highlights : undefined,
       );
       const spoilers = coerceSpoilers("spoilers" in data ? data.spoilers : undefined);
+      
+      const newAssistantState = {
+        content: data.answer as string,
+        sources,
+        ...(highlights.length ? { highlights } : {}),
+        ...(spoilers.length && spoilerPrefs.major ? { spoilers } : {}),
+        ...(pipelineType ? { pipelineType } : {}),
+      };
+
+      let finalAssistantMessage: Message;
+      if (oldAssistantMessage) {
+        const pastVariants = oldAssistantMessage.variants || [{
+          content: oldAssistantMessage.content,
+          sources: oldAssistantMessage.sources,
+          highlights: oldAssistantMessage.highlights,
+          spoilers: oldAssistantMessage.spoilers,
+          pipelineType: oldAssistantMessage.pipelineType,
+        }];
+        
+        finalAssistantMessage = {
+          role: "assistant",
+          ...newAssistantState,
+          variants: [...pastVariants, newAssistantState],
+          activeVariantIndex: pastVariants.length,
+        };
+      } else {
+        finalAssistantMessage = {
+          role: "assistant",
+          ...newAssistantState,
+        };
+      }
+
       const nextMessages: Message[] = [
         ...priorMessages,
         userMessage,
-        {
-          role: "assistant",
-          content: data.answer as string,
-          sources,
-          ...(highlights.length ? { highlights } : {}),
-          ...(spoilers.length && spoilerPrefs.major ? { spoilers } : {}),
-          ...(pipelineType ? { pipelineType } : {}),
-        },
+        finalAssistantMessage,
       ];
       if (activeId) {
         backgroundMessagesRef.current[activeId] = nextMessages;
@@ -3056,7 +3089,7 @@ export default function Home() {
         }
       }
       if (activeChatIdRef.current === activeId) {
-        setMessages(priorMessages);
+        setMessages(oldAssistantMessage ? [...priorMessages, userMessage, oldAssistantMessage] : priorMessages);
         setLoading(false);
         if (!isAbort) {
           setError(
@@ -3163,7 +3196,7 @@ export default function Home() {
     const text = input.trim();
     if (text.length < 2 || loading) return;
 
-    const dropped = messages.slice(index + 1);
+    const dropped = messages.slice(index + 2);
     if (!(await confirmDropImages(dropped))) return;
 
     setLoading(true);
@@ -3179,17 +3212,42 @@ export default function Home() {
     clearPendingImages();
     setInput("");
     setEditingIndex(null);
-    await runTurn(text, messages.slice(0, index), activeChatIdRef.current, newImages);
+    const oldAssistantMessage = messages.length > index + 1 && messages[index + 1].role === "assistant" ? messages[index + 1] : undefined;
+    await runTurn(text, messages.slice(0, index), activeChatIdRef.current, newImages, null, oldAssistantMessage);
   }
 
   async function retry(index: number) {
     if (loading || index < 1 || messages[index - 1].role !== "user") return;
     const question = messages[index - 1].content;
     const existingImages = messages[index - 1].images || [];
-    const dropped = messages.slice(index);
+    const dropped = messages.slice(index + 1);
     if (!(await confirmDropImages(dropped))) return;
     await deleteMessageImages(dropped);
-    await runTurn(question, messages.slice(0, index - 1), activeChatIdRef.current, existingImages);
+    await runTurn(question, messages.slice(0, index - 1), activeChatIdRef.current, existingImages, null, messages[index]);
+  }
+
+  function onNavigateVariant(msgIndex: number, variantIndex: number) {
+    setMessages((prev) => {
+      const next = [...prev];
+      const msg = next[msgIndex];
+      if (!msg || msg.role !== "assistant" || !msg.variants || variantIndex < 0 || variantIndex >= msg.variants.length) return next;
+      
+      const variant = msg.variants[variantIndex];
+      next[msgIndex] = {
+        ...msg,
+        content: variant.content,
+        sources: variant.sources,
+        highlights: variant.highlights,
+        spoilers: variant.spoilers,
+        pipelineType: variant.pipelineType,
+        activeVariantIndex: variantIndex,
+      };
+      
+      if (activeChatIdRef.current) {
+        void persistChat(next, activeChatIdRef.current).catch(() => {});
+      }
+      return next;
+    });
   }
 
   const started = messages.length > 0;
@@ -4202,6 +4260,30 @@ export default function Home() {
                 <div className="guide-head">
                   <div className="guide-tag icon-inline">
                     <IconDiamond /> ANSWER
+                    
+                    {message.variants && message.variants.length > 1 && (
+                      <div className="variant-nav" style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", marginLeft: "1rem", color: "var(--text-muted)", fontSize: "0.85em" }}>
+                        <button
+                          type="button"
+                          className="turn-action-icon"
+                          style={{ background: "transparent", border: "none", padding: "0.15rem", color: message.activeVariantIndex === 0 ? "var(--text-muted-heavy)" : "var(--text-muted)", cursor: message.activeVariantIndex === 0 ? "default" : "pointer" }}
+                          disabled={message.activeVariantIndex === 0}
+                          onClick={() => onNavigateVariant(index, (message.activeVariantIndex ?? 0) - 1)}
+                        >
+                          <IconChevronLeft size={14} />
+                        </button>
+                        <span>{(message.activeVariantIndex ?? 0) + 1} / {message.variants.length}</span>
+                        <button
+                          type="button"
+                          className="turn-action-icon"
+                          style={{ background: "transparent", border: "none", padding: "0.15rem", color: message.activeVariantIndex === message.variants.length - 1 ? "var(--text-muted-heavy)" : "var(--text-muted)", cursor: message.activeVariantIndex === message.variants.length - 1 ? "default" : "pointer" }}
+                          disabled={message.activeVariantIndex === message.variants.length - 1}
+                          onClick={() => onNavigateVariant(index, (message.activeVariantIndex ?? 0) + 1)}
+                        >
+                          <IconChevronRight size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"
