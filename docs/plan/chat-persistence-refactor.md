@@ -163,6 +163,11 @@ used in network-drop recovery and post-success server sync poll.
 
 ### Phase 2 — Hybrid tables (2–4 weeks)
 
+**Status:** Done (July 2026) — `db/chat-threads.sql`, `lib/chat-thread.js`,
+`lib/chat-thread-persist.js`. Uses `chat_id` → `chats.id` (no `chat_threads` table
+until Phase 3). Server `persistAssistantResponse` writes normalized rows + rebuilds
+`chats.messages` cache; `openChat` prefers normalized read via `resolveThreadMessages`.
+
 **Goal:** Canonical history for turns and variants; JSONB becomes a cache.
 
 This is the sweet spot for a serious daily-driver **without** rewriting all of
@@ -332,10 +337,12 @@ Phase 1  [x] single canonical writer (lib/chat-persist.js)
          [x] mergeAssistantIntoMessages shared server/client shape
          [x] check.mjs merge + serverOwnsAssistantPersist tests
 
-Phase 2  [ ] SQL migration files in db/
-         [ ] lib/chat-thread.ts read/write
-         [ ] solve/route.ts writes chat_responses
-         [ ] bridge loader in openChat
+Phase 2  [x] SQL migration files in db/ (chat-threads.sql)
+         [x] lib/chat-thread.js + lib/chat-thread-persist.js
+         [x] solve/route.ts writes chat_responses + trace_id
+         [x] bridge loader in openChat (resolveThreadMessages)
+         [x] apply db/chat-threads.sql on Supabase project
+         [ ] manual QA on FF8 chat
 
 Phase 3  [ ] backfill script
          [ ] dual-read validation

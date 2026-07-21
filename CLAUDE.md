@@ -764,8 +764,11 @@ Long-horizon refactors live in [`docs/plan/`](docs/plan/README.md). Read before
 large chat or persistence work:
 
 - [`docs/plan/chat-persistence-refactor.md`](docs/plan/chat-persistence-refactor.md):
-  stabilize JSONB `chats.messages` (Phase 0: `lib/chat-messages.js`, variant coercion,
-  regen poll); then hybrid `chat_turns` + `chat_responses` tables.
+  Phase 0–1: `lib/chat-messages.js` + `lib/chat-persist.js` (variant coercion, single
+  writer). Phase 2: `db/chat-threads.sql` (`chat_turns`, `chat_responses`,
+  `chat_turn_state` keyed by `chat_id` → `chats.id`), `lib/chat-thread.js` +
+  `lib/chat-thread-persist.js` (canonical rows + `chats.messages` cache rebuild;
+  `trace_id` on each response). Apply `db/chat-threads.sql` before using in prod.
 - [`docs/plan/page-decomposition.md`](docs/plan/page-decomposition.md): split
   `app/page.tsx` after persistence helpers move to `lib/chat-*`.
 

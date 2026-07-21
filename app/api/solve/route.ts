@@ -6,6 +6,7 @@ import {
   buildAssistantVariantBody,
   mergeAssistantIntoMessages,
 } from "@/lib/chat-persist.js";
+import { persistAssistantResponse } from "@/lib/chat-thread-persist.js";
 import { getCachedSearch, setCachedSearch } from "@/lib/search-cache";
 import { censorSpoilers, resolveQuestion, summarize, type Turn } from "@/lib/replicate";
 import { guideIngestHint } from "@/lib/guide-hints.js";
@@ -369,10 +370,23 @@ export async function POST(request: Request) {
               });
 
               if (mergeAssistantIntoMessages(messages, variantBody)) {
-                await supabase
-                  .from("chats")
-                  .update({ messages, updated_at: new Date().toISOString() })
-                  .eq("id", chatId);
+                const persisted = await persistAssistantResponse(supabase, {
+                  chatId,
+                  messages,
+                  variantBody,
+                  traceId,
+                });
+                if (!persisted.ok) {
+                  console.warn("[chat-thread] Normalized persist failed, using legacy cache", {
+                    chatId,
+                    traceId,
+                    reason: persisted.reason,
+                  });
+                  await supabase
+                    .from("chats")
+                    .update({ messages, updated_at: new Date().toISOString() })
+                    .eq("id", chatId);
+                }
               } else {
                 const last = messages.at(-1);
                 console.warn("[chat-persist] Server merge skipped", {

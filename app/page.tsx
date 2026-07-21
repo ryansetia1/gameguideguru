@@ -34,6 +34,11 @@ import {
   serverOwnsAssistantPersist,
 } from "@/lib/chat-persist.js";
 import {
+  fetchNormalizedThread,
+  resolveThreadMessages,
+  syncVariantStateFromMessages,
+} from "@/lib/chat-thread-persist.js";
+import {
   WRITING_ANSWER_PLACEHOLDER,
   coerceMessages,
   messageShowsVariantNav,
@@ -2070,7 +2075,7 @@ export default function Home() {
     });
   }
 
-  function openChat(chat: Chat) {
+  async function openChat(chat: Chat) {
     jumpRef.current = true;
     setChatUrl(chat.id);
     clearSessionDraft();
@@ -2086,7 +2091,17 @@ export default function Home() {
     setReleaseYear(chat.release_year ?? "");
     setEditingGame(false);
     const isBgLoading = backgroundLoadingRef.current[chat.id];
-    setMessages(backgroundMessagesRef.current[chat.id] || parseStoredMessages(chat.messages));
+    const cached = backgroundMessagesRef.current[chat.id];
+    if (cached) {
+      setMessages(cached);
+    } else {
+      const supabase = getSupabase();
+      const loaded: Message[] =
+        supabase && user
+          ? ((await resolveThreadMessages(supabase, chat)) as Message[])
+          : parseStoredMessages(chat.messages);
+      setMessages(loaded);
+    }
     setLoading(isBgLoading || false);
     setGenerationStatus(backgroundStatusRef.current[chat.id] || null);
     conversationGame.current = chat.game;
@@ -2564,6 +2579,9 @@ export default function Home() {
     try {
       if (targetChatId) {
         await supabase.from("chats").update(payload).eq("id", targetChatId);
+        void syncVariantStateFromMessages(supabase, targetChatId, nextMessages).catch(
+          () => {},
+        );
         void loadChats();
         return targetChatId;
       }
@@ -3021,6 +3039,8 @@ export default function Home() {
           void (async () => {
             const synced = await pollUntilMessagesRecovered({
               fetchMessages: async () => {
+                const normalized = await fetchNormalizedThread(supabase, syncChatId);
+                if (normalized?.length) return normalized;
                 const { data: row } = await supabase
                   .from("chats")
                   .select("messages")

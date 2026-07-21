@@ -94,6 +94,11 @@ import {
   serverOwnsAssistantPersist,
 } from "../lib/chat-persist.js";
 import {
+  buildMessagesFromNormalized,
+  derivePersistContext,
+  lastUserTurnIndex,
+} from "../lib/chat-thread.js";
+import {
   CHAT_QUERY_PARAM,
   coerceSessionDraft,
   getChatIdFromUrl,
@@ -1116,5 +1121,60 @@ assert.ok(
     [{ role: "assistant", content: "server" }],
   ),
 );
+
+const turnRows = [
+  { id: "t0", turn_index: 0, user_content: "hello", user_images: [] },
+  { id: "t1", turn_index: 1, user_content: "follow up", user_images: ["https://x/img.jpg"] },
+];
+const responseRows = [
+  {
+    turn_id: "t0",
+    variant_index: 0,
+    content: "first answer",
+    sources: [{ title: "Guide", url: "https://example.com" }],
+    highlights: null,
+    spoilers: null,
+    pipeline_type: "rag",
+  },
+  {
+    turn_id: "t1",
+    variant_index: 0,
+    content: "variant a",
+    sources: null,
+    highlights: null,
+    spoilers: null,
+    pipeline_type: null,
+  },
+  {
+    turn_id: "t1",
+    variant_index: 1,
+    content: "variant b",
+    sources: null,
+    highlights: null,
+    spoilers: null,
+    pipeline_type: null,
+  },
+];
+const stateRows = [{ turn_id: "t1", active_variant_index: 1 }];
+const rebuilt = buildMessagesFromNormalized(turnRows, responseRows, stateRows);
+assert.equal(rebuilt.length, 4);
+assert.equal(rebuilt[0].content, "hello");
+assert.equal(rebuilt[1].content, "first answer");
+assert.equal(rebuilt[2].content, "follow up");
+assert.equal(/** @type {any} */ (rebuilt[2]).images?.[0], "https://x/img.jpg");
+assert.equal(rebuilt[3].content, "variant b");
+assert.equal(/** @type {any} */ (rebuilt[3]).variants?.length, 2);
+assert.equal(/** @type {any} */ (rebuilt[3]).activeVariantIndex, 1);
+
+const mergedForPersist = buildTurnMessagesWithAssistant({
+  priorMessages: [],
+  userMessage: { role: "user", content: "q" },
+  oldAssistantMessage: { role: "assistant", content: "old", sources: [] },
+  variantBody: mergeBody,
+});
+const persistCtx = derivePersistContext(mergedForPersist);
+assert.equal(persistCtx?.turnIndex, 0);
+assert.equal(persistCtx?.variantIndex, 1);
+assert.equal(lastUserTurnIndex(mergedForPersist), 0);
 
 console.log("Self-check passed.");
