@@ -4,34 +4,26 @@ import type { User } from "@supabase/supabase-js";
 import { FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { AuthPanel } from "./auth-panel";
+import { ActiveGameCard } from "./chat/active-game-card";
 import { ComposerShell } from "./chat/composer-shell";
+import { CoverThumb, displayPlatform } from "./chat/cover-thumb";
+import { GamesSidebar } from "./chat/games-sidebar";
+import { HomeSetup } from "./chat/home-setup";
 import { MessageList } from "./chat/message-list";
 import { useChatTurn } from "./chat/use-chat-turn";
 import { type Message, parseStoredMessages } from "./chat/types";
-import { ClearButton } from "./clear-button";
-import { GameAutocomplete } from "./game-autocomplete";
 import {
   IconArrowLeft,
-  IconArrowUpRight,
   IconChevronDown,
-  IconDotsVertical,
-  IconGrid,
   IconIncognito,
-  IconPlus,
-  IconRefresh,
   IconX,
-  IconCheck,
-  IconClock,
-  IconAlert,
 } from "./icons";
 import {
   loadThreadMessages,
 } from "@/lib/chat-thread-persist.js";
-import { FUN_ROLES, HERO_LINES } from "@/lib/hero-copy.js";
-import { lerpTilt, mouseToTilt, orientationToTilt, tiltTransform } from "@/lib/hero-tilt.js";
 import { guideIngestHint, guideIngestHintFromResponse } from "@/lib/guide-hints.js";
+import { mergedBundlePrefs } from "@/lib/guide-card-ui.js";
 import {
-  bundleHasPendingPages,
   clearBundlePrefs,
   filterBundlePanelPages,
   getBundlePrefs,
@@ -39,230 +31,31 @@ import {
   registerBundlePrefsSync,
   skipAllMissingBundlePages,
   skipBundlePage,
-  targetBundleSlugs,
   unskipBundlePage,
 } from "@/lib/bundle-prefs.js";
 import {
   guideUrlsFromChat,
   guideUrlsPayload,
-  guideUrlsSummary,
-  guideUrlDedupeKey,
   isActiveGamefaqsBundle,
   isGamefaqsBundleUrl,
   isUploadedGuideUrl,
   normalizeGuideUrlList,
-  uploadedGuideFileTypeLabel,
-  uploadedGuideFilename,
 } from "@/lib/guide-urls.js";
 import { compressImage } from "@/lib/image.js";
-
-function buildBundlePrefsBody(
-  urls: string[],
-  meta?: Record<string, GuideBundleMeta>,
-) {
-  const out: Record<string, { skipSlugs: string[]; includeSlugs?: string[] }> = {};
-  for (const url of urls) {
-    if (!isGamefaqsBundleUrl(url)) continue;
-    // T2-1: prefer UI state (meta) over localStorage so the server always gets
-    // the selection the user sees on-screen, even when localStorage writes fail
-    // (private browsing, quota).
-    const prefs = mergedBundlePrefs(url, meta?.[url]);
-    out[url] = {
-      skipSlugs: prefs.skippedSlugs,
-      ...(prefs.selectedSlugs?.length ? { includeSlugs: prefs.selectedSlugs } : {}),
-    };
-  }
-  return out;
-}
-
-function mergedBundlePrefs(url: string, meta?: GuideBundleMeta) {
-  const stored = getBundlePrefs(url);
-  return {
-    skippedSlugs: meta?.skippedSlugs ?? stored.skippedSlugs ?? [],
-    selectedSlugs: meta?.selectedSlugs ?? stored.selectedSlugs,
-  };
-}
-
-function guideUrlNeedsIngest(
-  url: string,
-  meta: GuideBundleMeta | undefined,
-  indexStatus: { pages: { slug: string }[] } | undefined,
-  indexState: string | undefined,
-) {
-  if (indexState === "indexed") return false;
-  
-  const bundlePages = meta?.pageCount && meta.pageCount > 1;
-  const discovered = meta?.pages ?? [];
-  const indexedSlugs = indexStatus?.pages?.map((page) => page.slug) ?? [];
-  const prefs = mergedBundlePrefs(url, meta);
-  if (
-    bundlePages &&
-    discovered.length &&
-    !bundleHasPendingPages(discovered, indexedSlugs, prefs)
-  ) {
-    return false;
-  }
-  return true;
-}
-
-function isBundlePanelLoading(
-  url: string,
-  meta: GuideBundleMeta | undefined,
-  load: { meta: boolean; status: boolean } | undefined,
-) {
-  if (!load) return true;
-  const needMeta = !meta?.pages?.length;
-  if (needMeta && !load.meta) return true;
-  if (!load.status) return true;
-  return false;
-}
-
-function renderStatusChip(state: string) {
-  if (state === "indexed") {
-    return (
-      <span className="guide-status-chip is-indexed">
-        <IconCheck size={12} /> Indexed
-      </span>
-    );
-  }
-  if (state === "failed") {
-    return (
-      <span className="guide-status-chip is-failed">
-        <IconX size={10} /> Failed
-      </span>
-    );
-  }
-  if (state === "pending") {
-    return (
-      <span className="guide-status-chip is-pending">
-        <IconClock size={12} /> Pending
-      </span>
-    );
-  }
-  if (state === "checking") {
-    return (
-      <span className="guide-status-chip is-checking">
-        <IconClock size={12} /> Checking…
-      </span>
-    );
-  }
-  if (state === "unavailable") {
-    return (
-      <span className="guide-status-chip is-unavailable">
-        <IconAlert size={12} /> N/A
-      </span>
-    );
-  }
-  return null;
-}
-
-function gameCardGuideRow(
-  url: string,
-  meta: GuideBundleMeta | undefined,
-  indexStatus: { pages: { slug: string; title: string; url: string; chunks: number }[] } | undefined,
-  panelLoad: { meta: boolean; status: boolean } | undefined,
-  globalIndexState: "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending" | undefined,
-) {
-  const bundle = isActiveGamefaqsBundle(url, meta);
-  const bundlePrefs = mergedBundlePrefs(url, meta);
-  const uploaded = isUploadedGuideUrl(url);
-  const label = bundle
-    ? meta
-      ? `${meta.title} (${bundlePrefs.selectedSlugs?.length ?? meta.pageCount} pages)`
-      : "GameFAQs bundle"
-    : uploaded
-      ? `${uploadedGuideFileTypeLabel(url)} · ${uploadedGuideFilename(url)}`
-      : meta?.title 
-        ? meta.title
-        : guideUrlsSummary([url]);
-  const selectionLocked = Boolean(bundlePrefs.selectedSlugs?.length);
-  const discoveredPages = filterBundlePanelPages(
-    meta?.pages?.map((page) => ({
-      slug: page.slug,
-      title: page.title,
-      url: page.url,
-    })) ?? [],
-    bundlePrefs.selectedSlugs,
-  );
-  const indexedPages = filterBundlePanelPages(
-    indexStatus?.pages ?? [],
-    bundlePrefs.selectedSlugs,
-  );
-  const skippedSlugs = meta?.skippedSlugs ?? getBundlePrefs(url).skippedSlugs ?? [];
-  const skippedSet = new Set(skippedSlugs.map((slug) => slug.toLowerCase()));
-  const missingPages = filterBundlePanelPages(
-    (
-      meta?.missingPages ??
-      discoveredPages
-        .filter((page) => !indexedPages.some((hit) => hit.slug === page.slug))
-        .map((page) => ({
-          slug: page.slug,
-          title: page.title,
-          url: page.url,
-        }))
-    ).filter((page) => !skippedSet.has(page.slug.toLowerCase())),
-    bundlePrefs.selectedSlugs,
-  );
-  const panelLoading = bundle && isBundlePanelLoading(url, meta, panelLoad);
-  const showPanel =
-    discoveredPages.length > 0 ||
-    indexedPages.length > 0 ||
-    missingPages.length > 0 ||
-    skippedSlugs.length > 0;
-
-  let state: "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending" = "pending";
-  if (globalIndexState === "unavailable") {
-    state = "unavailable";
-  } else if (globalIndexState === "checking" || panelLoading) {
-    state = "checking";
-  } else if (bundle) {
-    if (indexedPages.length > 0) {
-      state = "indexed";
-    } else if (missingPages.length > 0) {
-      state = globalIndexState === "failed" ? "failed" : "pending";
-    } else {
-      state = globalIndexState || "pending";
-    }
-  } else {
-    state = globalIndexState || "pending";
-  }
-
-  return {
-    bundle,
-    uploaded,
-    label,
-    selectionLocked,
-    discoveredPages,
-    indexedPages,
-    missingPages,
-    skippedSlugs,
-    panelLoading,
-    showPanel,
-    state,
-    isBlocked: meta?.isBlocked,
-  };
-}
-
-import { BundleIndexPanel } from "./bundle-index-panel";
-import { GuideLinkField, type GuideBundleMeta } from "./guide-link-field";
+import { type GuideBundleMeta } from "./guide-link-field";
 import { HltbRow } from "./hltb-row";
-import { PlatformSelect } from "./platform-select";
-import { SteamLibrary, type SteamGame } from "./steam-library";
+import { type SteamGame } from "./steam-library";
 import { ProfileMenu } from "./profile-menu";
 import { Lightbox } from "./lightbox";
 import { tgdbPlatformToLabel } from "@/lib/platforms.js";
 import {
-  GAME_SPOILER_HINT,
-  SPOILER_TOGGLE_LABEL,
   effectiveSpoilerPrefs,
   loadGameSpoilerPrefs,
   loadGlobalSpoilerPrefs,
   saveGameSpoilerPrefs,
   saveGlobalSpoilerPrefs,
   spoilerMajorFromUserMetadata,
-  type SpoilerPrefs,
 } from "@/lib/spoiler-prefs.js";
-import { displayNameFromMetadata } from "@/lib/profile.js";
 import { getSupabase, type Chat } from "@/lib/supabase";
 import {
   loadLocalGames,
@@ -283,6 +76,25 @@ import {
   windowScrollMetrics,
 } from "@/lib/chat-scroll.js";
 
+function buildBundlePrefsBody(
+  urls: string[],
+  meta?: Record<string, GuideBundleMeta>,
+) {
+  const out: Record<string, { skipSlugs: string[]; includeSlugs?: string[] }> = {};
+  for (const url of urls) {
+    if (!isGamefaqsBundleUrl(url)) continue;
+    // T2-1: prefer UI state (meta) over localStorage so the server always gets
+    // the selection the user sees on-screen, even when localStorage writes fail
+    // (private browsing, quota).
+    const prefs = mergedBundlePrefs(url, meta?.[url]);
+    out[url] = {
+      skipSlugs: prefs.skippedSlugs,
+      ...(prefs.selectedSlugs?.length ? { includeSlugs: prefs.selectedSlugs } : {}),
+    };
+  }
+  return out;
+}
+
 async function fetchSteamStatus(token?: string) {
   const headers: HeadersInit = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -301,8 +113,6 @@ async function fetchSteamStatus(token?: string) {
 const EXAMPLES_DISMISSED_KEY = "gg:examples-dismissed";
 const MAX_MESSAGE_IMAGES = 10;
 
-// Downscale + re-encode to JPEG in the browser so a phone photo (several MB)
-// becomes a Storage-friendly ~200-400KB before upload. Falls back to the original.
 const examples = [
   { game: "The Legend of Zelda: Link's Awakening", platform: "Game Boy", q: "How do I reach the first dungeon?" },
   { game: "Final Fantasy VII", platform: "PlayStation (PS1)", q: "How do I beat Emerald Weapon?" },
@@ -313,8 +123,6 @@ function normGame(value: string) {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-// The Storage object path inside our `covers` bucket for a public URL, or null
-// for anything that isn't ours to delete (e.g. TheGamesDB CDN covers).
 const COVERS_MARKER = "/storage/v1/object/public/covers/";
 function coverStoragePath(url: string): string | null {
   const at = url.indexOf(COVERS_MARKER);
@@ -344,251 +152,6 @@ async function deleteMessageImages(messages: Message[]) {
   }
 }
 
-// Box art if we have a URL, otherwise a letter tile (matches the brand mark).
-function CoverThumb({
-  cover,
-  name,
-  className,
-}: {
-  cover: string;
-  name: string;
-  className?: string;
-}) {
-  const cls = `cover${className ? ` ${className}` : ""}`;
-  if (cover) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img className={cls} src={cover} alt={`${name || "Game"} cover`} />;
-  }
-  return (
-    <span className={`${cls} cover-placeholder`} aria-hidden="true">
-      {(name.trim()[0] || "?").toUpperCase()}
-    </span>
-  );
-}
-
-// Cosmetic platform label: a Steam-sourced game (its cover is a Steam CDN URL)
-// shows "Steam" instead of "PC" so users can tell it apart from Epic/GOG/etc.
-// The stored `platform` stays "PC" — search (Tavily/Serper) still treats it as a
-// PC game; this is display-only.
-function displayPlatform(platform: string, coverUrl?: string | null): string {
-  return steamAppIdFromCoverUrl(coverUrl ?? "") ? "Steam" : platform;
-}
-
-function HeadlineText({
-  lead,
-  payoff,
-  echo = false,
-}: {
-  lead: string;
-  payoff: string;
-  echo?: boolean;
-}) {
-  return (
-    <>
-      <span className={`hero-headline-lead${echo ? "" : " hero-headline-lead--front"}`}>{lead}</span>
-      <span
-        className={
-          echo
-            ? "hero-headline-payoff-text hero-headline-payoff-text--echo"
-            : "hero-headline-payoff-text"
-        }
-      >
-        {payoff}
-      </span>
-    </>
-  );
-}
-
-function RotatingHeadline() {
-  // Pick a random line on mount only, so it changes per refresh/open but not
-  // mid-view. Starts at index 0 (matches SSR) then swaps client-side, avoiding
-  // a hydration mismatch.
-  const [i, setI] = useState(0);
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const linesRef = useRef<HTMLDivElement>(null);
-  const targetRef = useRef({ x: 0, y: 0 });
-  const currentRef = useRef({ x: 0, y: 0 });
-  const rafRef = useRef(0);
-
-  useEffect(() => {
-    setI(Math.floor(Math.random() * HERO_LINES.length));
-  }, []);
-
-  useEffect(() => {
-    const linesEl = linesRef.current;
-    if (!linesEl || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-    let alive = true;
-
-    const tick = () => {
-      if (!alive) return;
-      const next = lerpTilt(currentRef.current, targetRef.current);
-      const settled =
-        next.x === targetRef.current.x && next.y === targetRef.current.y;
-      currentRef.current = next;
-      linesEl.style.transform = tiltTransform(next);
-      if (!settled) rafRef.current = requestAnimationFrame(tick);
-    };
-
-    const nudge = () => {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = requestAnimationFrame(tick);
-    };
-
-    const cleanup = () => {
-      alive = false;
-      cancelAnimationFrame(rafRef.current);
-      linesEl.style.transform = "";
-    };
-
-    if (window.matchMedia("(pointer: fine)").matches) {
-      const onMove = (event: globalThis.MouseEvent) => {
-        targetRef.current = mouseToTilt(
-          event.clientX,
-          event.clientY,
-          window.innerWidth,
-          window.innerHeight,
-        );
-        nudge();
-      };
-      const onLeave = () => {
-        targetRef.current = { x: 0, y: 0 };
-        nudge();
-      };
-      window.addEventListener("mousemove", onMove, { passive: true });
-      document.addEventListener("mouseleave", onLeave);
-      return () => {
-        window.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseleave", onLeave);
-        cleanup();
-      };
-    }
-
-    const onOrient = (event: DeviceOrientationEvent) => {
-      targetRef.current = orientationToTilt(event.beta, event.gamma);
-      nudge();
-    };
-
-    const startGyro = () => {
-      window.addEventListener("deviceorientation", onOrient, { passive: true });
-    };
-
-    const stopGyro = () => {
-      window.removeEventListener("deviceorientation", onOrient);
-    };
-
-    const DOE = DeviceOrientationEvent as typeof DeviceOrientationEvent & {
-      requestPermission?: () => Promise<PermissionState>;
-    };
-
-    if (typeof DOE.requestPermission === "function") {
-      const wrap = wrapRef.current;
-      if (!wrap) return cleanup;
-      const ask = () => {
-        void DOE.requestPermission!()
-          .then((state) => {
-            if (state === "granted") startGyro();
-          })
-          .catch(() => {});
-      };
-      wrap.addEventListener("pointerdown", ask, { once: true });
-      return () => {
-        wrap.removeEventListener("pointerdown", ask);
-        stopGyro();
-        cleanup();
-      };
-    }
-
-    startGyro();
-    return () => {
-      stopGyro();
-      cleanup();
-    };
-  }, []);
-
-  const [lead, payoff] = HERO_LINES[i];
-  return (
-    <div ref={wrapRef} className="hero-headline-wrap">
-      <h1 className="hero-headline">
-        <div className="hero-headline-inner">
-          <div ref={linesRef} className="hero-headline-lines">
-            <div className="hero-headline-layer hero-headline-layer--back" aria-hidden="true">
-              <HeadlineText lead={lead} payoff={payoff} echo />
-            </div>
-            <div className="hero-headline-layer hero-headline-layer--mid" aria-hidden="true">
-              <HeadlineText lead={lead} payoff={payoff} echo />
-            </div>
-            <div className="hero-headline-layer hero-headline-layer--front">
-              <HeadlineText lead={lead} payoff={payoff} />
-            </div>
-          </div>
-          <span className="hero-headline-highlight" aria-hidden="true">
-            <span className="hero-headline-lead hero-headline-ghost">{lead}</span>
-            <span className="hero-headline-payoff-text hero-headline-ghost">{payoff}</span>
-          </span>
-        </div>
-      </h1>
-    </div>
-  );
-}
-
-function RotatingWord() {
-  const [i, setI] = useState(0);
-  // Tap/click to freeze on a word (e.g. to screenshot), tap again to resume.
-  const [paused, setPaused] = useState(false);
-  useEffect(() => {
-    if (paused) return;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-    const id = setInterval(() => setI((n) => (n + 1) % FUN_ROLES.length), 2200);
-    return () => clearInterval(id);
-  }, [paused]);
-  return (
-    <button
-      type="button"
-      className="rotating-word"
-      onClick={() => setPaused((p) => !p)}
-      title={paused ? "Resume" : "Tap to pause"}
-      aria-label={
-        paused
-          ? `Paused on "${FUN_ROLES[i]}". Activate to resume.`
-          : "Rotating word — activate to pause."
-      }
-    >
-      <span key={i} className="rotating-word-inner">
-        {FUN_ROLES[i]}
-      </span>
-    </button>
-  );
-}
-
-function SteamIcon() {
-  return (
-    <svg className="sidebar-steam-icon" viewBox="0 0 496 512" fill="currentColor" aria-hidden="true">
-      <path d="M496 256c0 137-111.2 248-248.4 248-113.8 0-209.6-76.3-239-180.4l95.2 39.3c6.4 32.1 34.9 56.4 68.9 56.4 39.2 0 71.9-32.4 70.2-73.5l84.5-60.2c52.1 1.3 95.8-40.9 95.8-93.5 0-51.6-42-93.5-93.7-93.5s-93.7 42-93.7 93.5v1.2L176.6 279c-15.5-.9-30.7 3.4-43.5 12.1L0 236.1C10.2 108.4 117.1 8 247.6 8 384.8 8 496 119 496 256zM155.7 384.3l-30.5-12.6a52.79 52.79 0 0 0 27.2 25.8c26.9 11.2 57.8-1.6 69-28.5 5.4-13 5.5-27.3.1-40.3-5.4-13-15.5-23.2-28.5-28.6-12.9-5.4-26.7-5.2-38.9-.6l31.5 13c19.8 8.2 29.2 30.9 20.9 50.7-8.3 19.9-31 29.2-50.8 20.9v.2zm173.6-129.9c-34.4 0-62.4-28-62.4-62.3s28-62.3 62.4-62.3 62.4 28 62.4 62.3-27.9 62.3-62.4 62.3zm.1-15.6c25.9 0 46.9-21 46.9-46.8 0-25.9-21-46.8-46.9-46.8s-46.9 21-46.9 46.8c0 25.8 21 46.8 46.9 46.8z" />
-    </svg>
-  );
-}
-
-function SpoilerToggle({
-  prefs,
-  onChange,
-  compact = false,
-}: {
-  prefs: SpoilerPrefs;
-  onChange: (value: boolean) => void;
-  compact?: boolean;
-}) {
-  return (
-    <label className={`spoiler-toggle${compact ? " spoiler-toggle-compact" : ""}`}>
-      <input
-        type="checkbox"
-        checked={prefs.major === true}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <span>{SPOILER_TOGGLE_LABEL}</span>
-    </label>
-  );
-}
 
 export default function Home() {
   const [game, setGame] = useState("");
@@ -2531,267 +2094,37 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* Anon users now have local recent games too, so the sidebar list + saved
-          library must render for them (the "+N more" tile opens the library).
-          Steam/profile controls inside stay individually gated on `user`. */}
-      {(user || chats.length > 0) && (
-        <>
-          <div
-            className={`sidebar-backdrop${sidebarOpen ? " open" : ""}`}
-            onClick={() => {
-              setSidebarOpen(false);
-              setMenuOpenId(null);
-              dismissOverlay();
-            }}
-            aria-hidden="true"
-          />
-          <aside
-            className={`sidebar${sidebarOpen ? " open" : ""}`}
-            aria-label="Your games"
-            aria-hidden={!sidebarOpen}
-          >
-            <div className="sidebar-head">
-              <span>Your games</span>
-              <button
-                type="button"
-                className="sidebar-close"
-                aria-label="Close sidebar"
-                onClick={() => {
-                  setSidebarOpen(false);
-                  dismissOverlay();
-                }}
-              >
-                <IconX />
-              </button>
-            </div>
-            <div className="sidebar-actions">
-              <button
-                type="button"
-                className="sidebar-library-btn icon-inline"
-                onClick={openSavedLibrary}
-              >
-                <IconGrid /> Saved library
-              </button>
-              {user && !steamConnected && (
-                <button type="button" className="sidebar-steam-btn" onClick={connectSteam}>
-                  <SteamIcon /> Connect Steam
-                </button>
-              )}
-              {steamConnected && (
-                <button
-                  type="button"
-                  className="sidebar-steam-btn"
-                  onClick={openSteamLibrary}
-                >
-                  <SteamIcon /> Steam library
-                </button>
-              )}
-            </div>
-            <div className="sidebar-scroll">
-            {chats.length === 0 ? (
-              <p className="sidebar-empty">No saved games yet.</p>
-            ) : (
-              <ul className="sidebar-list">
-                {chats.map((chat) => (
-                  <li
-                    key={chat.id}
-                    className={`sidebar-row${chat.id === activeChatId ? " active" : ""}`}
-                  >
-                    <button
-                      type="button"
-                      className="sidebar-open"
-                      onClick={() => openChat(chat)}
-                    >
-                      <CoverThumb
-                        cover={chat.cover_url ?? ""}
-                        name={chat.game}
-                        className="cover-sm"
-                      />
-                      <span className="sidebar-meta">
-                        <strong>{chat.game || "Untitled game"}</strong>
-                        {(chat.platform || chat.release_year) && (
-                          <small>
-                            {[displayPlatform(chat.platform, chat.cover_url), chat.release_year]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </small>
-                        )}
-                      </span>
-                    </button>
-                    <div className="row-menu">
-                      <button
-                        type="button"
-                        className="kebab"
-                        aria-label={`Options for ${chat.game || "Untitled game"}`}
-                        aria-expanded={menuOpenId === chat.id}
-                        onClick={(event) => toggleRowMenu(chat.id, event)}
-                      >
-                        <IconDotsVertical />
-                      </button>
-                      {menuOpenId === chat.id && (
-                        <div className="row-menu-pop" role="menu">
-                          <button
-                            type="button"
-                            className="row-menu-item"
-                            onClick={(event) => editGame(chat, event)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="row-menu-item row-menu-delete"
-                            onClick={(event) => void deleteChat(chat, event)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="sidebar-footer">
-              <button type="button" className="sidebar-new icon-inline" onClick={startNewGame}>
-                <IconPlus /> New game
-              </button>
-            </div>
-            </div>
-          </aside>
-
-          {libraryOpen && (
-            <>
-              <button
-                type="button"
-                className="library-backdrop open"
-                aria-label="Close library"
-                onClick={dismissOverlay}
-              />
-              <div className="library open" role="dialog" aria-label="Saved library">
-                <div className="library-panel">
-                  <div className="library-head">
-                    <span>Saved library</span>
-                    <button
-                      type="button"
-                      className="sidebar-close"
-                      aria-label="Close library"
-                      onClick={dismissOverlay}
-                    >
-                      <IconX />
-                    </button>
-                  </div>
-                  {chats.length === 0 ? (
-                    <p className="library-empty">No saved games yet.</p>
-                  ) : (
-                    (() => {
-                      const term = librarySearch.trim().toLowerCase();
-                      const shown = term
-                        ? chats.filter((chat) =>
-                            (chat.game || "").toLowerCase().includes(term),
-                          )
-                        : chats;
-                      return (
-                        <>
-                          <div className="library-search-wrap field-clear-wrap">
-                            <input
-                              id="saved-library-search"
-                              type="search"
-                              className="library-search"
-                              placeholder="Search saved games…"
-                              value={librarySearch}
-                              onChange={(event) => setLibrarySearch(event.target.value)}
-                              autoComplete="off"
-                              aria-label="Search saved games"
-                            />
-                            <ClearButton
-                              show={librarySearch.length > 0}
-                              onClear={() => {
-                                setLibrarySearch("");
-                                document.getElementById("saved-library-search")?.focus();
-                              }}
-                              label="Clear search"
-                            />
-                          </div>
-                          {shown.length === 0 ? (
-                            <p className="library-empty">
-                              No games match “{librarySearch.trim()}”.
-                            </p>
-                          ) : (
-                            <div className="library-grid">
-                              {shown.map((chat) => (
-                                <div key={chat.id} className="library-card">
-                                  <button
-                                    type="button"
-                                    className="library-open"
-                                    onClick={() => openFromLibrary(chat)}
-                                  >
-                                    <CoverThumb
-                                      cover={chat.cover_url ?? ""}
-                                      name={chat.game}
-                                      className="cover-tile"
-                                    />
-                                    <strong>{chat.game || "Untitled game"}</strong>
-                                    {(chat.platform || chat.release_year) && (
-                                      <small>
-                                        {[
-                                          displayPlatform(chat.platform, chat.cover_url),
-                                          chat.release_year,
-                                        ]
-                                          .filter(Boolean)
-                                          .join(" · ")}
-                                      </small>
-                                    )}
-                                  </button>
-                                  <div className="row-menu library-card-menu">
-                                    <button
-                                      type="button"
-                                      className="kebab"
-                                      aria-label={`Options for ${chat.game || "Untitled game"}`}
-                                      aria-expanded={menuOpenId === `lib-${chat.id}`}
-                                      onClick={(event) => toggleRowMenu(`lib-${chat.id}`, event)}
-                                    >
-                                      <IconDotsVertical />
-                                    </button>
-                                    {menuOpenId === `lib-${chat.id}` && (
-                                      <div className="row-menu-pop" role="menu">
-                                        <button
-                                          type="button"
-                                          className="row-menu-item"
-                                          onClick={() => editFromLibrary(chat)}
-                                        >
-                                          Edit
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="row-menu-item row-menu-delete"
-                                          onClick={(event) => void deleteChat(chat, event)}
-                                        >
-                                          Delete
-                                        </button>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-
-          <SteamLibrary
-            open={steamLibraryOpen}
-            onClose={dismissOverlay}
-            onPick={startFromSteamGame}
-            cacheKey={steamId ?? user?.id ?? ""}
-          />
-        </>
-      )}
+      <GamesSidebar
+        visible={Boolean(user || chats.length > 0)}
+        user={user}
+        chats={chats}
+        activeChatId={activeChatId}
+        sidebarOpen={sidebarOpen}
+        libraryOpen={libraryOpen}
+        steamLibraryOpen={steamLibraryOpen}
+        steamConnected={steamConnected}
+        steamId={steamId}
+        menuOpenId={menuOpenId}
+        librarySearch={librarySearch}
+        onDismissOverlay={dismissOverlay}
+        onCloseSidebar={() => {
+          setSidebarOpen(false);
+          setMenuOpenId(null);
+          dismissOverlay();
+        }}
+        onOpenSavedLibrary={openSavedLibrary}
+        onConnectSteam={connectSteam}
+        onOpenSteamLibrary={openSteamLibrary}
+        onOpenChat={openChat}
+        onToggleRowMenu={toggleRowMenu}
+        onEditGame={editGame}
+        onDeleteChat={deleteChat}
+        onStartNewGame={startNewGame}
+        onLibrarySearchChange={setLibrarySearch}
+        onOpenFromLibrary={openFromLibrary}
+        onEditFromLibrary={editFromLibrary}
+        onPickSteamGame={startFromSteamGame}
+      />
 
       {started && showSticky && (
         <div
@@ -2859,564 +2192,107 @@ export default function Home() {
         </div>
       )}
 
-      {showHero && (
-        <div
-          className={`hero-shell${newGameOpen && hasRecent ? " hero-shell--exit" : ""}`}
-          aria-hidden={newGameOpen && hasRecent}
-        >
-          <section className={`hero${hasRecent ? " hero--quick" : ""}`}>
-            <p className="eyebrow">
-              Companion for <RotatingWord />
-            </p>
-            <RotatingHeadline />
-            <p className="intro">
-              Say the game and where you&apos;re stuck. We turn web guides into steps
-              you can act on.
-            </p>
-          </section>
-        </div>
-      )}
-
-      {showCarousel && (
-        <section
-          className={`quick-home${newGameOpen ? " quick-home--form-open" : ""}`}
-          aria-label="Recent games"
-          ref={topRef}
-        >
-          <div className="quick-head">
-            <h2>Jump back in</h2>
-          </div>
-          <div className="quick-rail">
-            {recentGames.map((chat) => (
-              <button
-                key={chat.id}
-                type="button"
-                className="quick-card"
-                onClick={() => openChat(chat)}
-              >
-                <CoverThumb
-                  cover={chat.cover_url ?? ""}
-                  name={chat.game}
-                  className="cover-lg"
-                />
-                <span className="quick-card-meta">
-                  <strong>{chat.game || "Untitled game"}</strong>
-                  {(chat.platform || chat.release_year) && (
-                    <small>
-                      {[displayPlatform(chat.platform, chat.cover_url), chat.release_year]
-                              .filter(Boolean)
-                              .join(" · ")}
-                    </small>
-                  )}
-                </span>
-              </button>
-            ))}
-            {moreGamesCount > 0 && (
-              <button
-                type="button"
-                className="quick-card quick-more"
-                onClick={openSavedLibrary}
-                aria-label={`See ${moreGamesCount} more saved games`}
-              >
-                <span className="quick-more-count">+{moreGamesCount}</span>
-                <span className="quick-card-meta">
-                  <strong>more</strong>
-                  <small>Open library</small>
-                </span>
-              </button>
-            )}
-          </div>
-          {/* Button reveals the setup form below (it renders next, since
-              showSetupForm is now true); hidden once the form is open. */}
-          {!newGameOpen ? (
-            <>
-              <button type="button" className="quick-new icon-inline" onClick={startNewGame}>
-                <IconPlus /> New game
-              </button>
-              {/* Library shortcuts. Steam shares the row only when connected;
-                  otherwise Saved library fills the width. */}
-              <div className="quick-libs">
-                <button
-                  type="button"
-                  className="quick-lib-btn icon-inline"
-                  onClick={openSavedLibrary}
-                >
-                  <IconGrid /> Saved library
-                </button>
-                {steamConnected && (
-                  <button
-                    type="button"
-                    className="quick-lib-btn icon-inline"
-                    onClick={openSteamLibrary}
-                  >
-                    <SteamIcon /> Steam library
-                  </button>
-                )}
-              </div>
-            </>
-          ) : !editingGame && (
-            <button type="button" className="quick-new quick-new--cancel icon-inline" onClick={() => setNewGameOpen(false)}>
-              <IconX /> Cancel new game
-            </button>
-          )}
-        </section>
-      )}
+      <HomeSetup
+        showHero={showHero}
+        showCarousel={showCarousel}
+        showSetupForm={showSetupForm}
+        hasRecent={hasRecent}
+        newGameOpen={newGameOpen}
+        editingGame={editingGame}
+        topRef={topRef}
+        recentGames={recentGames}
+        moreGamesCount={moreGamesCount}
+        steamConnected={steamConnected}
+        coverEnabled={coverEnabled}
+        cover={cover}
+        pendingCover={pendingCover}
+        game={game}
+        platform={platform}
+        preferredUrls={preferredUrls}
+        optPanel={optPanel}
+        loading={loading}
+        uploadingCover={uploadingCover}
+        guideBundleMeta={guideBundleMeta}
+        guideIndexState={guideIndexState}
+        guidePending={guidePending}
+        gameSpoilerMajor={gameSpoilerMajor}
+        user={user}
+        onOpenChat={openChat}
+        onOpenSavedLibrary={openSavedLibrary}
+        onStartNewGame={startNewGame}
+        onOpenSteamLibrary={openSteamLibrary}
+        onSetNewGameOpen={setNewGameOpen}
+        onSetOptPanel={setOptPanel}
+        onGameChange={handleGameChange}
+        onPickGame={pickGame}
+        onPlatformChange={setPlatform}
+        onSelectCover={selectCover}
+        onClearCover={clearCover}
+        onPreferredUrlsChange={setPreferredUrls}
+        onBundleMetaChange={setGuideBundleMeta}
+        onGuideCheckChange={setGuideChecking}
+        onGuidePendingChange={setGuidePending}
+        onRequestConfirm={(opts) =>
+          new Promise((resolve) => setConfirmState({ ...opts, resolve }))
+        }
+        onGameSpoilerChange={updateGameSpoiler}
+        onSaveGameMeta={() => void saveGameMeta()}
+      />
 
       {started && !editingGame ? (
-        <section className="game-card" aria-label="Game" ref={topRef}>
-          {activeChatId && !temporary && (
-            <button
-              type="button"
-              className="game-card-incognito"
-              title="Start a temporary chat"
-              aria-label="Start a temporary chat"
-              disabled={loading}
-              onClick={() => void toggleTemporary()}
-            >
-              <IconIncognito size={18} />
-            </button>
-          )}
-          <div className="row-menu game-card-menu">
-            <button
-              type="button"
-              className="kebab"
-              aria-label="Game options"
-              aria-expanded={menuOpenId === "game-card"}
-              onClick={(event) => toggleRowMenu("game-card", event)}
-              disabled={loading}
-            >
-              <IconDotsVertical />
-            </button>
-            {menuOpenId === "game-card" && (
-              <div className="row-menu-pop" role="menu">
-                <button
-                  type="button"
-                  className="row-menu-item"
-                  onClick={() => {
-                    setMenuOpenId(null);
-                    setEditingGame(true);
-                    scrollToTop();
-                  }}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className="row-menu-item row-menu-delete"
-                  onClick={() => void deleteActiveChat()}
-                >
-                  Delete
-                </button>
-              </div>
-            )}
-          </div>
-          {coverEnabled && <CoverThumb cover={cover} name={game} className="cover-lg" />}
-          <div className={`game-card-meta${activeChatId && !temporary ? " has-quick" : ""}`}>
-            <h2>{game || "Untitled game"}</h2>
-            {(platform || releaseYear) && (
-              <p>{[displayPlatform(platform, cover), releaseYear].filter(Boolean).join(" · ")}</p>
-            )}
-            <HltbRow title={game} appId={steamAppIdFromCoverUrl(cover)?.toString()} />
-          </div>
-          {(() => {
-            const renderQuickAdd = () => (
-              <div style={{ marginTop: '12px', flex: '0 0 100%', width: '100%', minWidth: 0 }}>
-                {!showQuickAdd ? (
-                  <button 
-                    type="button"
-                    className="nav-button" 
-                    onClick={() => setShowQuickAdd(true)} 
-                    style={{ width: '100%', justifyContent: 'center', opacity: 0.8 }}
-                  >
-                    <IconPlus size={14} style={{ marginRight: '6px' }} /> Quick Add Guide
-                  </button>
-                ) : (
-                  <div className="opt-panel" style={{ background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: '6px', padding: '12px', minWidth: 0 }}>
-                    <GuideLinkField
-                      value={preferredUrls}
-                      onChange={setPreferredUrls}
-                      bundleMeta={guideBundleMeta}
-                      onBundleMetaChange={setGuideBundleMeta}
-                      onGuideCheckChange={setGuideChecking}
-                      onPendingChange={setGuidePending}
-                      onRequestConfirm={(opts) => new Promise(resolve => setConfirmState({ ...opts, resolve }))}
-                      guideIndexState={guideIndexState}
-                      game={game}
-                      platform={platform}
-                      disabled={loading}
-                      userId={user?.id}
-                    />
-                    <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
-                      <button 
-                        type="button"
-                        className="nav-button" 
-                        onClick={async () => {
-                          if (guidePending) {
-                            const ok = await new Promise<boolean>((resolve) => {
-                              setConfirmState({
-                                message: "You have a guide selected but haven't added it. Close anyway?",
-                                confirmLabel: "Close without adding",
-                                danger: true,
-                                resolve,
-                              });
-                            });
-                            if (!ok) return;
-                          }
-                          setShowQuickAdd(false); 
-                          void saveGameMeta(); 
-                        }}
-                        style={{ 
-                          background: preferredUrls.length > 0 ? 'var(--signal)' : 'var(--action)', 
-                          color: preferredUrls.length > 0 ? 'var(--on-signal)' : 'white', 
-                          borderColor: preferredUrls.length > 0 ? 'var(--signal)' : 'var(--action)', 
-                          width: '100%', 
-                          justifyContent: 'center' 
-                        }}
-                      >
-                        Done
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-
-            const renderGuideStack = (url: string) => {
-              const row = gameCardGuideRow(
-                url,
-                guideBundleMeta[url],
-                bundleIndexStatus[url],
-                bundlePanelLoad[url],
-                guideIndexState[url],
-              );
-              return (
-                <div key={guideUrlDedupeKey(url)} className="game-card-guide-stack">
-                  {row.uploaded ? (
-                    <div className={`game-card-link is-${row.state}`}>
-                      <span className="icon-inline" style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "nowrap", overflow: "hidden", width: "100%" }}>
-                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{row.label}</span>
-                        {row.state && row.state !== "unknown" && <span style={{ flexShrink: 0 }}>{renderStatusChip(row.state)}</span>}
-                        {(!row.state || row.state === "pending" || row.state === "failed" || row.state === "unknown") && (
-                          <button
-                            type="button"
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); void retryBundleIngest(url); }}
-                            disabled={retryingBundleUrl === url || isReindexingAll}
-                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", display: "flex", padding: "2px", flexShrink: 0, opacity: (retryingBundleUrl === url || isReindexingAll) ? 0.5 : 1 }}
-                            title="Reindex this guide"
-                            aria-label="Reindex this guide"
-                          >
-                            <IconRefresh size={14} className={retryingBundleUrl === url ? "spin" : ""} />
-                          </button>
-                        )}
-                        {row.isBlocked && (
-                          <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)", flexShrink: 0 }}>
-                            <IconAlert size={12} /> Blocked
-                          </span>
-                        )}
-                        <span style={{ flexShrink: 0, width: '20px', display: 'flex' }} />
-                      </span>
-                    </div>
-                  ) : (
-                  <a
-                    className={`game-card-link is-${row.state}`}
-                    href={url}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-busy={row.bundle && row.panelLoading ? true : undefined}
-                  >
-                    <span className="icon-inline" style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "nowrap", overflow: "hidden", width: "100%" }}>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{row.label}</span>
-                      {row.state && row.state !== "unknown" && <span style={{ flexShrink: 0 }}>{renderStatusChip(row.state)}</span>}
-                      {(!row.state || row.state === "pending" || row.state === "failed" || row.state === "unknown") && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); void retryBundleIngest(url); }}
-                          disabled={retryingBundleUrl === url || isReindexingAll}
-                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", display: "flex", padding: "2px", flexShrink: 0, opacity: (retryingBundleUrl === url || isReindexingAll) ? 0.5 : 1 }}
-                          title="Reindex this guide"
-                          aria-label="Reindex this guide"
-                        >
-                          <IconRefresh size={14} className={retryingBundleUrl === url ? "spin" : ""} />
-                        </button>
-                      )}
-                      {row.isBlocked && (
-                        <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)", flexShrink: 0 }}>
-                          <IconAlert size={12} /> Blocked
-                        </span>
-                      )}
-                      {row.bundle && row.panelLoading ? (
-                        <span
-                          className="game-card-bundle-spinner loader"
-                          aria-hidden="true"
-                          style={{ flexShrink: 0 }}
-                        />
-                      ) : null}
-                      <span style={{ flexShrink: 0, display: 'flex' }}><IconArrowUpRight /></span>
-                    </span>
-                  </a>
-                  )}
-                  {row.bundle && !row.panelLoading && row.showPanel ? (
-                    <BundleIndexPanel
-                      discoveredPages={row.discoveredPages}
-                      indexedPages={row.indexedPages}
-                      missingPages={row.missingPages}
-                      skippedSlugs={row.skippedSlugs}
-                      selectionLocked={row.selectionLocked}
-                      onSkipPage={(slug) => handleSkipBundlePage(url, slug)}
-                      onUnskipPage={(slug) => handleUnskipBundlePage(url, slug)}
-                      onSkipAllMissing={
-                        row.missingPages.length
-                          ? () =>
-                              handleSkipAllMissingBundlePages(
-                                url,
-                                row.missingPages.map((page) => page.slug),
-                              )
-                          : undefined
-                      }
-                      onRetryMissing={
-                        row.missingPages.length
-                          ? () => void retryBundleIngest(url)
-                          : undefined
-                      }
-                      onRefreshList={() => void refreshBundleDiscovery(url)}
-                      retrying={retryingBundleUrl === url}
-                      refreshingList={refreshingBundleUrl === url}
-                    />
-                  ) : null}
-                </div>
-              );
-            };
-
-            const hasBlocked = preferredUrls.some((url) => guideBundleMeta[url]?.isBlocked);
-            const hasFailed = preferredUrls.some((url) => guideIndexState[url] === "failed");
-            const isCollapsible = preferredUrls.length > 2;
-
-            return (
-              <div className="game-card-guides">
-                <details 
-                  className={isCollapsible ? "sources game-card-guides-hidden" : ""} 
-                  open={isCollapsible ? (showQuickAdd || undefined) : true}
-                  style={!isCollapsible ? { display: "contents" } : undefined}
-                >
-                  <summary style={{ display: isCollapsible ? "flex" : "none", alignItems: "center", gap: "8px", fontWeight: 600 }}>
-                    <span style={{ flex: 1 }}>Guides ({preferredUrls.length})</span>
-                    {preferredUrls.some((url) => {
-                      const st = guideIndexState[url];
-                      return !st || st === "pending" || st === "failed" || st === "unknown";
-                    }) && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); void reindexAllPending(); }}
-                        disabled={isReindexingAll}
-                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", display: "flex", padding: "4px", flexShrink: 0, opacity: isReindexingAll ? 0.5 : 1 }}
-                        title="Reindex all pending guides"
-                        aria-label="Reindex all pending guides"
-                      >
-                        <IconRefresh size={14} className={isReindexingAll ? "spin" : ""} />
-                      </button>
-                    )}
-                    {hasBlocked && (
-                      <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}>
-                        <IconAlert size={12} /> Blocked
-                      </span>
-                    )}
-                    {hasFailed && (
-                      <span className="guide-status-chip is-failed">
-                        <IconX size={10} /> Failed
-                      </span>
-                    )}
-                  </summary>
-                  
-                  <div className={isCollapsible ? "game-card-guides" : ""} style={isCollapsible ? { marginTop: "8px" } : undefined}>
-                    {preferredUrls.map(renderGuideStack)}
-                    {renderQuickAdd()}
-                  </div>
-                </details>
-              </div>
-            );
-          })()}
-          <div className="game-card-spoiler spoiler-panel">
-            <SpoilerToggle
-              prefs={{ major: gameSpoilerMajor }}
-              onChange={updateGameSpoiler}
-              compact
-            />
-          </div>
-        </section>
-      ) : showSetupForm ? (
-        // Mounting fresh when "+ New game" is tapped replays .setup's `rise`
-        // animation, so revealing the form (below the carousel) is animated.
-        <section
-          className={`setup${newGameOpen && hasRecent ? " setup--from-quick" : ""}`}
-          aria-label="Game context"
-          ref={topRef}
-        >
-          <div className="setup-main">
-          {/* Cover column only mounts once a cover exists (upload or autocomplete);
-              its reveal animation gives the "fill in" effect. No cover = no noisy
-              placeholder tile — the "+ Add cover" text button below stands in. */}
-          {coverEnabled && cover && (
-            <div className="field field-cover">
-              <div className="cover-edit">
-                <div className="cover-drop has-cover">
-                  <CoverThumb cover={cover} name={game} className="cover-setup" />
-                  <label className="cover-upload">
-                    <span className="cover-upload-label">Replace</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      hidden
-                      disabled={uploadingCover || loading}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        event.target.value = "";
-                        if (file) selectCover(file);
-                      }}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    className="cover-clear"
-                    aria-label="Remove cover"
-                    onClick={() => void clearCover()}
-                    disabled={uploadingCover || loading}
-                  >
-                    <IconX />
-                  </button>
-                </div>
-                {pendingCover && <span className="cover-pending">Uploads when you send</span>}
-              </div>
-            </div>
-          )}
-          <div className="setup-fields">
-            <div className="field field-game">
-              <div className="field-head">
-                <label htmlFor="game">Game name</label>
-                {coverEnabled && !cover && (
-                  <label className="cover-add-btn icon-inline">
-                    <IconPlus /> Add cover
-                    <input
-                      type="file"
-                      accept="image/*"
-                      hidden
-                      disabled={uploadingCover || loading}
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        event.target.value = "";
-                        if (file) selectCover(file);
-                      }}
-                    />
-                  </label>
-                )}
-              </div>
-              <GameAutocomplete
-                value={game}
-                onChange={handleGameChange}
-                onPick={pickGame}
-                showCover={coverEnabled}
-                disabled={loading}
-              />
-            </div>
-            <div className="field field-platform">
-              <span className="field-label" id="platform-label">
-                Platform
-              </span>
-              <PlatformSelect value={platform} onChange={setPlatform} />
-            </div>
-          </div>
-          </div>
-          {/* Two triggers stay fixed side-by-side; the open section renders in the
-              shared panel below. Only one open at a time, so toggling swaps the
-              panel without shifting the triggers. */}
-          <div className="opt-group">
-            <div className="opt-tabs">
-              <button
-                type="button"
-                className={`opt-tab${optPanel === "guide" ? " open" : ""}`}
-                aria-expanded={optPanel === "guide"}
-                aria-controls="opt-panel-guide"
-                onClick={() => setOptPanel((cur) => (cur === "guide" ? null : "guide"))}
-              >
-                <span className="opt-summary-label">Preferred guides (optional)</span>
-                {preferredUrls.length > 0 && (
-                  <span className="opt-summary-value">
-                    {guideUrlsSummary(preferredUrls, guideBundleMeta)}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                className={`opt-tab${optPanel === "spoiler" ? " open" : ""}`}
-                aria-expanded={optPanel === "spoiler"}
-                aria-controls="opt-panel-spoiler"
-                onClick={() => setOptPanel((cur) => (cur === "spoiler" ? null : "spoiler"))}
-              >
-                <span className="opt-summary-label">Spoilers</span>
-                <span className={`opt-summary-value${gameSpoilerMajor ? " is-on" : ""}`}>
-                  {gameSpoilerMajor ? "On for this game" : "Off"}
-                </span>
-              </button>
-            </div>
-            {optPanel === "guide" && (
-              <div className="opt-panel" id="opt-panel-guide">
-                <GuideLinkField
-                  value={preferredUrls}
-                  onChange={setPreferredUrls}
-                  bundleMeta={guideBundleMeta}
-                  onBundleMetaChange={setGuideBundleMeta}
-                  onGuideCheckChange={setGuideChecking}
-                  onPendingChange={setGuidePending}
-                  onRequestConfirm={(opts) => new Promise(resolve => setConfirmState({ ...opts, resolve }))}
-                  guideIndexState={guideIndexState}
-                  game={game}
-                  platform={platform}
-                  disabled={loading}
-                  userId={user?.id}
-                />
-              </div>
-            )}
-            {optPanel === "spoiler" && (
-              <div className="opt-panel" id="opt-panel-spoiler">
-                <p className="field-hint">{GAME_SPOILER_HINT}</p>
-                <SpoilerToggle
-                  prefs={{ major: gameSpoilerMajor }}
-                  onChange={updateGameSpoiler}
-                />
-              </div>
-            )}
-          </div>
-          {editingGame && (
-            <div className="field field-wide setup-done">
-              <button 
-                type="button" 
-                className="nav-button"
-                style={
-                  preferredUrls.length > 0
-                    ? { background: "var(--signal)", color: "var(--on-signal)", borderColor: "var(--signal)" }
-                    : undefined
-                }
-                onClick={async () => {
-                  if (guidePending) {
-                    const ok = await new Promise<boolean>((resolve) => {
-                      setConfirmState({
-                        message: "You have a guide selected but haven't added it. Close anyway?",
-                        confirmLabel: "Close without adding",
-                        danger: true,
-                        resolve,
-                      });
-                    });
-                    if (!ok) return;
-                  }
-                  void saveGameMeta();
-                }}
-              >
-                Done
-              </button>
-            </div>
-          )}
-        </section>
+        <ActiveGameCard
+          topRef={topRef}
+          coverEnabled={coverEnabled}
+          cover={cover}
+          game={game}
+          platform={platform}
+          releaseYear={releaseYear}
+          activeChatId={activeChatId}
+          temporary={temporary}
+          loading={loading}
+          menuOpenId={menuOpenId}
+          preferredUrls={preferredUrls}
+          guideBundleMeta={guideBundleMeta}
+          bundleIndexStatus={bundleIndexStatus}
+          bundlePanelLoad={bundlePanelLoad}
+          guideIndexState={guideIndexState}
+          showQuickAdd={showQuickAdd}
+          guidePending={guidePending}
+          retryingBundleUrl={retryingBundleUrl}
+          refreshingBundleUrl={refreshingBundleUrl}
+          isReindexingAll={isReindexingAll}
+          gameSpoilerMajor={gameSpoilerMajor}
+          user={user}
+          onToggleTemporary={() => void toggleTemporary()}
+          onToggleRowMenu={toggleRowMenu}
+          onEditGame={() => {
+            setMenuOpenId(null);
+            setEditingGame(true);
+            scrollToTop();
+          }}
+          onDeleteActiveChat={() => void deleteActiveChat()}
+          onSetShowQuickAdd={setShowQuickAdd}
+          onPreferredUrlsChange={setPreferredUrls}
+          onBundleMetaChange={setGuideBundleMeta}
+          onGuideCheckChange={setGuideChecking}
+          onGuidePendingChange={setGuidePending}
+          onRequestConfirm={(opts) =>
+            new Promise((resolve) => setConfirmState({ ...opts, resolve }))
+          }
+          onSaveGameMeta={() => void saveGameMeta()}
+          onRetryBundleIngest={(url) => void retryBundleIngest(url)}
+          onSkipBundlePage={handleSkipBundlePage}
+          onUnskipBundlePage={handleUnskipBundlePage}
+          onSkipAllMissingBundlePages={(url, slugs) =>
+            handleSkipAllMissingBundlePages(url, slugs)
+          }
+          onRefreshBundleDiscovery={(url) => void refreshBundleDiscovery(url)}
+          onReindexAllPending={() => void reindexAllPending()}
+          onGameSpoilerChange={updateGameSpoiler}
+        />
       ) : null}
 
+      
       {started && (
         <MessageList
           messages={messages}

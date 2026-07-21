@@ -15,9 +15,19 @@ do not sync to the cloud or use Storage uploads.
 
 ## Architecture
 
-- `app/page.tsx`: English client chat UI (game field, platform, optional
- preferred-guide link, global major-spoiler toggle (profile menu + `user_metadata.spoiler_major`) and per-game major-spoiler toggle (setup **Spoilers** opt-tab + compact toggle on the game card; `loadGameSpoilerPrefs`/`saveGameSpoilerPrefs` in `lib/spoiler-prefs.js`; effective = global OR per-game), message feed,
- docked composer) and `/api/solve` consumer.
+- `app/page.tsx`: Layout orchestration (~2484 lines): auth/Steam/session, bundle
+  ingest effects, sticky header, examples strip, confirm/toast overlays. Composes
+  `app/chat/games-sidebar.tsx` (sidebar + saved/Steam library overlays),
+  `app/chat/home-setup.tsx` (hero, Jump back in carousel, setup form),
+  `app/chat/active-game-card.tsx` (in-chat game card + guide stacks/bundle panels),
+  `app/chat/message-list.tsx`, `app/chat/composer-shell.tsx`, and
+  `app/chat/use-chat-turn.tsx` for the chat loop. English client chat UI (game
+  field, platform, optional preferred-guide link, global major-spoiler toggle
+  (profile menu + `user_metadata.spoiler_major`) and per-game major-spoiler toggle
+  (setup **Spoilers** opt-tab + compact toggle on the game card;
+  `loadGameSpoilerPrefs`/`saveGameSpoilerPrefs` in `lib/spoiler-prefs.js`;
+  effective = global OR per-game), message feed, docked composer) and `/api/solve`
+  consumer.
   Keeps `messages` state and sends the last 10 messages (5 turns) as `history`
   plus `preferredUrls` (up to 5) and `spoilerPrefs` (`major`, default off). Also owns Supabase auth state, the "Your games" menu
   (list/resume/new/delete), per-turn chat persistence (auto-creates a new saved
@@ -517,7 +527,7 @@ verify actual indexed state before clearing the progress indicator.
   default 5) with delay. `maxDuration = 300` on the route.
 - Embed audit: `embed_index` rows in `llm_calls` (`lib/embed-log.ts`).
 
-### Game card UI (`app/page.tsx`, `app/bundle-index-panel.tsx`)
+### Game card UI (`app/chat/active-game-card.tsx`, `app/bundle-index-panel.tsx`)
 
 Guide links and bundle panels are paired in `.game-card-guide-stack` (full card
 width, one stack per preferred URL). Spoiler toggle is in `.game-card-spoiler`
@@ -771,9 +781,12 @@ large chat or persistence work:
   `trace_id` on each response). Phase 3: `scripts/backfill-chat-threads.mjs`
   backfills legacy JSONB; signed-in reads use `loadThreadMessages` (normalized only).
   Apply `db/chat-threads.sql` before using in prod.
-- [`docs/plan/page-decomposition.md`](docs/plan/page-decomposition.md): Phase 4 in
-  progress — `app/chat/message-list.tsx`, `composer-shell.tsx`, `use-chat-turn.tsx`,
-  `answer-body.tsx`, `types.ts`, `lib/chat-message-ui.js` extracted (~3614 lines remain).
+- [`docs/plan/page-decomposition.md`](docs/plan/page-decomposition.md): Phase 4 —
+  `app/chat/message-list.tsx`, `composer-shell.tsx`, `use-chat-turn.tsx`,
+  `answer-body.tsx`, `types.ts`, `lib/chat-message-ui.js`, `lib/guide-card-ui.js`,
+  `games-sidebar.tsx`, `active-game-card.tsx`, `home-setup.tsx`, `cover-thumb.tsx`,
+  `hero-marketing.tsx`, `guide-status-chip.tsx`, `spoiler-toggle.tsx` extracted;
+  `app/page.tsx` ~2484 lines (orchestration + auth/Steam + bundle ingest effects).
 
 ## Working conventions
 
