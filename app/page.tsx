@@ -413,6 +413,27 @@ async function deleteMessageImages(messages: Message[]) {
   }
 }
 
+type MessageVariant = Omit<Message, "role" | "variants" | "activeVariantIndex">;
+
+function coerceMessageVariant(item: unknown): MessageVariant | null {
+  if (!item || typeof item !== "object") return null;
+  const content = (item as { content?: unknown }).content;
+  if (typeof content !== "string") return null;
+  const rawSources = (item as { sources?: unknown }).sources;
+  const sources = Array.isArray(rawSources) ? (rawSources as Source[]) : undefined;
+  const highlights = coerceHighlights((item as { highlights?: unknown }).highlights);
+  const spoilers = coerceSpoilers((item as { spoilers?: unknown }).spoilers);
+  const rawPipeline = (item as { pipelineType?: unknown }).pipelineType;
+  const pipelineType = typeof rawPipeline === "string" ? rawPipeline : undefined;
+  return {
+    content,
+    sources,
+    ...(highlights.length ? { highlights } : {}),
+    ...(spoilers.length ? { spoilers } : {}),
+    ...(pipelineType ? { pipelineType } : {}),
+  };
+}
+
 function coerceMessages(value: unknown): Message[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item): Message[] => {
@@ -432,6 +453,22 @@ function coerceMessages(value: unknown): Message[] {
       : [];
     const rawPipeline = (item as { pipelineType?: unknown }).pipelineType;
     const pipelineType = typeof rawPipeline === "string" ? rawPipeline : undefined;
+    const rawVariants = (item as { variants?: unknown }).variants;
+    const variants = Array.isArray(rawVariants)
+      ? rawVariants
+          .map(coerceMessageVariant)
+          .filter((variant): variant is MessageVariant => variant !== null)
+      : [];
+    const rawActiveIdx = (item as { activeVariantIndex?: unknown }).activeVariantIndex;
+    const activeVariantIndex =
+      typeof rawActiveIdx === "number" &&
+      Number.isInteger(rawActiveIdx) &&
+      rawActiveIdx >= 0 &&
+      rawActiveIdx < variants.length
+        ? rawActiveIdx
+        : variants.length > 0
+          ? variants.length - 1
+          : undefined;
     return [
       {
         role,
@@ -441,6 +478,7 @@ function coerceMessages(value: unknown): Message[] {
         ...(spoilers.length ? { spoilers } : {}),
         ...(images.length ? { images } : {}),
         ...(pipelineType ? { pipelineType } : {}),
+        ...(variants.length > 0 ? { variants, activeVariantIndex } : {}),
       },
     ];
   });
@@ -2623,7 +2661,25 @@ export default function Home() {
       ...(images.length ? { images } : {}),
     };
     const optimistic: Message[] = oldAssistantMessage
-      ? [...priorMessages, userMessage, { ...oldAssistantMessage, content: "Writing answer..." }]
+      ? [
+          ...priorMessages,
+          userMessage,
+          {
+            ...oldAssistantMessage,
+            content: "Writing answer...",
+            variants:
+              oldAssistantMessage.variants ??
+              [
+                {
+                  content: oldAssistantMessage.content,
+                  sources: oldAssistantMessage.sources,
+                  highlights: oldAssistantMessage.highlights,
+                  spoilers: oldAssistantMessage.spoilers,
+                  pipelineType: oldAssistantMessage.pipelineType,
+                },
+              ],
+          },
+        ]
       : [...priorMessages, userMessage];
     setMessages(optimistic);
     let activeId = targetChatId;

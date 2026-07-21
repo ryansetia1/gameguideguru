@@ -371,7 +371,9 @@ export async function POST(request: Request) {
                   messages.push(newAssistantState);
                   shouldUpdate = true;
                 } else if (lastMessage.role === "assistant" && lastMessage.content === "Writing answer...") {
-                  const pastVariants = lastMessage.variants || [];
+                  const pastVariants = Array.isArray(lastMessage.variants)
+                    ? lastMessage.variants
+                    : [];
                   messages[messages.length - 1] = {
                     ...newAssistantState,
                     variants: [...pastVariants, newAssistantState],
