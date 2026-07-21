@@ -68,6 +68,7 @@ export async function GET(request: Request) {
 
     // 1. Read from Supabase Cache
     if (supabase) {
+      // @ts-expect-error No generated types yet
       const { data: cached, error } = await supabase.rpc("get_and_touch_steam_games", {
         p_app_ids: allAppIds,
       });
