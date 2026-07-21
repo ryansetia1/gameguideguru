@@ -746,7 +746,7 @@ export default function Home() {
   const [editingGame, setEditingGame] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [showSticky, setShowSticky] = useState(false);
-  const [pendingImages, setPendingImages] = useState<{ blob: Blob; preview: string }[]>([]);
+  const [pendingImages, setPendingImages] = useState<{ blob?: Blob; preview: string; isExisting?: boolean }[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
@@ -2390,14 +2390,16 @@ export default function Home() {
   function removePendingImage(index: number) {
     setPendingImages((prev) => {
       const target = prev[index];
-      if (target) URL.revokeObjectURL(target.preview);
+      if (target && !target.isExisting) URL.revokeObjectURL(target.preview);
       return prev.filter((_, i) => i !== index);
     });
   }
 
   function clearPendingImages() {
     setPendingImages((prev) => {
-      for (const item of prev) URL.revokeObjectURL(item.preview);
+      for (const item of prev) {
+        if (!item.isExisting) URL.revokeObjectURL(item.preview);
+      }
       return [];
     });
   }
@@ -2405,16 +2407,33 @@ export default function Home() {
   async function uploadMessageImages(): Promise<string[]> {
     if (!pendingImages.length) return [];
     const supabase = getSupabase();
-    if (!supabase || !user) return [];
+    
     const urls: string[] = [];
-    for (const { blob } of pendingImages) {
+    for (const item of pendingImages) {
+      if (item.isExisting) {
+        urls.push(item.preview);
+        continue;
+      }
+      if (!item.blob) continue;
+
       try {
-        const path = `${user.id}/msg/${crypto.randomUUID()}.jpg`;
-        const { error: upErr } = await supabase.storage
-          .from("covers")
-          .upload(path, blob, { contentType: "image/jpeg", upsert: true });
-        if (upErr) throw upErr;
-        urls.push(supabase.storage.from("covers").getPublicUrl(path).data.publicUrl);
+        if (temporary) {
+          const base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error("Failed to read file"));
+            reader.readAsDataURL(item.blob!);
+          });
+          urls.push(base64);
+        } else {
+          if (!supabase || !user) continue;
+          const path = `${user.id}/msg/${crypto.randomUUID()}.jpg`;
+          const { error: upErr } = await supabase.storage
+            .from("covers")
+            .upload(path, item.blob, { contentType: "image/jpeg", upsert: true });
+          if (upErr) throw upErr;
+          urls.push(supabase.storage.from("covers").getPublicUrl(path).data.publicUrl);
+        }
       } catch (caught) {
         console.error("Image upload failed:", caught);
       }
@@ -2954,9 +2973,7 @@ export default function Home() {
       await persistChat(nextMessages, activeId);
       void loadChats();
       if (activeId) activeChatIdRef.current = activeId;
-      // Temporary chat never persists, so drop this turn's uploaded images from
-      // Storage instead of leaving them orphaned.
-      if (temporary && images.length) void deleteMessageImages([userMessage]);
+      // Temporary chat never persists, and images are base64, so no need to clean up Storage.
       succeeded = true;
       if (activeId === activeChatIdRef.current || !activeId) {
         if (finalToast) setToast(finalToast);
@@ -3070,6 +3087,10 @@ export default function Home() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (editingIndex !== null) {
+      await saveEdit(editingIndex);
+      return;
+    }
     const question = input.trim();
     if (!game.trim() || question.length < 2 || loading) return;
 
@@ -3090,12 +3111,23 @@ export default function Home() {
   function startEdit(index: number) {
     if (loading) return;
     setEditingIndex(index);
-    setEditingText(messages[index].content);
+    const msg = messages[index];
+    setInput(msg.content);
+    if (msg.images && msg.images.length > 0) {
+      setPendingImages(msg.images.map((url) => ({ preview: url, isExisting: true })));
+    } else {
+      setPendingImages([]);
+    }
+    setTimeout(() => {
+      composerRef.current?.focus();
+      document.getElementById(`msg-${index}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 0);
   }
 
   function cancelEdit() {
     setEditingIndex(null);
-    setEditingText("");
+    setInput("");
+    clearPendingImages();
   }
 
   // Editing/retrying discards the dropped turns' attached images. Confirm first
@@ -3109,21 +3141,36 @@ export default function Home() {
   }
 
   async function saveEdit(index: number) {
-    const text = editingText.trim();
+    const text = input.trim();
     if (text.length < 2 || loading) return;
-    const dropped = messages.slice(index);
+
+    const dropped = messages.slice(index + 1);
     if (!(await confirmDropImages(dropped))) return;
+
+    setLoading(true);
+    const newImages = await uploadMessageImages();
     await deleteMessageImages(dropped);
-    await runTurn(text, messages.slice(0, index), activeChatIdRef.current);
+
+    const oldImages = messages[index].images || [];
+    const removedImages = oldImages.filter(url => !newImages.includes(url));
+    if (removedImages.length > 0 && !temporary) {
+      await deleteMessageImages([{ role: "user", content: "", images: removedImages }]);
+    }
+
+    clearPendingImages();
+    setInput("");
+    setEditingIndex(null);
+    await runTurn(text, messages.slice(0, index), activeChatIdRef.current, newImages);
   }
 
   async function retry(index: number) {
     if (loading || index < 1 || messages[index - 1].role !== "user") return;
     const question = messages[index - 1].content;
-    const dropped = messages.slice(index - 1);
+    const existingImages = messages[index - 1].images || [];
+    const dropped = messages.slice(index);
     if (!(await confirmDropImages(dropped))) return;
     await deleteMessageImages(dropped);
-    await runTurn(question, messages.slice(0, index - 1), activeChatIdRef.current);
+    await runTurn(question, messages.slice(0, index - 1), activeChatIdRef.current, existingImages);
   }
 
   const started = messages.length > 0;
@@ -4047,6 +4094,16 @@ export default function Home() {
               >
                 {editingIndex === index ? (
                   <div className="edit-box">
+                    {message.images && message.images.length > 0 && (
+                      <div className="msg-images" style={{ marginBottom: 12 }}>
+                        {message.images.map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noreferrer">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img className="msg-image" src={url} alt="Attached" loading="lazy" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
                     <textarea
                       ref={editTextareaRef}
                       className="edit-textarea"
@@ -4436,14 +4493,29 @@ export default function Home() {
               <IconStop />
             </button>
           ) : (
-            <button
-              className="submit"
-              type="submit"
-              disabled={composerLocked || input.trim().length < 2}
-              aria-label="Send question"
-            >
-              <IconArrowUpRight />
-            </button>
+            <>
+              {editingIndex !== null && (
+                <button
+                  className="submit"
+                  type="button"
+                  onClick={cancelEdit}
+                  aria-label="Cancel edit"
+                  title="Cancel edit"
+                  style={{ background: "var(--surface)", borderColor: "var(--line)" }}
+                >
+                  <IconX />
+                </button>
+              )}
+              <button
+                className="submit"
+                type="submit"
+                disabled={(editingIndex === null && composerLocked) || input.trim().length < 2}
+                aria-label={editingIndex !== null ? "Save edit" : "Send question"}
+                title={editingIndex !== null ? "Save edit" : undefined}
+              >
+                <IconArrowUpRight />
+              </button>
+            </>
           )}
         </div>
       </form>

@@ -169,8 +169,10 @@ export async function resolveQuestion(input: {
 
   const forRag = Boolean(input.forRag);
   const instruction = forRag ? REWRITE_RAG_INSTRUCTION : REWRITE_INSTRUCTION;
-  const maxOutputTokens = forRag ? 400 : 200;
-  const maxChars = forRag ? 600 : 200;
+  // Gemini 2.5 Flash consumes max_output_tokens for its internal thinking.
+  // We must provide a large enough budget so the visible text doesn't get cut off.
+  const maxOutputTokens = forRag ? 4096 : 2048;
+  const maxChars = forRag ? 1200 : 200;
   // Vision-aware rewrite: without the image, "how do I beat this boss?" rewrites
   // to a blind query that drives search/RAG retrieval at the wrong target.
   const images = (input.images ?? []).filter((url) => typeof url === "string" && url);

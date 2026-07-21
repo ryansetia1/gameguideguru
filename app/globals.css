@@ -1522,6 +1522,12 @@ details.sources small {
   }
 }
 
+@media (min-width: 601px) {
+  .composer-placeholder-marquee .marquee-content:last-child {
+    display: none;
+  }
+}
+
 @keyframes marquee-scroll {
   0% {
     transform: translateX(0);

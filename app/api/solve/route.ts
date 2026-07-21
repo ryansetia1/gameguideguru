@@ -46,12 +46,28 @@ function cleanUuid(value: unknown): string | null {
 
 const MAX_IMAGES = 10;
 
-// Accept up to 10 well-formed http(s) image URLs (Supabase Storage public URLs).
+// Accept up to 10 well-formed http(s) image URLs or base64 data URIs.
+function cleanImageUrl(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("data:image/")) {
+    return trimmed.slice(0, 15_000_000); // Allow large base64 strings
+  }
+  try {
+    const url = new URL(trimmed.slice(0, 1000));
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
 function parseImages(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
     .flatMap((item): string[] => {
-      const url = cleanUrl(item);
+      const url = cleanImageUrl(item);
       return url ? [url] : [];
     })
     .slice(0, MAX_IMAGES);
