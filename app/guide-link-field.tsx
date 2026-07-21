@@ -504,19 +504,19 @@ export function GuideLinkField({
             return (
               <li key={guideUrlDedupeKey(url)} className="guide-url-row">
                 <div className="guide-url-row-body">
-                  <div className="guide-url-row-header" style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <div className="guide-url-row-header" style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "nowrap", overflow: "hidden" }}>
                     {uploaded ? (
-                      <span className="guide-url-host">
+                      <span className="guide-url-host" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {uploadedGuideFileTypeLabel(url)} file
                       </span>
                     ) : (
-                      <a href={url} target="_blank" rel="noreferrer" className="guide-url-host">
+                      <a href={url} target="_blank" rel="noreferrer" className="guide-url-host" style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {bundle ? "GameFAQs bundle" : hostLabel(url)}
                       </a>
                     )}
                     {guideIndexState[url] && guideIndexState[url] !== "unknown" && renderStatusChip(guideIndexState[url])}
                     {meta?.isBlocked && (
-                      <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}>
+                      <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)", flexShrink: 0 }}>
                         <IconAlert size={12} /> Blocked
                       </span>
                     )}
@@ -536,7 +536,7 @@ export function GuideLinkField({
                   aria-label={`Remove ${uploaded ? uploadedGuideFilename(url) : bundle ? "bundle" : hostLabel(url)}`}
                   onClick={() => removeUrl(url)}
                 >
-                  Remove
+                  <IconX size={14} />
                 </button>
               </li>
             );

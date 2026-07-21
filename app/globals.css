@@ -1294,11 +1294,14 @@ details.sources ol {
   list-style: none;
 }
 
-details.sources li + li {
+details.sources ol li + li {
   border-top: 1px solid var(--line);
 }
 
-details.sources li a {
+/* Scoped to the citation <ol>; the collapsible guides reuse details.sources but
+   hold a <div>/<ul>, so an unscoped `li a` grid used to squeeze guide search
+   titles into the 30px first column (per-word wrapping). */
+details.sources ol li a {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) 24px;
   gap: 9px;
@@ -1308,7 +1311,7 @@ details.sources li a {
   text-decoration: none;
 }
 
-details.sources li a:hover strong {
+details.sources ol li a:hover strong {
   text-decoration: underline;
 }
 
@@ -3312,7 +3315,7 @@ details.sources small {
   display: flex;
 }
 
-.guide-url-input-wrapper input {
+.guide-url-input-wrapper input:not([type="checkbox"]):not([type="radio"]) {
   flex: 1;
   min-width: 0;
   padding-right: 76px; /* Space for the paste and info buttons */
@@ -3971,15 +3974,18 @@ details.sources small {
 .guide-search-hit-body {
   flex: 1;
   min-width: 0;
+  width: 100%;
 }
 
 .guide-search-title {
-  display: block;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   color: var(--signal-dark);
   font-size: 0.86rem;
   font-weight: 700;
   line-height: 1.35;
-  overflow-wrap: anywhere;
 }
 
 .guide-search-host {

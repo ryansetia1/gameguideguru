@@ -775,6 +775,7 @@ export default function Home() {
     onConfirm: () => void;
     onCancel: () => void;
   } | null>(null);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
 
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
@@ -3632,7 +3633,53 @@ export default function Home() {
             <HltbRow title={game} appId={steamAppIdFromCoverUrl(cover)?.toString()} />
           </div>
           {(() => {
-            if (preferredUrls.length === 0) return null;
+            const renderQuickAdd = () => (
+              <div style={{ marginTop: '12px', flex: '0 0 100%', width: '100%', minWidth: 0 }}>
+                {!showQuickAdd ? (
+                  <button 
+                    type="button"
+                    className="nav-button" 
+                    onClick={() => setShowQuickAdd(true)} 
+                    style={{ width: '100%', justifyContent: 'center', opacity: 0.8 }}
+                  >
+                    <IconPlus size={14} style={{ marginRight: '6px' }} /> Quick Add Guide
+                  </button>
+                ) : (
+                  <div className="opt-panel" style={{ background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: '6px', padding: '12px', minWidth: 0 }}>
+                    <GuideLinkField
+                      value={preferredUrls}
+                      onChange={setPreferredUrls}
+                      bundleMeta={guideBundleMeta}
+                      onBundleMetaChange={setGuideBundleMeta}
+                      onGuideCheckChange={setGuideChecking}
+                      guideIndexState={guideIndexState}
+                      game={game}
+                      platform={platform}
+                      disabled={loading}
+                      userId={user?.id}
+                    />
+                    <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'center' }}>
+                      <button 
+                        type="button"
+                        className="nav-button" 
+                        onClick={() => { setShowQuickAdd(false); void saveGameMeta(); }}
+                        style={{ background: 'var(--action)', color: 'white', borderColor: 'var(--action)', width: '100%', justifyContent: 'center' }}
+                      >
+                        Done
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+
+            if (preferredUrls.length === 0) {
+              return (
+                <div className="game-card-guides">
+                  {renderQuickAdd()}
+                </div>
+              );
+            }
 
             const renderGuideStack = (url: string) => {
               const row = gameCardGuideRow(
@@ -3716,21 +3763,18 @@ export default function Home() {
               );
             };
 
-            if (preferredUrls.length <= 2) {
-              return (
-                <div className="game-card-guides">
-                  {preferredUrls.map(renderGuideStack)}
-                </div>
-              );
-            }
-
             const hasBlocked = preferredUrls.some((url) => guideBundleMeta[url]?.isBlocked);
             const hasFailed = preferredUrls.some((url) => guideIndexState[url] === "failed");
+            const isCollapsible = preferredUrls.length > 2;
 
             return (
               <div className="game-card-guides">
-                <details className="sources game-card-guides-hidden">
-                  <summary style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}>
+                <details 
+                  className={isCollapsible ? "sources game-card-guides-hidden" : ""} 
+                  open={isCollapsible ? (showQuickAdd || undefined) : true}
+                  style={!isCollapsible ? { display: "contents" } : undefined}
+                >
+                  <summary style={{ display: isCollapsible ? "flex" : "none", alignItems: "center", gap: "8px", fontWeight: 600 }}>
                     <span style={{ flex: 1 }}>Guides ({preferredUrls.length})</span>
                     {hasBlocked && (
                       <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}>
@@ -3743,8 +3787,10 @@ export default function Home() {
                       </span>
                     )}
                   </summary>
-                  <div className="game-card-guides" style={{ marginTop: '8px' }}>
+                  
+                  <div className={isCollapsible ? "game-card-guides" : ""} style={isCollapsible ? { marginTop: "8px" } : undefined}>
                     {preferredUrls.map(renderGuideStack)}
+                    {renderQuickAdd()}
                   </div>
                 </details>
               </div>
