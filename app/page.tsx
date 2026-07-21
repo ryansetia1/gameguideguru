@@ -3640,7 +3640,7 @@ export default function Home() {
           </div>
           {/* Button reveals the setup form below (it renders next, since
               showSetupForm is now true); hidden once the form is open. */}
-          {!newGameOpen && (
+          {!newGameOpen ? (
             <>
               <button type="button" className="quick-new icon-inline" onClick={startNewGame}>
                 <IconPlus /> New game
@@ -3666,6 +3666,10 @@ export default function Home() {
                 )}
               </div>
             </>
+          ) : !editingGame && (
+            <button type="button" className="quick-new quick-new--cancel icon-inline" onClick={() => setNewGameOpen(false)}>
+              <IconX /> Cancel new game
+            </button>
           )}
         </section>
       )}

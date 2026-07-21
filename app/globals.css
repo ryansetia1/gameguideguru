@@ -2945,6 +2945,17 @@ details.sources small {
   filter: brightness(0.94);
 }
 
+.quick-new--cancel {
+  background: var(--surface);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.quick-new--cancel:hover {
+  background: var(--hover-bg);
+  color: var(--text);
+}
+
 /* Library shortcuts under New game. Each button flexes, so a lone Saved library
    fills the width and a connected Steam library splits it 50/50. */
 .quick-libs {
