@@ -355,19 +355,37 @@ export async function POST(request: Request) {
               .single();
             if (chatData?.messages) {
               const messages = chatData.messages as any[];
-              if (messages.length > 0 && messages[messages.length - 1].role === "user") {
-                messages.push({
+              if (messages.length > 0) {
+                const lastMessage = messages[messages.length - 1];
+                const newAssistantState = {
                   role: "assistant",
                   content: finalAnswer,
                   sources: finalSources,
                   ...(highlights.length ? { highlights } : {}),
                   ...(spoilers.length && spoilerPrefs.major ? { spoilers } : {}),
                   ...(pipelineType ? { pipelineType } : {}),
-                });
-                await supabase
-                  .from("chats")
-                  .update({ messages, updated_at: new Date().toISOString() })
-                  .eq("id", chatId);
+                };
+                
+                let shouldUpdate = false;
+                if (lastMessage.role === "user") {
+                  messages.push(newAssistantState);
+                  shouldUpdate = true;
+                } else if (lastMessage.role === "assistant" && lastMessage.content === "Writing answer...") {
+                  const pastVariants = lastMessage.variants || [];
+                  messages[messages.length - 1] = {
+                    ...newAssistantState,
+                    variants: [...pastVariants, newAssistantState],
+                    activeVariantIndex: pastVariants.length,
+                  };
+                  shouldUpdate = true;
+                }
+
+                if (shouldUpdate) {
+                  await supabase
+                    .from("chats")
+                    .update({ messages, updated_at: new Date().toISOString() })
+                    .eq("id", chatId);
+                }
               }
             }
           } catch (err) {
