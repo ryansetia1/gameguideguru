@@ -112,6 +112,7 @@ export async function GET(request: Request) {
 
       // Upsert missing back to Cache
       if (supabase && p_app_ids.length > 0) {
+        // @ts-expect-error No generated types yet
         const { error } = await supabase.rpc("upsert_steam_games_meta", {
           p_app_ids,
           p_names,
