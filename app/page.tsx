@@ -772,6 +772,7 @@ export default function Home() {
   >({});
   const [guideChecking, setGuideChecking] = useState(false);
   const [guidePending, setGuidePending] = useState(false);
+  const [isReindexingAll, setIsReindexingAll] = useState(false);
   const [guideIndexState, setGuideIndexState] = useState<
     Record<string, "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending">
   >({});
@@ -1551,6 +1552,23 @@ export default function Home() {
       };
     });
   }, []);
+
+  const reindexAllPending = useCallback(async () => {
+    if (isReindexingAll) return;
+    setIsReindexingAll(true);
+    try {
+      const pendingUrls = preferredUrls.filter(url => {
+        const state = guideIndexState[url];
+        return !state || state === "pending" || state === "failed" || state === "unknown";
+      });
+      for (const url of pendingUrls) {
+        await retryBundleIngest(url);
+      }
+    } finally {
+      setIsReindexingAll(false);
+    }
+  }, [preferredUrls, guideIndexState, retryBundleIngest, isReindexingAll]);
+
 
   const handleUnskipBundlePage = useCallback((url: string, slug: string) => {
     const prefs = unskipBundlePage(url, slug);
@@ -3808,6 +3826,18 @@ export default function Home() {
                       <span className="icon-inline" style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "nowrap", overflow: "hidden", width: "100%" }}>
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{row.label}</span>
                         {row.state && row.state !== "unknown" && <span style={{ flexShrink: 0 }}>{renderStatusChip(row.state)}</span>}
+                        {(!row.state || row.state === "pending" || row.state === "failed" || row.state === "unknown") && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); void retryBundleIngest(url); }}
+                            disabled={retryingBundleUrl === url || isReindexingAll}
+                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", display: "flex", padding: "2px", flexShrink: 0, opacity: (retryingBundleUrl === url || isReindexingAll) ? 0.5 : 1 }}
+                            title="Reindex this guide"
+                            aria-label="Reindex this guide"
+                          >
+                            <IconRefresh size={14} className={retryingBundleUrl === url ? "spin" : ""} />
+                          </button>
+                        )}
                         {row.isBlocked && (
                           <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)", flexShrink: 0 }}>
                             <IconAlert size={12} /> Blocked
@@ -3827,6 +3857,18 @@ export default function Home() {
                     <span className="icon-inline" style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "nowrap", overflow: "hidden", width: "100%" }}>
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{row.label}</span>
                       {row.state && row.state !== "unknown" && <span style={{ flexShrink: 0 }}>{renderStatusChip(row.state)}</span>}
+                      {(!row.state || row.state === "pending" || row.state === "failed" || row.state === "unknown") && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); void retryBundleIngest(url); }}
+                          disabled={retryingBundleUrl === url || isReindexingAll}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", display: "flex", padding: "2px", flexShrink: 0, opacity: (retryingBundleUrl === url || isReindexingAll) ? 0.5 : 1 }}
+                          title="Reindex this guide"
+                          aria-label="Reindex this guide"
+                        >
+                          <IconRefresh size={14} className={retryingBundleUrl === url ? "spin" : ""} />
+                        </button>
+                      )}
                       {row.isBlocked && (
                         <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)", flexShrink: 0 }}>
                           <IconAlert size={12} /> Blocked
@@ -3888,6 +3930,21 @@ export default function Home() {
                 >
                   <summary style={{ display: isCollapsible ? "flex" : "none", alignItems: "center", gap: "8px", fontWeight: 600 }}>
                     <span style={{ flex: 1 }}>Guides ({preferredUrls.length})</span>
+                    {preferredUrls.some((url) => {
+                      const st = guideIndexState[url];
+                      return !st || st === "pending" || st === "failed" || st === "unknown";
+                    }) && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); void reindexAllPending(); }}
+                        disabled={isReindexingAll}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", display: "flex", padding: "4px", flexShrink: 0, opacity: isReindexingAll ? 0.5 : 1 }}
+                        title="Reindex all pending guides"
+                        aria-label="Reindex all pending guides"
+                      >
+                        <IconRefresh size={14} className={isReindexingAll ? "spin" : ""} />
+                      </button>
+                    )}
                     {hasBlocked && (
                       <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}>
                         <IconAlert size={12} /> Blocked
