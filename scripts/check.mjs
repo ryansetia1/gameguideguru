@@ -105,6 +105,10 @@ import {
   userTurnCount,
   variantRowsFromPersistedAssistant,
 } from "../lib/chat-thread.js";
+import {
+  selectMessagesForServerMerge,
+  tailTurnIndexFromMessages,
+} from "../lib/chat-thread-persist.js";
 import { compareThreadSources } from "../lib/chat-thread-audit.js";
 import { pipelineSourceLabel, sourceHostname } from "../lib/chat-message-ui.js";
 import {
@@ -1269,6 +1273,51 @@ assert.equal(
   false,
 );
 assert.equal(threadReadyForAssistantMerge([]), false);
+
+const legacyPendingUser = [{ role: "user", content: "jsonb-only turn" }];
+assert.deepEqual(selectMessagesForServerMerge([], legacyPendingUser), legacyPendingUser);
+assert.deepEqual(selectMessagesForServerMerge(null, legacyPendingUser), legacyPendingUser);
+
+const twentyTurnMessages = [];
+for (let i = 0; i < 20; i++) {
+  twentyTurnMessages.push({ role: "user", content: `q${i}` });
+  twentyTurnMessages.push({ role: "assistant", content: `a${i}`, sources: [] });
+}
+twentyTurnMessages.push({ role: "user", content: "new question" });
+assert.equal(tailTurnIndexFromMessages(twentyTurnMessages), 20);
+
+const regenOptimistic = [
+  { role: "user", content: "q" },
+  { role: "assistant", content: WRITING_ANSWER_PLACEHOLDER, variants: [{ content: "old" }] },
+];
+const serverRecovered = [
+  { role: "user", content: "q" },
+  { role: "assistant", content: "new answer", sources: [] },
+];
+assert.equal(pollRecoveredMessages(regenOptimistic, serverRecovered), true);
+assert.equal(shouldApplySyncedMessages(regenOptimistic, serverRecovered), false);
+
+const serverAheadVariants = [
+  { role: "user", content: "q" },
+  {
+    role: "assistant",
+    content: "new",
+    variants: [{ content: "old" }, { content: "new" }],
+    activeVariantIndex: 1,
+  },
+];
+const localIncompleteVariants = [
+  { role: "user", content: "q" },
+  { role: "assistant", content: "new", variants: [{ content: "old" }] },
+];
+assert.equal(shouldApplySyncedMessages(localIncompleteVariants, serverAheadVariants), true);
+
+assert.equal(serverOwnsAssistantPersist({
+  hasUser: true,
+  isTemporary: false,
+  hasChatId: true,
+  hasAuthToken: true,
+}), true);
 
 const paired = pairMessagesIntoTurns([
   { role: "user", content: "one" },

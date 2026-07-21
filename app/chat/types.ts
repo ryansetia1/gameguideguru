@@ -6,6 +6,17 @@ export type Source = {
   url: string;
 };
 
+/** Client retry payload cached from a dropped solve stream. */
+export type RetryContext = {
+  searchTopic?: string;
+  sources?: Source[];
+  pipelineType?: string;
+  guideHint?: string;
+} | null;
+
+/** Normalized thread sync scope. */
+export type ThreadSyncMode = "tail" | "full";
+
 export type Message = {
   role: "user" | "assistant";
   content: string;

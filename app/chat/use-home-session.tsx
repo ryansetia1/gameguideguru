@@ -93,7 +93,7 @@ export function useHomeSession({
     const { data } = await supabase.auth.refreshSession();
     if (data.session?.user) setUser(data.session.user);
     if (linkPayload.steamId) setSteamId(linkPayload.steamId);
-    setToast("Steam connected ✓");
+    setToast("Steam connected");
     return "ok";
   }, [user, setError, setToast]);
 

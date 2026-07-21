@@ -1,6 +1,6 @@
 # Chat persistence cutover fixes
 
-**Status:** Phases 1–4 shipped (2026-07-22)  
+**Status:** Phases 1–7 shipped (2026-07-22)  
 **Audience:** Future agents and maintainers  
 **Last updated:** 2026-07-22  
 **Depends on:** [chat-persistence-refactor.md](./chat-persistence-refactor.md) Phase 2–3 (shipped)  
@@ -344,6 +344,9 @@ improvements.
 - [x] Client sync failures are logged; sync completes before solve on happy path.
 - [x] Error revert does not clobber a server-completed answer.
 - [x] `npm run check` and `npm run build` pass.
+- [x] `use-chat-turn.tsx` under 400 lines (~213); turn loop in `execute-chat-turn.ts`.
+- [x] Tail sync (`syncTailTurnFromMessages`) for routine persist; full sync on truncate/variant nav.
+- [x] Phase 7 contract tests in `scripts/check.mjs`.
 - [x] `CLAUDE.md` and `chat-persistence-refactor.md` match shipped behaviour.
 
 ---

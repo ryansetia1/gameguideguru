@@ -782,9 +782,13 @@ large chat or persistence work:
   `trace_id` on each response). Phase 3: `scripts/backfill-chat-threads.mjs`
   backfills legacy JSONB; signed-in reads use `resolveThreadMessages` (`pickRicherThread`
   over normalized + legacy JSONB cache). Server `after()` uses `loadMessagesForServerMerge`
-  when normalized sync lags; client awaits pre-solve sync and skips error revert when the
-  server already persisted the answer.
+  when normalized sync lags; client awaits pre-solve tail sync (`syncThreadFromMessages`
+  `mode: "tail"`) and skips error revert when the server already persisted the answer.
+  Routine persist uses tail upsert; edit/retry/variant-nav use full sync.
   Apply `db/chat-threads.sql` before using in prod.
+- [`docs/plan/chat-persistence-cutover-fixes.md`](docs/plan/chat-persistence-cutover-fixes.md):
+  Phases 1–7 done (read fallback, server merge, sync reliability, hook split:
+  `turn-persist.tsx`, `execute-chat-turn.ts`, `solve-stream.ts`).
 - [`docs/plan/page-decomposition.md`](docs/plan/page-decomposition.md): Phase 4 —
   `app/chat/message-list.tsx`, `composer-shell.tsx`, `use-chat-turn.tsx`,
   `answer-body.tsx`, `types.ts`, `lib/chat-message-ui.js`, `lib/guide-card-ui.js`,

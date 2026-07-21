@@ -375,7 +375,7 @@ export async function POST(request: Request) {
                   console.warn("[chat-thread] Normalized persist failed, using legacy cache", {
                     chatId,
                     traceId,
-                    reason: persisted.reason,
+                    reason: "reason" in persisted ? persisted.reason : "unknown",
                   });
                   await supabase
                     .from("chats")
