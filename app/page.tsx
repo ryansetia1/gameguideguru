@@ -233,6 +233,7 @@ function gameCardGuideRow(
     panelLoading,
     showPanel,
     state,
+    isBlocked: meta?.isBlocked,
   };
 }
 
@@ -3647,6 +3648,11 @@ export default function Home() {
                         <span className="icon-inline" style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                           {row.label}
                           {row.state && row.state !== "unknown" && renderStatusChip(row.state)}
+                          {row.isBlocked && (
+                            <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}>
+                              <IconAlert size={12} /> Blocked
+                            </span>
+                          )}
                         </span>
                       </div>
                     ) : (
@@ -3660,6 +3666,11 @@ export default function Home() {
                       <span className="icon-inline" style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                         {row.label}
                         {row.state && row.state !== "unknown" && renderStatusChip(row.state)}
+                        {row.isBlocked && (
+                          <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}>
+                            <IconAlert size={12} /> Blocked
+                          </span>
+                        )}
                         {row.bundle && row.panelLoading ? (
                           <span
                             className="game-card-bundle-spinner loader"
@@ -4135,7 +4146,7 @@ export default function Home() {
           it returns once "+ New game" reveals the setup form. */}
       {!quickIdle && (
       <form
-        className={`composer${started ? " docked" : ""}${temporary ? " temporary" : ""}`}
+        className={`composer${started || preferredUrls.length > 0 ? " docked" : ""}${temporary ? " temporary" : ""}`}
         onSubmit={handleSubmit}
       >
         {coverEnabled && pendingImages.length > 0 && (

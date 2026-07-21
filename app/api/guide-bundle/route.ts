@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { discoverGamefaqsBundleResolved } from "@/lib/gamefaqs-discover";
 import { cleanGuideUrl } from "@/lib/guide-urls.js";
+import { runWithTrace, logTraceEvent } from "@/lib/trace";
 
 export const runtime = "nodejs";
 
@@ -32,11 +33,21 @@ export async function GET(request: Request) {
         lastRefresh.set(preferredUrl, now);
       }
     }
-    const preview = await discoverGamefaqsBundleResolved(preferredUrl, request.signal, {
-      refresh,
+    const traceId = crypto.randomUUID();
+    const preview = await runWithTrace(traceId, async () => {
+      void logTraceEvent("discovery_start", `Checking GameFAQs bundle: ${preferredUrl}`, undefined, { url: preferredUrl });
+      const result = await discoverGamefaqsBundleResolved(preferredUrl, request.signal, {
+        refresh,
+      });
+      void logTraceEvent("discovery_complete", `Finished checking bundle`);
+      return result;
     });
     return NextResponse.json(preview);
   } catch (error) {
+    const traceId = crypto.randomUUID();
+    void runWithTrace(traceId, () => {
+      void logTraceEvent("discovery_error", `Error checking bundle: ${error instanceof Error ? error.message : "Unknown error"}`);
+    });
     console.error("Guide bundle preview failed:", error);
     const timedOut =
       error instanceof Error &&

@@ -178,17 +178,23 @@ export default function AdminPage() {
     
     const solveStart = events.find(e => e.event_type === "solve_start");
     const uploadStart = events.find(e => e.event_type === "upload_start");
+    const discoveryStart = events.find(e => e.event_type === "discovery_start");
     
     const game = solveStart?.metadata?.game || uploadStart?.metadata?.game;
-    const question = solveStart?.metadata?.question || (uploadStart?.metadata?.filename ? `Uploading: ${uploadStart.metadata.filename}` : undefined);
-    const category = uploadStart ? "Upload" : "Chat";
+    const question = solveStart?.metadata?.question 
+      || (uploadStart?.metadata?.filename ? `Uploading: ${uploadStart.metadata.filename}` : undefined)
+      || (discoveryStart?.metadata?.url ? `Checking: ${discoveryStart.metadata.url}` : undefined);
+    
+    const category = uploadStart ? "Upload" : discoveryStart ? "Checking" : "Chat";
     
     const isFinished = events.some(e => 
       e.event_type === "generation_complete" || 
       e.event_type === "upload_complete" ||
       e.event_type === "error" || 
       e.event_type === "solve_error" ||
-      e.event_type === "upload_error"
+      e.event_type === "upload_error" ||
+      e.event_type === "discovery_complete" ||
+      e.event_type === "discovery_error"
     );
     const isNew = !isFinished && events.length <= 3;
     const status = isFinished ? "Finished" : isNew ? "New" : "Processing";
@@ -351,20 +357,26 @@ export default function AdminPage() {
                           textTransform: 'uppercase',
                           backgroundColor: `${trace.statusColor}20` /* 12% opacity roughly */
                         }}>{trace.status}</span>
-                        <span style={{
-                          fontSize: '0.65rem',
-                          padding: '2px 6px',
-                          border: `1px solid ${trace.category === 'Upload' ? 'var(--signal)' : 'var(--muted)'}`,
-                          color: trace.category === 'Upload' ? 'var(--signal)' : 'var(--muted)',
-                          fontWeight: 'bold',
-                          textTransform: 'uppercase',
-                          backgroundColor: trace.category === 'Upload' ? 'color-mix(in srgb, var(--signal) 20%, transparent)' : 'transparent'
-                        }}>{trace.category}</span>
+                        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", margin: "4px 0" }}>
+                          <span style={{ 
+                            fontSize: "0.7rem", 
+                            fontWeight: 700, 
+                            textTransform: "uppercase", 
+                            padding: "2px 6px", 
+                            borderRadius: "4px", 
+                            background: trace.category === "Chat" ? "var(--paper-strong)" : trace.category === "Checking" ? "var(--action)" : "var(--signal-dark)",
+                            color: trace.category === "Chat" ? "var(--muted)" : trace.category === "Checking" ? "#fff" : "var(--signal)",
+                            border: trace.category === "Chat" ? "1px solid var(--line)" : "none"
+                          }}>
+                            {trace.category}
+                          </span>
+                        </div>
                       </div>
                       
-                      {trace.game && trace.question && (
+                      {(trace.game || trace.question) && (
                         <div style={{ fontSize: '0.85rem', color: 'var(--ink)', margin: '4px 0', fontWeight: 500 }}>
-                          <span style={{ color: 'var(--action)', fontWeight: 600 }}>{trace.game}</span>: {trace.question}
+                          {trace.game && <><span style={{ color: 'var(--action)', fontWeight: 600 }}>{trace.game}</span>: </>}
+                          {trace.question}
                         </div>
                       )}
                       

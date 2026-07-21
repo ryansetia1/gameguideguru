@@ -28,6 +28,7 @@ export type GuideBundleMeta = {
   missingPages?: { slug: string; title: string; url: string }[];
   selectedSlugs?: string[];
   skippedSlugs?: string[];
+  isBlocked?: boolean;
 };
 
 type BundlePreview = {
@@ -123,6 +124,7 @@ export function GuideLinkField({
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [searchAvailable, setSearchAvailable] = useState(true);
+  const [hideSearchResults, setHideSearchResults] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -170,6 +172,7 @@ export function GuideLinkField({
       setDraftUrl("");
       setAddError("");
       setBundlePreview(null);
+      setHideSearchResults(true);
       return true;
     },
     [bundleMeta, onBundleMetaChange, onChange, value],
@@ -217,6 +220,7 @@ export function GuideLinkField({
         pageCount?: number;
         pages?: { slug?: string; title: string; url: string }[];
         error?: string;
+        isBlocked?: boolean;
       } = await response.json();
 
       if (!response.ok) {
@@ -256,7 +260,12 @@ export function GuideLinkField({
         return;
       }
 
-      commitAddUrl(bundleUrl);
+      commitAddUrl(
+        bundleUrl,
+        payload.isBlocked
+          ? { title: "Blocked GameFAQs guide", pageCount: 1, isBlocked: true }
+          : undefined,
+      );
     } catch (error) {
       const timedOut = error instanceof Error && error.name === "AbortError";
       setAddError(
@@ -301,6 +310,7 @@ export function GuideLinkField({
 
     setSearching(true);
     setSearchError("");
+    setHideSearchResults(false);
     try {
       const params = new URLSearchParams({ game: trimmedGame });
       if (platform.trim()) params.set("platform", platform.trim());
@@ -505,6 +515,11 @@ export function GuideLinkField({
                       </a>
                     )}
                     {guideIndexState[url] && guideIndexState[url] !== "unknown" && renderStatusChip(guideIndexState[url])}
+                    {meta?.isBlocked && (
+                      <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)" }}>
+                        <IconAlert size={12} /> Blocked
+                      </span>
+                    )}
                   </div>
                   <span className="guide-url-path">
                     {uploaded
@@ -646,74 +661,84 @@ export function GuideLinkField({
           aria-label="Search web for a guide"
           aria-disabled={!canSearch || undefined}
         >
-          <form className="guide-search-form" onSubmit={onSearchSubmit}>
-            <input
-              id={searchInputId}
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={
-                canSearch
-                  ? `Refine search for ${trimmedGame} (optional)`
-                  : "Enter a game name above to search the web"
-              }
-              maxLength={120}
-              autoComplete="off"
-              readOnly={!canSearch}
-              disabled={disabled || searching || previewLoading || Boolean(bundlePreview)}
-              tabIndex={canSearch ? undefined : -1}
-            />
-            {canSearch && (
-              <button type="submit" className="nav-button" disabled={disabled || searching}>
-                {searching ? (
-                  <span className="guide-search-busy">
-                    <span className="guide-search-spinner loader" aria-hidden="true" />
-                    Searching…
-                  </span>
-                ) : (
-                  "Search"
+          {hideSearchResults && results.length > 0 ? (
+            <button
+              type="button"
+              className="nav-button"
+              onClick={() => setHideSearchResults(false)}
+              style={{ width: "100%", marginTop: "8px" }}
+            >
+              Add more guides from search
+            </button>
+          ) : (
+            <>
+              <form className="guide-search-form" onSubmit={onSearchSubmit}>
+                <input
+                  id={searchInputId}
+                  type="search"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={
+                    canSearch
+                      ? `Refine search for ${trimmedGame} (optional)`
+                      : "Enter a game name above to search the web"
+                  }
+                  maxLength={120}
+                  autoComplete="off"
+                  readOnly={!canSearch}
+                  disabled={disabled || searching || previewLoading || Boolean(bundlePreview)}
+                  tabIndex={canSearch ? undefined : -1}
+                />
+                {canSearch && (
+                  <button type="submit" className="nav-button" disabled={disabled || searching}>
+                    {searching ? (
+                      <span className="guide-search-busy">
+                        <span className="guide-search-spinner loader" aria-hidden="true" />
+                        Searching…
+                      </span>
+                    ) : (
+                      "Search"
+                    )}
+                  </button>
                 )}
-              </button>
-            )}
-          </form>
-          {canSearch && (
-            <p className="field-hint guide-search-status" aria-live="polite">
-              {searching && (
-                <span className="guide-search-spinner loader" aria-hidden="true" />
+              </form>
+              {canSearch && searching && (
+                <p className="field-hint guide-search-status" aria-live="polite">
+                  <span className="guide-search-spinner loader" aria-hidden="true" />
+                  <span>
+                    Searching walkthrough sites for “{trimmedGame}”
+                    {platform ? ` on ${platform}` : ""}…
+                  </span>
+                </p>
               )}
-              <span>
-                Searching walkthrough sites for “{trimmedGame}”
-                {platform ? ` on ${platform}` : ""}
-                {searching ? "…" : "."}
-              </span>
-            </p>
-          )}
-          {searchError && canSearch && <p className="guide-search-error">{searchError}</p>}
-          {results.length > 0 && searchAvailable && (
-            <ul className="guide-search-results" aria-label="Guide search results">
-              {results.map((hit) => {
-                const added = urlInList(hit.url);
-                return (
-                  <li key={hit.url} className="guide-search-hit">
-                    <div className="guide-search-hit-body">
-                      <a href={hit.url} target="_blank" rel="noreferrer" className="guide-search-title">
-                        {hit.title}
-                      </a>
-                      <span className="guide-search-host">{hostLabel(hit.url)}</span>
-                      {hit.snippet && <p className="guide-search-snippet">{hit.snippet}</p>}
-                    </div>
-                    <button
-                      type="button"
-                      className="guide-search-use"
-                      disabled={disabled || added || atMax || previewLoading}
-                      onClick={() => pickGuide(hit.url)}
-                    >
-                      {added ? "Added" : previewLoading ? "Checking…" : "Add"}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+              {searchError && canSearch && <p className="guide-search-error">{searchError}</p>}
+              {results.length > 0 && searchAvailable && (
+                <ul className="guide-search-results" aria-label="Guide search results">
+                  {results.map((hit) => {
+                    const added = urlInList(hit.url);
+                    return (
+                      <li key={hit.url} className="guide-search-hit">
+                        <div className="guide-search-hit-body">
+                          <a href={hit.url} target="_blank" rel="noreferrer" className="guide-search-title">
+                            {hit.title}
+                          </a>
+                          <span className="guide-search-host">{hostLabel(hit.url)}</span>
+                          {hit.snippet && <p className="guide-search-snippet">{hit.snippet}</p>}
+                        </div>
+                        <button
+                          type="button"
+                          className="guide-search-use"
+                          disabled={disabled || added || atMax || previewLoading}
+                          onClick={() => pickGuide(hit.url)}
+                        >
+                          {added ? "Added" : previewLoading ? "Checking…" : "Add"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </>
           )}
         </div>
       )}
@@ -767,7 +792,7 @@ export function GuideLinkField({
       <p className="field-hint">
         {atMax
           ? `${MAX_GUIDE_URLS} guides max. Remove one to add another.`
-          : `Add up to ${MAX_GUIDE_URLS} trusted guides. Non-GameFAQs links add directly; GameFAQs chapter links open the page picker when we have a cached bundle.`}
+          : `Add up to ${MAX_GUIDE_URLS} guides.`}
       </p>
       {addError && <p className="guide-search-error">{addError}</p>}
 

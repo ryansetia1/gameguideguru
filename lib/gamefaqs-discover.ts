@@ -116,6 +116,7 @@ async function runDiscoveryQueries(
   for (const query of queries) {
     let hits = [];
     try {
+      void logTraceEvent("discovery_search_query", `Running Tavily search query: ${query}`);
       hits = await searchDiscoveryUrls(query, signal, {
         domains: ["gamefaqs.gamespot.com"],
         maxResults: 30,
@@ -213,9 +214,14 @@ async function discoverGamefaqsBundleViaExtract(
   let isBlocked = false;
 
   for (const url of buildExtractCandidates(parsed, rawUrl)) {
+    void logTraceEvent("discovery_extract_start", `Attempting Tavily extract on ${url}`);
     const extracted = await extractGuidePage(url, signal, true);
-    if (!extracted?.content) continue;
+    if (!extracted?.content) {
+      void logTraceEvent("discovery_extract_empty", `Tavily extract returned no content for ${url}`);
+      continue;
+    }
     if (isBlockedGuideContent(extracted.content)) {
+      void logTraceEvent("discovery_extract_blocked", `GameFAQs Cloudflare block detected on ${url}`);
       isBlocked = true;
       break;
     }
@@ -230,9 +236,11 @@ async function discoverGamefaqsBundleViaExtract(
       if (url === parsed.canonicalUrl || url === rawUrl) {
         definiteSinglePage = true;
       }
+      void logTraceEvent("discovery_extract_single", `Extracted ${url} but found no multi-page TOC`);
       continue;
     }
 
+    void logTraceEvent("discovery_extract_success", `Found ${merged.length} pages via TOC on ${url}`);
     return {
       pages: merged,
       title: bestTitle,
