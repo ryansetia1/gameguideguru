@@ -79,6 +79,14 @@ import {
 import { signSteamSession, verifySteamSession } from "../lib/steam-session.js";
 import { syntheticEmail, steamIdFromSyntheticEmail } from "../lib/steam-account.js";
 import {
+  coerceMessages,
+  coerceMessageVariant,
+  messageShowsVariantNav,
+  pollRecoveredMessages,
+  snapshotAssistantVariants,
+  WRITING_ANSWER_PLACEHOLDER,
+} from "../lib/chat-messages.js";
+import {
   CHAT_QUERY_PARAM,
   coerceSessionDraft,
   getChatIdFromUrl,
@@ -978,5 +986,52 @@ assert.deepEqual(mouseToTilt(500, 400, 1000, 800), { x: 0, y: 0 });
 assert.deepEqual(orientationToTilt(45, 0), { x: 0, y: 0 });
 assert.deepEqual(orientationToTilt(45, 36), { x: 6, y: 0 });
 assert.deepEqual(lerpTilt({ x: 0, y: 0 }, { x: 10, y: 8 }, 0.5), { x: 5, y: 4 });
+
+const ff8VariantFixture = [
+  { role: "user", content: "nah rekomendasimu kombinasi karakter siapa?" },
+  {
+    role: "assistant",
+    content: "Answer B",
+    variants: [
+      { content: "Answer A", pipelineType: "rag" },
+      { content: "Answer B", pipelineType: "rag", highlights: [{ kind: "tip", title: "Tip", detail: "x" }] },
+    ],
+    activeVariantIndex: 1,
+    pipelineType: "rag",
+  },
+];
+const coercedFf8 = coerceMessages(ff8VariantFixture);
+const coercedAssistant = /** @type {any} */ (coercedFf8[1]);
+assert.equal(coercedFf8.length, 2);
+assert.equal(coercedAssistant.variants?.length, 2);
+assert.equal(coercedAssistant.activeVariantIndex, 1);
+assert.equal(coercedAssistant.variants?.[1].highlights?.length, 1);
+assert.ok(messageShowsVariantNav(coercedAssistant));
+assert.equal(coerceMessages([{ role: "assistant", content: "solo" }])[0].variants, undefined);
+
+const snapshotFromEmptyVariants = snapshotAssistantVariants({
+  content: "keep me",
+  sources: [{ title: "t", url: "https://x" }],
+  variants: [],
+});
+assert.equal(snapshotFromEmptyVariants.length, 1);
+assert.equal(snapshotFromEmptyVariants[0].content, "keep me");
+
+const optimisticRegen = [
+  { role: "user", content: "q" },
+  { role: "assistant", content: WRITING_ANSWER_PLACEHOLDER, variants: [{ content: "old" }] },
+];
+const loadedRegen = [
+  { role: "user", content: "q" },
+  { role: "assistant", content: "new", variants: [{ content: "old" }, { content: "new" }], activeVariantIndex: 1 },
+];
+assert.ok(pollRecoveredMessages(optimisticRegen, loadedRegen));
+assert.ok(!pollRecoveredMessages(optimisticRegen, optimisticRegen));
+
+assert.equal(
+  coerceMessageVariant({ role: "assistant", content: "x", pipelineType: "rag" })?.content,
+  "x",
+);
+assert.equal(coerceMessageVariant({ content: 42 }), null);
 
 console.log("Self-check passed.");

@@ -24,8 +24,8 @@ UI shells follow.
 
 | Module | Responsibility |
 |--------|----------------|
-| `lib/chat-messages.ts` | `Message` type, `coerceMessages`, `coerceMessageVariant`, snapshot helpers |
-| `lib/chat-thread.ts` | Supabase load/save (Phase 2 normalized + legacy JSONB bridge) |
+| `lib/chat-messages.js` | Done | `coerceMessages`, `snapshotAssistantVariants`, `pollRecoveredMessages` |
+| `lib/chat-thread.ts` | After Phase 1 single-writer decision | Supabase load/save |
 | `lib/chat-session.ts` | Already exists: draft/sessionStorage sync |
 | `app/chat/use-chat-turn.ts` | `runTurn`, abort, background poll, regen |
 | `app/chat/message-list.tsx` | Render user/assistant bubbles, variant nav |
@@ -41,7 +41,7 @@ UI shells follow.
 
 ## Order
 
-1. `lib/chat-messages.ts` — zero React deps, add check.mjs coverage
+1. `lib/chat-messages.js` — done (Phase 0); `check.mjs` coverage
 2. `lib/chat-thread.ts` — after Phase 1 single-writer decision
 3. `use-chat-turn.ts` — largest risk; do last before UI splits
 

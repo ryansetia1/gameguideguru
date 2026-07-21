@@ -26,6 +26,13 @@ import {
   IconClock,
   IconAlert,
 } from "./icons";
+import {
+  WRITING_ANSWER_PLACEHOLDER,
+  coerceMessages,
+  messageShowsVariantNav,
+  pollRecoveredMessages,
+  snapshotAssistantVariants,
+} from "@/lib/chat-messages.js";
 import { FUN_ROLES, HERO_LINES } from "@/lib/hero-copy.js";
 import { lerpTilt, mouseToTilt, orientationToTilt, tiltTransform } from "@/lib/hero-tilt.js";
 import { guideIngestHint, guideIngestHintFromResponse } from "@/lib/guide-hints.js";
@@ -324,6 +331,16 @@ type Message = {
   activeVariantIndex?: number;
 };
 
+function parseStoredMessages(raw: unknown): Message[] {
+  return coerceMessages(raw) as Message[];
+}
+
+function assistantHasVariantNav(
+  message: Message,
+): message is Message & { variants: NonNullable<Message["variants"]> } {
+  return messageShowsVariantNav(message);
+}
+
 const EXAMPLES_DISMISSED_KEY = "gg:examples-dismissed";
 const MAX_MESSAGE_IMAGES = 10;
 
@@ -411,77 +428,6 @@ async function deleteMessageImages(messages: Message[]) {
   } catch (caught) {
     console.error("Message image cleanup failed:", caught);
   }
-}
-
-type MessageVariant = Omit<Message, "role" | "variants" | "activeVariantIndex">;
-
-function coerceMessageVariant(item: unknown): MessageVariant | null {
-  if (!item || typeof item !== "object") return null;
-  const content = (item as { content?: unknown }).content;
-  if (typeof content !== "string") return null;
-  const rawSources = (item as { sources?: unknown }).sources;
-  const sources = Array.isArray(rawSources) ? (rawSources as Source[]) : undefined;
-  const highlights = coerceHighlights((item as { highlights?: unknown }).highlights);
-  const spoilers = coerceSpoilers((item as { spoilers?: unknown }).spoilers);
-  const rawPipeline = (item as { pipelineType?: unknown }).pipelineType;
-  const pipelineType = typeof rawPipeline === "string" ? rawPipeline : undefined;
-  return {
-    content,
-    sources,
-    ...(highlights.length ? { highlights } : {}),
-    ...(spoilers.length ? { spoilers } : {}),
-    ...(pipelineType ? { pipelineType } : {}),
-  };
-}
-
-function coerceMessages(value: unknown): Message[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item): Message[] => {
-    if (!item || typeof item !== "object") return [];
-    const role = (item as { role?: unknown }).role;
-    const content = (item as { content?: unknown }).content;
-    if ((role !== "user" && role !== "assistant") || typeof content !== "string") {
-      return [];
-    }
-    const rawSources = (item as { sources?: unknown }).sources;
-    const sources = Array.isArray(rawSources) ? (rawSources as Source[]) : undefined;
-    const highlights = coerceHighlights((item as { highlights?: unknown }).highlights);
-    const spoilers = coerceSpoilers((item as { spoilers?: unknown }).spoilers);
-    const rawImages = (item as { images?: unknown }).images;
-    const images = Array.isArray(rawImages)
-      ? rawImages.filter((url): url is string => typeof url === "string")
-      : [];
-    const rawPipeline = (item as { pipelineType?: unknown }).pipelineType;
-    const pipelineType = typeof rawPipeline === "string" ? rawPipeline : undefined;
-    const rawVariants = (item as { variants?: unknown }).variants;
-    const variants = Array.isArray(rawVariants)
-      ? rawVariants
-          .map(coerceMessageVariant)
-          .filter((variant): variant is MessageVariant => variant !== null)
-      : [];
-    const rawActiveIdx = (item as { activeVariantIndex?: unknown }).activeVariantIndex;
-    const activeVariantIndex =
-      typeof rawActiveIdx === "number" &&
-      Number.isInteger(rawActiveIdx) &&
-      rawActiveIdx >= 0 &&
-      rawActiveIdx < variants.length
-        ? rawActiveIdx
-        : variants.length > 0
-          ? variants.length - 1
-          : undefined;
-    return [
-      {
-        role,
-        content,
-        sources,
-        ...(highlights.length ? { highlights } : {}),
-        ...(spoilers.length ? { spoilers } : {}),
-        ...(images.length ? { images } : {}),
-        ...(pipelineType ? { pipelineType } : {}),
-        ...(variants.length > 0 ? { variants, activeVariantIndex } : {}),
-      },
-    ];
-  });
 }
 
 function renderInline(segments: { text: string; bold: boolean; italic: boolean }[]) {
@@ -1249,7 +1195,7 @@ export default function Home() {
       clearPendingImages();
       setReleaseYear(draft.releaseYear);
       setEditingGame(false);
-      setMessages(coerceMessages(draft.messages));
+      setMessages(parseStoredMessages(draft.messages));
       conversationGame.current = draft.game;
       setInput("");
       setError("");
@@ -2133,7 +2079,7 @@ export default function Home() {
     setReleaseYear(chat.release_year ?? "");
     setEditingGame(false);
     const isBgLoading = backgroundLoadingRef.current[chat.id];
-    setMessages(backgroundMessagesRef.current[chat.id] || coerceMessages(chat.messages));
+    setMessages(backgroundMessagesRef.current[chat.id] || parseStoredMessages(chat.messages));
     setLoading(isBgLoading || false);
     setGenerationStatus(backgroundStatusRef.current[chat.id] || null);
     conversationGame.current = chat.game;
@@ -2547,7 +2493,7 @@ export default function Home() {
     // the chat doesn't orphan them in the bucket.
     const urls = [
       chat.cover_url ?? "",
-      ...coerceMessages(chat.messages).flatMap((message) => message.images ?? []),
+      ...parseStoredMessages(chat.messages).flatMap((message) => message.images ?? []),
     ];
     const paths = urls
       .map(coverStoragePath)
@@ -2666,18 +2612,8 @@ export default function Home() {
           userMessage,
           {
             ...oldAssistantMessage,
-            content: "Writing answer...",
-            variants:
-              oldAssistantMessage.variants ??
-              [
-                {
-                  content: oldAssistantMessage.content,
-                  sources: oldAssistantMessage.sources,
-                  highlights: oldAssistantMessage.highlights,
-                  spoilers: oldAssistantMessage.spoilers,
-                  pipelineType: oldAssistantMessage.pipelineType,
-                },
-              ],
+            content: WRITING_ANSWER_PLACEHOLDER,
+            variants: snapshotAssistantVariants(oldAssistantMessage) as NonNullable<Message["variants"]>,
           },
         ]
       : [...priorMessages, userMessage];
@@ -3040,13 +2976,7 @@ export default function Home() {
 
       let finalAssistantMessage: Message;
       if (oldAssistantMessage) {
-        const pastVariants = oldAssistantMessage.variants || [{
-          content: oldAssistantMessage.content,
-          sources: oldAssistantMessage.sources,
-          highlights: oldAssistantMessage.highlights,
-          spoilers: oldAssistantMessage.spoilers,
-          pipelineType: oldAssistantMessage.pipelineType,
-        }];
+        const pastVariants = snapshotAssistantVariants(oldAssistantMessage) as NonNullable<Message["variants"]>;
         
         finalAssistantMessage = {
           role: "assistant",
@@ -3110,8 +3040,8 @@ export default function Home() {
              }
              const { data } = await supabase.from("chats").select("messages").eq("id", activeId).single();
              if (data?.messages) {
-               const msgs = coerceMessages(data.messages);
-               if (msgs.length > optimistic.length) {
+               const msgs = parseStoredMessages(data.messages);
+               if (pollRecoveredMessages(optimistic, msgs)) {
                  backgroundMessagesRef.current[activeId] = msgs;
                  backgroundLoadingRef.current[activeId] = false;
                  backgroundStatusRef.current[activeId] = null;
@@ -4316,7 +4246,7 @@ export default function Home() {
                   <div className="guide-tag icon-inline">
                     <IconDiamond /> ANSWER
                     
-                    {message.variants && message.variants.length > 1 && (
+                    {assistantHasVariantNav(message) && (
                       <div className="variant-nav" style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", marginLeft: "1rem", color: "var(--text-muted)", fontSize: "0.85em" }}>
                         <button
                           type="button"
@@ -4457,7 +4387,7 @@ export default function Home() {
                       : "Memorizing your guide for the first time..."
                   : generationStatus ||
                     (preferredUrls.length
-                      ? "Writing answer..."
+                      ? WRITING_ANSWER_PLACEHOLDER
                       : "Looking for answers online...")}
               </p>
             </div>

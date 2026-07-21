@@ -361,7 +361,7 @@ do not sync to the cloud or use Storage uploads.
 - `lib/highlights.js`: `KINDS`/`KIND_LABELS`, `coerceHighlights(value)`, and
   `parseSummary(text)` — tolerant JSON parse (escapes RAW newlines/tabs the model
   leaves inside string values, strips fences) with prose fallback. Shared by the
-  server (`summarize`), client (`coerceMessages`/render), and `npm run check`.
+  server (`summarize`), client (`lib/chat-messages.js#coerceMessages`/render), and `npm run check`.
 - `lib/llm-log.ts` + `lib/llm-db-log.ts`: best-effort log of each model call's system
   instruction, prompt, raw response, `duration_ms`, Replicate `predict_time_ms`, and
   input/output token counts (parsed from the Gemini prediction `logs` text in
@@ -764,8 +764,8 @@ Long-horizon refactors live in [`docs/plan/`](docs/plan/README.md). Read before
 large chat or persistence work:
 
 - [`docs/plan/chat-persistence-refactor.md`](docs/plan/chat-persistence-refactor.md):
-  stabilize JSONB `chats.messages` (single writer, variant coercion), then hybrid
-  `chat_turns` + `chat_responses` tables; variant history canonical in DB.
+  stabilize JSONB `chats.messages` (Phase 0: `lib/chat-messages.js`, variant coercion,
+  regen poll); then hybrid `chat_turns` + `chat_responses` tables.
 - [`docs/plan/page-decomposition.md`](docs/plan/page-decomposition.md): split
   `app/page.tsx` after persistence helpers move to `lib/chat-*`.
 

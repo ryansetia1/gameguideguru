@@ -92,8 +92,10 @@ or it silently disappears on load.
 
 | Item | Status | Notes |
 |------|--------|-------|
-| `coerceMessages` preserves `variants` + `activeVariantIndex` | Done | July 2026 |
-| Optimistic regen snapshots prior answer into `variants` before `"Writing answer..."` | Done | Prevents server `after()` from starting with empty history |
+| `coerceMessages` preserves `variants` + `activeVariantIndex` | Done | `lib/chat-messages.js` |
+| Optimistic regen snapshots prior answer into `variants` before placeholder | Done | `snapshotAssistantVariants()` |
+| Background poll detects regen completion | Done | `pollRecoveredMessages()` |
+| `npm run check` covers variant coercion | Done | FF8-shaped fixture in `scripts/check.mjs` |
 | Manual verify: reload FF8 chat shows `N / M` navigator | Pending | Chat id `a80bc755-7323-4486-9766-cf8ae698f0d7` |
 
 **Exit criteria:** Reload, sidebar reopen, and background poll all preserve variant
@@ -329,8 +331,11 @@ easier once `lib/chat-thread.ts` owns persistence instead of 400 lines inside
 ## Implementation order (checklist)
 
 ```
-Phase 0  [x] coerceMessages variants
+Phase 0  [x] coerceMessages variants (lib/chat-messages.js)
          [x] optimistic variant snapshot on regen
+         [x] background poll regen detection
+         [x] check.mjs message coercion tests
+         [x] server variant shape (no role in variants[])
          [ ] manual QA on FF8 chat
 
 Phase 1  [ ] single canonical writer (server after)
