@@ -758,6 +758,17 @@ accounts, saved chats, and the search cache:
   and `db/embed-cache.sql` (pgvector extension) for preferred-guide RAG. Google OAuth and email
   confirmation are configured in the Supabase dashboard.
 
+## Roadmap plans
+
+Long-horizon refactors live in [`docs/plan/`](docs/plan/README.md). Read before
+large chat or persistence work:
+
+- [`docs/plan/chat-persistence-refactor.md`](docs/plan/chat-persistence-refactor.md):
+  stabilize JSONB `chats.messages` (single writer, variant coercion), then hybrid
+  `chat_turns` + `chat_responses` tables; variant history canonical in DB.
+- [`docs/plan/page-decomposition.md`](docs/plan/page-decomposition.md): split
+  `app/page.tsx` after persistence helpers move to `lib/chat-*`.
+
 ## Working conventions
 
 - Keep model/search provider calls server-side; Supabase auth/DB reads are
