@@ -101,6 +101,7 @@ import {
   pairMessagesIntoTurns,
   pickRicherThread,
   priorMessagesForRegen,
+  threadReadyForAssistantMerge,
   userTurnCount,
   variantRowsFromPersistedAssistant,
 } from "../lib/chat-thread.js";
@@ -1244,6 +1245,30 @@ const singleTurnRich = [
   },
 ];
 assert.equal(pickRicherThread(duplicatePoor, singleTurnRich), singleTurnRich);
+
+const legacyOnlyThread = [
+  { role: "user", content: "pre-backfill question" },
+  { role: "assistant", content: "cached answer", sources: [] },
+];
+assert.deepEqual(pickRicherThread([], legacyOnlyThread), legacyOnlyThread);
+assert.deepEqual(pickRicherThread(null, legacyOnlyThread), legacyOnlyThread);
+
+assert.equal(threadReadyForAssistantMerge([{ role: "user", content: "q" }]), true);
+assert.equal(
+  threadReadyForAssistantMerge([
+    { role: "user", content: "q" },
+    { role: "assistant", content: WRITING_ANSWER_PLACEHOLDER },
+  ]),
+  true,
+);
+assert.equal(
+  threadReadyForAssistantMerge([
+    { role: "user", content: "q" },
+    { role: "assistant", content: "done" },
+  ]),
+  false,
+);
+assert.equal(threadReadyForAssistantMerge([]), false);
 
 const paired = pairMessagesIntoTurns([
   { role: "user", content: "one" },

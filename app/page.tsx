@@ -21,7 +21,7 @@ import {
   IconX,
 } from "./icons";
 import {
-  loadThreadMessages,
+  resolveThreadMessages,
 } from "@/lib/chat-thread-persist.js";
 import {
   guideUrlsFromChat,
@@ -846,7 +846,7 @@ export default function Home() {
       const supabase = getSupabase();
       const loaded: Message[] =
         supabase && user
-          ? ((await loadThreadMessages(supabase, chat.id)) as Message[])
+          ? ((await resolveThreadMessages(supabase, chat)) as Message[])
           : parseStoredMessages(chat.messages);
       setMessages(loaded);
     }
@@ -1232,7 +1232,7 @@ export default function Home() {
       setChats(loadLocalGames());
       return;
     }
-    const thread = await loadThreadMessages(supabase, chat.id);
+    const thread = await resolveThreadMessages(supabase, chat);
     const urls = [
       chat.cover_url ?? "",
       ...thread.flatMap((message) =>

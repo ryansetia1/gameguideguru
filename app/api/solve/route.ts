@@ -6,7 +6,7 @@ import {
   buildAssistantVariantBody,
   mergeAssistantIntoMessages,
 } from "@/lib/chat-persist.js";
-import { persistAssistantResponse, fetchNormalizedThread } from "@/lib/chat-thread-persist.js";
+import { persistAssistantResponse, loadMessagesForServerMerge } from "@/lib/chat-thread-persist.js";
 import { getCachedSearch, setCachedSearch } from "@/lib/search-cache";
 import { censorSpoilers, resolveQuestion, summarize, type Turn } from "@/lib/replicate";
 import { guideIngestHint } from "@/lib/guide-hints.js";
@@ -353,8 +353,7 @@ export async function POST(request: Request) {
               process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
               { global: { headers: { Authorization: authHeader } } },
             );
-            const normalized = await fetchNormalizedThread(supabase, chatId);
-            const messages = normalized ? [...normalized] : [];
+            const messages = await loadMessagesForServerMerge(supabase, chatId);
             if (messages.length) {
               const variantBody = buildAssistantVariantBody({
                 content: finalAnswer,
@@ -397,7 +396,7 @@ export async function POST(request: Request) {
                 });
               }
             } else {
-              console.warn("[chat-thread] No normalized thread for background save", {
+              console.warn("[chat-thread] No messages for background save", {
                 chatId,
                 traceId,
               });

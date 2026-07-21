@@ -780,7 +780,10 @@ large chat or persistence work:
   `chat_turn_state` keyed by `chat_id` → `chats.id`), `lib/chat-thread.js` +
   `lib/chat-thread-persist.js` (canonical rows + `chats.messages` write-only cache;
   `trace_id` on each response). Phase 3: `scripts/backfill-chat-threads.mjs`
-  backfills legacy JSONB; signed-in reads use `loadThreadMessages` (normalized only).
+  backfills legacy JSONB; signed-in reads use `resolveThreadMessages` (`pickRicherThread`
+  over normalized + legacy JSONB cache). Server `after()` uses `loadMessagesForServerMerge`
+  when normalized sync lags; client awaits pre-solve sync and skips error revert when the
+  server already persisted the answer.
   Apply `db/chat-threads.sql` before using in prod.
 - [`docs/plan/page-decomposition.md`](docs/plan/page-decomposition.md): Phase 4 —
   `app/chat/message-list.tsx`, `composer-shell.tsx`, `use-chat-turn.tsx`,

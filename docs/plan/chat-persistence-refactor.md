@@ -355,7 +355,8 @@ Phase 3  [x] backfill script (scripts/backfill-chat-threads.mjs)
          [x] dual-read validation (lib/chat-thread-audit.js, verifyChatThread)
          [x] canonical read from normalized (loadThreadMessages / resolveThreadMessages)
          [x] run backfill on all production chats (8/8, 0 mismatches)
-         [x] retire chats.messages reads (signed-in: normalized only; JSONB write-only cache; anon localStorage)
+         [x] retire chats.messages reads (signed-in: `resolveThreadMessages` + `pickRicherThread`; JSONB write-only cache; anon localStorage)
+         [x] cutover fixes Phases 1–4 (see chat-persistence-cutover-fixes.md)
 
 Phase 4  [ ] page decomposition (see sibling doc)
 ```

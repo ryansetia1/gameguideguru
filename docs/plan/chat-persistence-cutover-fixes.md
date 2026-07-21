@@ -1,6 +1,6 @@
 # Chat persistence cutover fixes
 
-**Status:** Planned  
+**Status:** Phases 1–4 shipped (2026-07-22)  
 **Audience:** Future agents and maintainers  
 **Last updated:** 2026-07-22  
 **Depends on:** [chat-persistence-refactor.md](./chat-persistence-refactor.md) Phase 2–3 (shipped)  
@@ -338,13 +338,13 @@ improvements.
 
 ## Exit criteria (plan complete)
 
-- [ ] F1–F5 resolved and verified via deploy checklist.
-- [ ] `pickRicherThread` wired; not dead code.
-- [ ] Server `after()` never silently drops an answer when JSONB has the user turn.
-- [ ] Client sync failures are logged; sync completes before solve on happy path.
-- [ ] Error revert does not clobber a server-completed answer.
-- [ ] `npm run check` and `npm run build` pass.
-- [ ] `CLAUDE.md` and `chat-persistence-refactor.md` match shipped behaviour.
+- [x] F1–F5 resolved (Phases 1–4 code shipped; deploy checklist still ops-owned).
+- [x] `pickRicherThread` wired; not dead code.
+- [x] Server `after()` never silently drops an answer when JSONB has the user turn.
+- [x] Client sync failures are logged; sync completes before solve on happy path.
+- [x] Error revert does not clobber a server-completed answer.
+- [x] `npm run check` and `npm run build` pass.
+- [x] `CLAUDE.md` and `chat-persistence-refactor.md` match shipped behaviour.
 
 ---
 

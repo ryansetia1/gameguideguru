@@ -11,7 +11,7 @@ import {
   shouldApplySyncedMessages,
 } from "@/lib/chat-persist.js";
 import {
-  loadThreadMessages,
+  resolveThreadMessages,
   syncThreadFromMessages,
 } from "@/lib/chat-thread-persist.js";
 import { priorMessagesForRegen } from "@/lib/chat-thread.js";
@@ -118,6 +118,55 @@ export function useChatTurn(deps: ChatTurnDeps) {
   const depsRef = useRef(deps);
   depsRef.current = deps;
 
+  function logThreadSyncFailure(
+    chatId: string,
+    label: string,
+    result?: { ok: boolean; reason?: string; error?: unknown },
+    err?: unknown,
+  ) {
+    if (result && !result.ok) {
+      console.warn(`[chat-thread] ${label}`, {
+        chatId,
+        reason: result.reason,
+        error: result.error,
+      });
+      return;
+    }
+    if (err) {
+      console.warn(`[chat-thread] ${label}`, { chatId, err });
+    }
+  }
+
+  function scheduleThreadSync(
+    supabase: NonNullable<ReturnType<typeof getSupabase>>,
+    chatId: string,
+    messages: Message[],
+  ) {
+    void syncThreadFromMessages(supabase, chatId, messages)
+      .then((result) => logThreadSyncFailure(chatId, "sync failed", result))
+      .catch((err) => logThreadSyncFailure(chatId, "sync failed", undefined, err));
+  }
+
+  async function awaitPreSolveThreadSync(
+    supabase: NonNullable<ReturnType<typeof getSupabase>>,
+    chatId: string,
+    messages: Message[],
+  ) {
+    try {
+      const result = await syncThreadFromMessages(supabase, chatId, messages);
+      logThreadSyncFailure(chatId, "pre-solve sync failed", result);
+    } catch (err) {
+      logThreadSyncFailure(chatId, "pre-solve sync failed", undefined, err);
+    }
+  }
+
+  async function fetchResolvedThread(
+    supabase: NonNullable<ReturnType<typeof getSupabase>>,
+    chatId: string,
+  ) {
+    return (await resolveThreadMessages(supabase, { id: chatId })) as Message[];
+  }
+
     async function persistChat(nextMessages: Message[], targetChatId: string | null) {
     const d = depsRef.current;
       if (d.temporary) return null; // d.temporary chat: nothing gets written anywhere
@@ -154,7 +203,7 @@ export function useChatTurn(deps: ChatTurnDeps) {
       try {
         if (targetChatId) {
           await supabase.from("chats").update(payload).eq("id", targetChatId);
-          void syncThreadFromMessages(supabase, targetChatId, nextMessages).catch(() => {});
+          scheduleThreadSync(supabase, targetChatId, nextMessages);
           void d.loadChats();
           return targetChatId;
         }
@@ -166,7 +215,7 @@ export function useChatTurn(deps: ChatTurnDeps) {
         const newId = data ? (data as { id: string }).id : null;
         if (newId) {
           d.setActiveChatId(newId);
-          void syncThreadFromMessages(supabase, newId, nextMessages).catch(() => {});
+          scheduleThreadSync(supabase, newId, nextMessages);
           void d.loadChats();
         }
         return newId;
@@ -459,6 +508,10 @@ export function useChatTurn(deps: ChatTurnDeps) {
           return;
         }
 
+        if (supabase && activeId && !d.temporary && d.user) {
+          await awaitPreSolveThreadSync(supabase, activeId, optimistic);
+        }
+
         const response = await fetch("/api/solve", {
           method: "POST",
           headers: { 
@@ -617,7 +670,7 @@ export function useChatTurn(deps: ChatTurnDeps) {
             void (async () => {
               const synced = await pollUntilMessagesRecovered({
                 fetchMessages: async () => {
-                  const loaded = await loadThreadMessages(supabase, syncChatId);
+                  const loaded = await fetchResolvedThread(supabase, syncChatId);
                   return loaded.length ? loaded : null;
                 },
                 optimistic,
@@ -668,9 +721,9 @@ export function useChatTurn(deps: ChatTurnDeps) {
                  d.backgroundStatusRef.current[activeId] = "Still working in background...";
                  if (d.activeChatIdRef.current === activeId) d.setGenerationStatus("Still working in background...");
                }
-               const loaded = await loadThreadMessages(supabase, activeId);
+               const loaded = await fetchResolvedThread(supabase, activeId);
                if (loaded.length && pollRecoveredMessages(optimistic, loaded)) {
-                 const msgs = loaded as Message[];
+                 const msgs = loaded;
                  d.backgroundMessagesRef.current[activeId] = msgs;
                  d.backgroundLoadingRef.current[activeId] = false;
                  d.backgroundStatusRef.current[activeId] = null;
@@ -690,6 +743,28 @@ export function useChatTurn(deps: ChatTurnDeps) {
                succeeded = true;
                return;
              }
+          }
+        }
+
+        if (!isAbort && !d.temporary && activeId && d.user) {
+          const supabase = getSupabase();
+          if (supabase) {
+            const loaded = await fetchResolvedThread(supabase, activeId);
+            if (loaded.length && pollRecoveredMessages(optimistic, loaded)) {
+              d.backgroundMessagesRef.current[activeId] = loaded;
+              d.backgroundLoadingRef.current[activeId] = false;
+              d.backgroundStatusRef.current[activeId] = null;
+              delete d.abortRefs.current[activeId];
+              if (d.activeChatIdRef.current === activeId) {
+                d.setMessages(loaded);
+                d.setLoading(false);
+                d.setGenerationStatus(null);
+                d.setError("");
+              }
+              void d.loadChats();
+              succeeded = true;
+              return;
+            }
           }
         }
 
