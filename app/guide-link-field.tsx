@@ -17,7 +17,7 @@ import {
 } from "@/lib/guide-urls.js";
 import { parseGamefaqsFaqUrl } from "@/lib/gamefaqs-bundle.js";
 import { setBundlePrefs } from "@/lib/bundle-prefs.js";
-import { IconCheck, IconClock, IconAlert, IconX } from "./icons";
+import { IconCheck, IconClock, IconAlert, IconX, IconClipboard } from "./icons";
 
 type GuideHit = { title: string; url: string; snippet: string };
 
@@ -133,6 +133,19 @@ export function GuideLinkField({
   const trimmedGame = game.trim();
   const canSearch = trimmedGame.length > 0;
   const atMax = value.length >= MAX_GUIDE_URLS;
+
+  const handlePasteClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setDraftUrl(text);
+        if (addError) setAddError("");
+        if (bundlePreview) setBundlePreview(null);
+      }
+    } catch (err) {
+      console.error("Failed to read clipboard:", err);
+    }
+  };
 
   const commitAddUrl = useCallback(
     (raw: string, meta?: GuideBundleMeta) => {
@@ -591,12 +604,21 @@ export function GuideLinkField({
               placeholder={
                 atMax
                   ? `Up to ${MAX_GUIDE_URLS} guides added`
-                  : "Paste a GameFAQs or walkthrough link"
+                  : "Paste GameFAQs or guide link..."
               }
               maxLength={300}
               autoComplete="off"
               disabled={disabled || atMax || previewLoading}
             />
+            <button
+              type="button"
+              className="guide-url-paste-btn"
+              onClick={handlePasteClipboard}
+              aria-label="Paste from clipboard"
+              title="Paste from clipboard"
+            >
+              <IconClipboard size={16} />
+            </button>
             <button
               type="button"
               className="guide-url-info-btn"

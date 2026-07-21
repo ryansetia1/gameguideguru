@@ -3305,7 +3305,10 @@ details.sources small {
 .guide-url-input-wrapper input {
   flex: 1;
   min-width: 0;
-  padding-right: 40px; /* Space for the info button */
+  padding-right: 76px; /* Space for the paste and info buttons */
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .guide-url-info-btn {
@@ -3333,6 +3336,30 @@ details.sources small {
   background: var(--bg-active);
   color: var(--text);
   border-color: var(--border-hover);
+}
+
+.guide-url-paste-btn {
+  position: absolute;
+  right: 40px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.guide-url-paste-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 .game-card-guides {
