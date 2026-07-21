@@ -23,14 +23,16 @@ import {
 import { uploadedSourceGuideLabel } from "@/lib/chat-message-ui.js";
 import { guideIngestHint, guideIngestHintFromResponse } from "@/lib/guide-hints.js";
 import {
-  bundleHasPendingPages,
-  getBundlePrefs,
+  buildBundlePrefsBody,
+  guideUrlNeedsIngest,
+  mergedBundlePrefs,
+} from "@/lib/guide-card-ui.js";
+import {
   targetBundleSlugs,
 } from "@/lib/bundle-prefs.js";
 import {
   guideUrlsPayload,
   isActiveGamefaqsBundle,
-  isGamefaqsBundleUrl,
   normalizeGuideUrlList,
 } from "@/lib/guide-urls.js";
 import { coerceHighlights, coerceSpoilers } from "@/lib/highlights.js";
@@ -40,51 +42,6 @@ import { loadLocalGames, upsertLocalGame } from "@/lib/local-games.js";
 import type { GuideBundleMeta } from "../guide-link-field";
 import type { Message, Source } from "./types";
 import type { SpoilerPrefs } from "@/lib/spoiler-prefs.js";
-
-function buildBundlePrefsBody(
-  urls: string[],
-  meta?: Record<string, GuideBundleMeta>,
-) {
-  const out: Record<string, { skipSlugs: string[]; includeSlugs?: string[] }> = {};
-  for (const url of urls) {
-    if (!isGamefaqsBundleUrl(url)) continue;
-    const prefs = mergedBundlePrefs(url, meta?.[url]);
-    out[url] = {
-      skipSlugs: prefs.skippedSlugs,
-      ...(prefs.selectedSlugs?.length ? { includeSlugs: prefs.selectedSlugs } : {}),
-    };
-  }
-  return out;
-}
-
-function mergedBundlePrefs(url: string, meta?: GuideBundleMeta) {
-  const stored = getBundlePrefs(url);
-  return {
-    skippedSlugs: meta?.skippedSlugs ?? stored.skippedSlugs ?? [],
-    selectedSlugs: meta?.selectedSlugs ?? stored.selectedSlugs,
-  };
-}
-
-function guideUrlNeedsIngest(
-  url: string,
-  meta: GuideBundleMeta | undefined,
-  indexStatus: { pages: { slug: string }[] } | undefined,
-  indexState: string | undefined,
-) {
-  if (indexState === "indexed") return false;
-  const bundlePages = meta?.pageCount && meta.pageCount > 1;
-  const discovered = meta?.pages ?? [];
-  const indexedSlugs = indexStatus?.pages?.map((page) => page.slug) ?? [];
-  const prefs = mergedBundlePrefs(url, meta);
-  if (
-    bundlePages &&
-    discovered.length &&
-    !bundleHasPendingPages(discovered, indexedSlugs, prefs)
-  ) {
-    return false;
-  }
-  return true;
-}
 
 export type ChatTurnDeps = {
   temporary: boolean;

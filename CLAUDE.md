@@ -15,9 +15,10 @@ do not sync to the cloud or use Storage uploads.
 
 ## Architecture
 
-- `app/page.tsx`: Layout orchestration (~2484 lines): auth/Steam/session, bundle
-  ingest effects, sticky header, examples strip, confirm/toast overlays. Composes
-  `app/chat/games-sidebar.tsx` (sidebar + saved/Steam library overlays),
+- `app/page.tsx`: Layout orchestration (~1788 lines): chat list/session hydration,
+  overlay history, examples strip, confirm/toast overlays. Composes
+  `app/chat/use-home-session.tsx` (auth/Steam), `app/chat/use-guide-bundle.tsx`
+  (guide ingest state/effects), `app/chat/games-sidebar.tsx`,
   `app/chat/home-setup.tsx` (hero, Jump back in carousel, setup form),
   `app/chat/active-game-card.tsx` (in-chat game card + guide stacks/bundle panels),
   `app/chat/message-list.tsx`, `app/chat/composer-shell.tsx`, and
@@ -785,8 +786,9 @@ large chat or persistence work:
   `app/chat/message-list.tsx`, `composer-shell.tsx`, `use-chat-turn.tsx`,
   `answer-body.tsx`, `types.ts`, `lib/chat-message-ui.js`, `lib/guide-card-ui.js`,
   `games-sidebar.tsx`, `active-game-card.tsx`, `home-setup.tsx`, `cover-thumb.tsx`,
-  `hero-marketing.tsx`, `guide-status-chip.tsx`, `spoiler-toggle.tsx` extracted;
-  `app/page.tsx` ~2484 lines (orchestration + auth/Steam + bundle ingest effects).
+  `hero-marketing.tsx`, `guide-status-chip.tsx`, `spoiler-toggle.tsx`,
+  `use-guide-bundle.tsx`, `use-home-session.tsx` extracted;
+  `app/page.tsx` ~1788 lines (orchestration + chat list + overlays).
 
 ## Working conventions
 

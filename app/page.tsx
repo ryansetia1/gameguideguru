@@ -11,6 +11,8 @@ import { GamesSidebar } from "./chat/games-sidebar";
 import { HomeSetup } from "./chat/home-setup";
 import { MessageList } from "./chat/message-list";
 import { useChatTurn } from "./chat/use-chat-turn";
+import { useGuideBundle } from "./chat/use-guide-bundle";
+import { useHomeSession } from "./chat/use-home-session";
 import { type Message, parseStoredMessages } from "./chat/types";
 import {
   IconArrowLeft,
@@ -21,24 +23,9 @@ import {
 import {
   loadThreadMessages,
 } from "@/lib/chat-thread-persist.js";
-import { guideIngestHint, guideIngestHintFromResponse } from "@/lib/guide-hints.js";
-import { mergedBundlePrefs } from "@/lib/guide-card-ui.js";
-import {
-  clearBundlePrefs,
-  filterBundlePanelPages,
-  getBundlePrefs,
-  hydrateBundlePrefsFromUser,
-  registerBundlePrefsSync,
-  skipAllMissingBundlePages,
-  skipBundlePage,
-  unskipBundlePage,
-} from "@/lib/bundle-prefs.js";
 import {
   guideUrlsFromChat,
   guideUrlsPayload,
-  isActiveGamefaqsBundle,
-  isGamefaqsBundleUrl,
-  isUploadedGuideUrl,
   normalizeGuideUrlList,
 } from "@/lib/guide-urls.js";
 import { compressImage } from "@/lib/image.js";
@@ -76,39 +63,6 @@ import {
   windowScrollMetrics,
 } from "@/lib/chat-scroll.js";
 
-function buildBundlePrefsBody(
-  urls: string[],
-  meta?: Record<string, GuideBundleMeta>,
-) {
-  const out: Record<string, { skipSlugs: string[]; includeSlugs?: string[] }> = {};
-  for (const url of urls) {
-    if (!isGamefaqsBundleUrl(url)) continue;
-    // T2-1: prefer UI state (meta) over localStorage so the server always gets
-    // the selection the user sees on-screen, even when localStorage writes fail
-    // (private browsing, quota).
-    const prefs = mergedBundlePrefs(url, meta?.[url]);
-    out[url] = {
-      skipSlugs: prefs.skippedSlugs,
-      ...(prefs.selectedSlugs?.length ? { includeSlugs: prefs.selectedSlugs } : {}),
-    };
-  }
-  return out;
-}
-
-async function fetchSteamStatus(token?: string) {
-  const headers: HeadersInit = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const response = await fetch("/api/steam/me", {
-    credentials: "include",
-    headers,
-  });
-  if (!response.ok) return { steamId: null as string | null, connected: false };
-  const payload: { steamId?: string | null; connected?: boolean } = await response.json();
-  return {
-    steamId: payload.steamId ?? null,
-    connected: Boolean(payload.connected),
-  };
-}
 
 const EXAMPLES_DISMISSED_KEY = "gg:examples-dismissed";
 const MAX_MESSAGE_IMAGES = 10;
@@ -179,22 +133,6 @@ export default function Home() {
   const [showScrollFab, setShowScrollFab] = useState(false);
   const [indexingGuideCount, setIndexingGuideCount] = useState(0);
   const [indexingIsBundlePages, setIndexingIsBundlePages] = useState(false);
-  const [guideBundleMeta, setGuideBundleMeta] = useState<Record<string, GuideBundleMeta>>({});
-  const [bundleIndexStatus, setBundleIndexStatus] = useState<
-    Record<string, { pages: { slug: string; title: string; url: string; chunks: number }[] }>
-  >({});
-  const [bundleStatusRev, setBundleStatusRev] = useState(0);
-  const [retryingBundleUrl, setRetryingBundleUrl] = useState<string | null>(null);
-  const [refreshingBundleUrl, setRefreshingBundleUrl] = useState<string | null>(null);
-  const [bundlePanelLoad, setBundlePanelLoad] = useState<
-    Record<string, { meta: boolean; status: boolean }>
-  >({});
-  const [guideChecking, setGuideChecking] = useState(false);
-  const [guidePending, setGuidePending] = useState(false);
-  const [isReindexingAll, setIsReindexingAll] = useState(false);
-  const [guideIndexState, setGuideIndexState] = useState<
-    Record<string, "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending">
-  >({});
   const [confirmFallbackModal, setConfirmFallbackModal] = useState<{
     hint: string;
     hasIndexedGuides: boolean;
@@ -203,8 +141,6 @@ export default function Home() {
   } | null>(null);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
 
-  const [user, setUser] = useState<User | null>(null);
-  const [authReady, setAuthReady] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => setIsMounted(true), []);
 
@@ -242,7 +178,6 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [steamLibraryOpen, setSteamLibraryOpen] = useState(false);
-  const [steamId, setSteamId] = useState<string | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [examplesDismissed, setExamplesDismissed] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -250,6 +185,7 @@ export default function Home() {
   const [gameSpoilerMajor, setGameSpoilerMajor] = useState(false);
   const spoilerPrefs = effectiveSpoilerPrefs(globalSpoilerMajor, gameSpoilerMajor);
   const [voiceListening, setVoiceListening] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
   const [librarySearch, setLibrarySearch] = useState("");
   const [confirmState, setConfirmState] = useState<{
     message: string;
@@ -277,8 +213,7 @@ export default function Home() {
   const jumpRef = useRef(false);
   const chatHistoryPushed = useRef(false);
   const sessionHydratedRef = useRef(false);
-  const steamLinkHandledRef = useRef(false);
-  const steamSigninHandledRef = useRef(false);
+  const onSignedOutRef = useRef<() => void>(() => {});
   const abortRefs = useRef<Record<string, AbortController>>({});
   const predictionIdsRef = useRef<Record<string, string>>({});
   const backgroundMessagesRef = useRef<Record<string, Message[]>>({});
@@ -307,49 +242,70 @@ export default function Home() {
   // Path of a previously-uploaded cover that a new pick will replace, deleted once
   // the replacement is saved so the bucket doesn't keep the orphan.
   const replacedCoverRef = useRef<string | null>(null);
-  const indexingPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  function pushOverlayHistory() {
+    if (typeof window === "undefined") return;
+    window.history.pushState({ gggOverlay: true }, "");
+  }
 
-  const stopBundleIndexingPoll = useCallback(() => {
-    if (indexingPollRef.current) {
-      clearInterval(indexingPollRef.current);
-      indexingPollRef.current = null;
-    }
-  }, []);
+  function dismissOverlay() {
+    if (typeof window === "undefined") return;
+    window.history.back();
+  }
 
-  const pollBundleIndexingProgress = useCallback(
-    async (url: string, targets: string[]) => {
-      try {
-        const response = await fetch(
-          `/api/guide-bundle/status?url=${encodeURIComponent(url)}`,
-        );
-        if (!response.ok) return;
-        const data = (await response.json()) as {
-          pages?: { slug: string }[];
-        };
-        const indexed = new Set(
-          (data.pages ?? []).map((page) => page.slug.toLowerCase()),
-        );
-        const remaining = targets.filter((slug) => !indexed.has(slug.toLowerCase())).length;
-        setIndexingGuideCount(remaining);
-      } catch {
-        // polling is best-effort
-      }
-    },
-    [],
-  );
+  const {
+    user,
+    authReady,
+    steamId,
+    supabaseReady,
+    steamConnected,
+    connectSteam,
+    signOut,
+  } = useHomeSession({
+    authOpen,
+    setError,
+    setToast,
+    setAuthOpen,
+    askConfirm,
+    onSignedOut: () => onSignedOutRef.current(),
+    onSteamLinkNeedsSignIn: pushOverlayHistory,
+  });
 
-  const startBundleIndexingPoll = useCallback(
-    (url: string, targets: string[]) => {
-      stopBundleIndexingPoll();
-      void pollBundleIndexingProgress(url, targets);
-      indexingPollRef.current = setInterval(() => {
-        void pollBundleIndexingProgress(url, targets);
-      }, 4000);
-    },
-    [pollBundleIndexingProgress, stopBundleIndexingPoll],
-  );
+  const coverEnabled = Boolean(user);
 
-  useEffect(() => () => stopBundleIndexingPoll(), [stopBundleIndexingPoll]);
+  const {
+    guideBundleMeta,
+    setGuideBundleMeta,
+    bundleIndexStatus,
+    bundlePanelLoad,
+    guideIndexState,
+    setGuideIndexState,
+    setBundleStatusRev,
+    guideChecking,
+    setGuideChecking,
+    guidePending,
+    setGuidePending,
+    retryingBundleUrl,
+    refreshingBundleUrl,
+    isReindexingAll,
+    bundlePageTotal,
+    applyIngestRowToMeta,
+    retryBundleIngest,
+    handleSkipBundlePage,
+    handleUnskipBundlePage,
+    handleSkipAllMissingBundlePages,
+    refreshBundleDiscovery,
+    reindexAllPending,
+    resetGuideBundle,
+    startBundleIndexingPoll,
+    stopBundleIndexingPoll,
+  } = useGuideBundle({
+    preferredUrls,
+    game,
+    platform,
+    user,
+    setToast,
+    setIndexingGuideCount,
+  });
 
   // Grow the composer to fit its text (down to one line when empty), capped by
   // the CSS max-height which then scrolls. Runs on every input + after clearing.
@@ -368,16 +324,6 @@ export default function Home() {
       return height;
     });
   }, [input, isExpanded]);
-
-  function pushOverlayHistory() {
-    if (typeof window === "undefined") return;
-    window.history.pushState({ gggOverlay: true }, "");
-  }
-
-  function dismissOverlay() {
-    if (typeof window === "undefined") return;
-    window.history.back();
-  }
 
   useEffect(() => {
     function onPopState() {
@@ -423,100 +369,6 @@ export default function Home() {
     }
   }, [messages.length]);
 
-  const supabaseReady = Boolean(getSupabase());
-  // Cover art (TheGamesDB display + device upload) is a signed-in-only feature:
-  // keeps the signed-out flow simple and avoids any Storage use for anon users.
-  const coverEnabled = Boolean(user);
-  const [voiceSupported, setVoiceSupported] = useState(false);
-  const steamConnected = Boolean(
-    user && (steamId || steamIdFromMetadata(user.user_metadata)),
-  );
-
-  const refreshSteamStatus = useCallback(async (token?: string) => {
-    const status = await fetchSteamStatus(token);
-    setSteamId(status.steamId);
-    return status;
-  }, []);
-
-  const linkSteamToAccount = useCallback(async (): Promise<
-    "ok" | "is_login_account" | "failed"
-  > => {
-    const supabase = getSupabase();
-    if (!supabase || !user) return "failed";
-    if (steamIdFromMetadata(user.user_metadata)) {
-      setSteamId(steamIdFromMetadata(user.user_metadata));
-      return "ok";
-    }
-
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token;
-    const refreshToken = sessionData.session?.refresh_token;
-    if (!token || !refreshToken) return "failed";
-
-    // The gg_steam cookie set by the OpenID callback holds the verified SteamID;
-    // /api/steam/link reads it server-side. Do NOT pre-check /api/steam/me — when
-    // authenticated it deliberately ignores the cookie and returns null (the
-    // account isn't linked yet), which would abort the link before it starts.
-    const linkResponse = await fetch("/api/steam/link", {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    const linkPayload: { ok?: boolean; error?: string; steamId?: string } =
-      await linkResponse.json();
-    if (!linkResponse.ok || !linkPayload.ok) {
-      // The caller offers "Use your Steam account" for this one, so stay quiet.
-      if (linkPayload.error === "steam_is_login_account") return "is_login_account";
-      if (linkPayload.error !== "no_steam_session") {
-        setError("Could not save Steam to your account. Your library still works on this device.");
-      }
-      return "failed";
-    }
-
-    const { data } = await supabase.auth.refreshSession();
-    if (data.session?.user) setUser(data.session.user);
-    if (linkPayload.steamId) setSteamId(linkPayload.steamId);
-    setToast("Steam connected ✓");
-    return "ok";
-  }, [user]);
-
-  // "Sign in with Steam" return: the gg_steam cookie holds a verified SteamID;
-  // the bridge route mints/reuses the matching Supabase account and hands back a
-  // session for us to adopt. Library then loads from the account's steam_id.
-  const loginWithSteam = useCallback(async (): Promise<boolean> => {
-    const supabase = getSupabase();
-    if (!supabase) return false;
-    const res = await fetch("/api/steam/session", {
-      method: "POST",
-      credentials: "include",
-    });
-    const payload: {
-      ok?: boolean;
-      access_token?: string;
-      refresh_token?: string;
-      steamId?: string;
-    } = await res.json().catch(() => ({}));
-    if (!res.ok || !payload.ok || !payload.access_token || !payload.refresh_token) {
-      setError("Steam sign-in isn't available right now. Try Google or email.");
-      return false;
-    }
-    await supabase.auth.setSession({
-      access_token: payload.access_token,
-      refresh_token: payload.refresh_token,
-    });
-    // Pull the latest metadata (the bridge just refreshed avatar_steam) so the
-    // avatar is current on first paint, not one login behind.
-    const { data } = await supabase.auth.refreshSession();
-    if (data.session?.user) setUser(data.session.user);
-    if (payload.steamId) setSteamId(payload.steamId);
-    setToast("Signed in with Steam ✓");
-    return true;
-  }, []);
-
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
   }, [activeChatId]);
@@ -526,9 +378,6 @@ export default function Home() {
   }, [user]);
 
   useEffect(() => {
-    // Opening a saved chat (or restoring a draft) jumps to the last user turn so
-    // the latest question stays in view with the answer below. A live turn uses
-    // smooth scroll on each message update instead.
     if (jumpRef.current) {
       jumpRef.current = false;
       requestAnimationFrame(() => {
@@ -552,7 +401,6 @@ export default function Home() {
 
   const loadChats = useCallback(async () => {
     const supabase = getSupabase();
-    // Signed-out (or Supabase-less): recent games live in localStorage.
     if (!supabase || !userRef.current) {
       setChats(loadLocalGames());
       return;
@@ -567,36 +415,11 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const supabase = getSupabase();
-    if (!supabase) {
-      setAuthReady(true);
-      return;
-    }
-    let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (mounted) {
-        setUser(data.session?.user ?? null);
-        setAuthReady(true);
-      }
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-    return () => {
-      mounted = false;
-      sub.subscription.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
     if (!authReady) return;
     setChatsLoaded(false);
-    // Anon users read their recent games from localStorage; loadChats branches
-    // on userRef, so this covers both signed-in and signed-out.
     void loadChats().finally(() => setChatsLoaded(true));
   }, [user, loadChats, authReady]);
 
-  // After auth + chat list load, reopen the thread from ?chat= or sessionStorage.
   useEffect(() => {
     if (!authReady || !chatsLoaded || sessionHydratedRef.current) return;
 
@@ -629,8 +452,6 @@ export default function Home() {
       setInput("");
       setError("");
       setEditingIndex(null);
-      // ?chat= restore is signed-in only; anon relies on this draft, so don't
-      // push a local id into the URL.
       if (draft.activeChatId && user) setChatUrl(draft.activeChatId);
       sessionHydratedRef.current = true;
       return;
@@ -639,10 +460,6 @@ export default function Home() {
     sessionHydratedRef.current = true;
   }, [authReady, chatsLoaded, user, chats]);
 
-  // One-shot backfill: older Steam chats were saved before release-year existed.
-  // Spot them by the Steam appId in their cover URL, fetch the year (keyless
-  // appdetails endpoint), and fill the empty column. Best-effort, capped, runs
-  // once per mount; self-heals so later loads find nothing to do.
   useEffect(() => {
     if (!chatsLoaded || !user || steamBackfillRef.current) return;
     const supabase = getSupabase();
@@ -651,7 +468,7 @@ export default function Home() {
       .filter((chat) => !chat.release_year)
       .map((chat) => ({ chat, appId: steamAppIdFromCoverUrl(chat.cover_url ?? "") }))
       .filter((row): row is { chat: Chat; appId: number } => row.appId != null)
-      .slice(0, 25); // cap to stay well under appdetails rate limits
+      .slice(0, 25);
     if (!pending.length) return;
     steamBackfillRef.current = true;
     void (async () => {
@@ -668,14 +485,13 @@ export default function Home() {
             .eq("id", chat.id);
           filled += 1;
         } catch {
-          // best-effort — skip this one
+          // best-effort
         }
       }
       if (filled) void loadChats();
     })();
   }, [chatsLoaded, user, chats, loadChats]);
 
-  // Keep the URL / session draft in sync so a refresh returns to this thread.
   useEffect(() => {
     if (!sessionHydratedRef.current) return;
     if (messages.length === 0) {
@@ -683,14 +499,11 @@ export default function Home() {
       setChatUrl(null);
       return;
     }
-    // Temporary chat: keep nothing so a refresh or close wipes it.
     if (temporary) {
       clearSessionDraft();
       setChatUrl(null);
       return;
     }
-    // Signed-in saved chats restore via ?chat=; anon local games have an id too
-    // but must fall through to the sessionStorage draft (no ?chat= for anon).
     if (activeChatId && user) {
       setChatUrl(activeChatId);
       clearSessionDraft();
@@ -703,456 +516,10 @@ export default function Home() {
       preferredUrls,
       cover: cover.startsWith("blob:") ? "" : cover,
       releaseYear,
-      // Anon: keep the local game id so a refresh resumes the same entry and
-      // later turns update it rather than forking a new one.
       activeChatId,
       messages,
     });
   }, [messages, activeChatId, game, platform, preferredUrls, cover, releaseYear, user, temporary]);
-
-  // Hydrate GameFAQs bundle title, page list, and index status from Supabase only.
-  useEffect(() => {
-    let cancelled = false;
-    const urlsToFetch = preferredUrls.filter((url) => !isUploadedGuideUrl(url));
-    if (!urlsToFetch.length) return;
-
-    setBundlePanelLoad((prev) => {
-      const next = { ...prev };
-      for (const url of urlsToFetch) {
-        next[url] = { meta: false, status: false };
-      }
-      return next;
-    });
-
-    void Promise.all(
-      urlsToFetch.map(async (url) => {
-        try {
-          const response = await fetch(
-            `/api/guide-bundle/status?url=${encodeURIComponent(url)}`,
-          );
-          if (!response.ok) return null;
-          const data: {
-            title?: string;
-            pageCount?: number;
-            discoveryPages?: { slug: string; title: string; url: string }[];
-            pages?: { slug: string; title: string; url: string; chunks: number }[];
-          } = await response.json();
-          if (!data.title && !data.discoveryPages?.length && !data.pages?.length) return null;
-          return { url, data };
-        } catch {
-          return null;
-        } finally {
-          if (!cancelled) {
-            setBundlePanelLoad((prev) => ({
-              ...prev,
-              [url]: { meta: true, status: true },
-            }));
-          }
-        }
-      }),
-    ).then((rows) => {
-      if (cancelled) return;
-      const found = rows.filter((row): row is NonNullable<typeof row> => Boolean(row));
-      if (!found.length) return;
-      setGuideBundleMeta((prev) => {
-        const next = { ...prev };
-        for (const row of found) {
-          const prefs = getBundlePrefs(row.url);
-          const pages = filterBundlePanelPages(
-            row.data.discoveryPages ?? [],
-            prefs.selectedSlugs,
-          );
-          next[row.url] = {
-            ...prev[row.url],
-            title: row.data.title ?? prev[row.url]?.title ?? "GameFAQs guide",
-            pageCount:
-              pages.length > 0
-                ? pages.length
-                : row.data.pageCount ?? prev[row.url]?.pageCount ?? 0,
-            pages: pages.length ? pages : row.data.discoveryPages,
-            selectedSlugs: prev[row.url]?.selectedSlugs ?? prefs.selectedSlugs,
-            skippedSlugs: prev[row.url]?.skippedSlugs ?? prefs.skippedSlugs,
-          };
-        }
-        return next;
-      });
-      setBundleIndexStatus((prev) => {
-        const next = { ...prev };
-        for (const row of found) {
-          if (row.data.pages?.length) next[row.url] = { pages: row.data.pages };
-        }
-        return next;
-      });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [preferredUrls, bundleStatusRev]);
-
-  // Keep bundle skip/select prefs in sync with localStorage (survives refresh).
-  useEffect(() => {
-    const urlsToSync = preferredUrls.filter((url) => !isUploadedGuideUrl(url));
-    if (!urlsToSync.length) return;
-    setGuideBundleMeta((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      for (const url of urlsToSync) {
-        const row = next[url];
-        if (!row) continue;
-        const prefs = getBundlePrefs(url);
-        const skippedSame =
-          JSON.stringify(row.skippedSlugs ?? []) === JSON.stringify(prefs.skippedSlugs);
-        const selectedSame =
-          JSON.stringify(row.selectedSlugs ?? null) ===
-          JSON.stringify(prefs.selectedSlugs ?? null);
-        if (skippedSame && selectedSame) continue;
-        changed = true;
-        next[url] = {
-          ...row,
-          skippedSlugs: prefs.skippedSlugs,
-          selectedSlugs: prefs.selectedSlugs ?? row.selectedSlugs,
-        };
-      }
-      return changed ? next : prev;
-    });
-  }, [preferredUrls]);
-
-  // Fetch index status for all preferred URLs (both single page and bundle)
-  useEffect(() => {
-    if (!preferredUrls.length) {
-      setGuideIndexState({});
-      return;
-    }
-
-    let cancelled = false;
-
-    async function fetchStatuses() {
-      try {
-        const response = await fetch(
-          `/api/guide-ingest/status?urls=${encodeURIComponent(preferredUrls.join(","))}`,
-        );
-        if (!response.ok) return;
-        const data: {
-          available: boolean;
-          results: { url: string; indexed: boolean }[];
-        } = await response.json();
-
-        if (cancelled) return;
-
-        setGuideIndexState((prev) => {
-          const next: Record<string, "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending"> = {};
-          // Only keep keys that are still in preferredUrls
-          for (const url of preferredUrls) {
-            const current = prev[url];
-            const item = data.results.find((r) => r.url === url);
-            if (!data.available) {
-              next[url] = "unavailable";
-            } else if (current === "checking" || current === "failed") {
-              // Preserve "checking" or "failed" if set in the current session
-              // unless the DB says it's now successfully indexed
-              next[url] = item?.indexed ? "indexed" : current;
-            } else {
-              next[url] = item?.indexed ? "indexed" : "pending";
-            }
-          }
-          return next;
-        });
-      } catch (err) {
-        console.error("Failed to fetch guide statuses:", err);
-      }
-    }
-
-    void fetchStatuses();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [preferredUrls, bundleStatusRev]);
-
-  const applyIngestRowToMeta = useCallback(
-    (
-      url: string,
-      row: Record<string, unknown>,
-      existing?: GuideBundleMeta,
-    ): GuideBundleMeta | undefined => {
-      if (!isGamefaqsBundleUrl(url)) return existing;
-      const pagesMissing = Array.isArray(row.pagesMissing)
-        ? (row.pagesMissing as { slug: string; title: string; url: string }[])
-        : undefined;
-      const prefs = mergedBundlePrefs(url, existing);
-      const skipped = new Set(prefs.skippedSlugs.map((slug) => slug.toLowerCase()));
-      const filteredMissing = pagesMissing?.filter(
-        (page) => !skipped.has(page.slug.toLowerCase()),
-      );
-      return {
-        title: existing?.title ?? "GameFAQs guide",
-        pageCount:
-          typeof row.pageCount === "number"
-            ? row.pageCount
-            : existing?.pageCount ?? filteredMissing?.length ?? 0,
-        pages: existing?.pages,
-        selectedSlugs: existing?.selectedSlugs,
-        skippedSlugs: existing?.skippedSlugs ?? prefs.skippedSlugs,
-        missingPages: filteredMissing?.length ? filteredMissing : undefined,
-      };
-    },
-    [],
-  );
-
-  const retryBundleIngest = useCallback(
-    async (url: string) => {
-      setRetryingBundleUrl(url);
-      setGuideIndexState((prev) => ({ ...prev, [url]: "checking" }));
-      try {
-        const response = await fetch("/api/guide-ingest", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            preferredUrls: [url],
-            game,
-            platform,
-            userId: user?.id ?? null,
-            bundlePrefs: buildBundlePrefsBody([url], guideBundleMeta),
-          }),
-        });
-        if (!response.ok) {
-          setGuideIndexState((prev) => ({ ...prev, [url]: "failed" }));
-          return;
-        }
-        const ingestData = (await response.json()) as {
-          results?: Array<Record<string, unknown>>;
-        };
-        const row = ingestData.results?.[0];
-        if (row) {
-          setGuideBundleMeta((prev) => {
-            const updated = applyIngestRowToMeta(url, row, prev[url]);
-            return updated ? { ...prev, [url]: updated } : prev;
-          });
-          setGuideIndexState((prev) => ({
-            ...prev,
-            [url]: row.indexed ? "indexed" : "failed",
-          }));
-          const hint = guideIngestHintFromResponse({
-            available: true,
-            results: [row],
-          });
-          if (hint) setToast(hint);
-        } else {
-          setGuideIndexState((prev) => ({ ...prev, [url]: "failed" }));
-        }
-        setBundleStatusRev((rev) => rev + 1);
-      } catch (error) {
-        console.error("Bundle retry ingest failed:", error);
-        setGuideIndexState((prev) => ({ ...prev, [url]: "failed" }));
-      } finally {
-        setRetryingBundleUrl(null);
-      }
-    },
-    [applyIngestRowToMeta, game, platform, user],
-  );
-
-  const handleSkipBundlePage = useCallback((url: string, slug: string) => {
-    const prefs = skipBundlePage(url, slug);
-    setGuideBundleMeta((prev) => {
-      const row = prev[url];
-      if (!row) return prev;
-      return {
-        ...prev,
-        [url]: {
-          ...row,
-          skippedSlugs: prefs.skippedSlugs,
-          missingPages: row.missingPages?.filter((page) => page.slug !== slug),
-        },
-      };
-    });
-  }, []);
-
-  const reindexAllPending = useCallback(async () => {
-    if (isReindexingAll) return;
-    setIsReindexingAll(true);
-    try {
-      const pendingUrls = preferredUrls.filter(url => {
-        const state = guideIndexState[url];
-        return !state || state === "pending" || state === "failed" || state === "unknown";
-      });
-      for (const url of pendingUrls) {
-        await retryBundleIngest(url);
-      }
-    } finally {
-      setIsReindexingAll(false);
-    }
-  }, [preferredUrls, guideIndexState, retryBundleIngest, isReindexingAll]);
-
-
-  const handleUnskipBundlePage = useCallback((url: string, slug: string) => {
-    const prefs = unskipBundlePage(url, slug);
-    setGuideBundleMeta((prev) => {
-      const row = prev[url];
-      if (!row) return prev;
-      return { ...prev, [url]: { ...row, skippedSlugs: prefs.skippedSlugs } };
-    });
-  }, []);
-
-  const handleSkipAllMissingBundlePages = useCallback(
-    (url: string, missingSlugs: string[]) => {
-      if (!missingSlugs.length) return;
-      const prefs = skipAllMissingBundlePages(url, missingSlugs);
-      setGuideBundleMeta((prev) => {
-        const row = prev[url];
-        if (!row) return prev;
-        const skipped = new Set(prefs.skippedSlugs.map((slug) => slug.toLowerCase()));
-        return {
-          ...prev,
-          [url]: {
-            ...row,
-            skippedSlugs: prefs.skippedSlugs,
-            missingPages: row.missingPages?.filter(
-              (page) => !skipped.has(page.slug.toLowerCase()),
-            ),
-          },
-        };
-      });
-    },
-    [],
-  );
-
-  const refreshBundleDiscovery = useCallback(async (url: string) => {
-    setRefreshingBundleUrl(url);
-    try {
-      const response = await fetch(
-        `/api/guide-bundle?url=${encodeURIComponent(url)}&refresh=1`,
-      );
-      const data: {
-        bundle?: boolean;
-        pageCount?: number;
-        title?: string;
-        pages?: { slug: string; title: string; url: string }[];
-      } = await response.json();
-      if (!response.ok || !data.bundle || typeof data.pageCount !== "number") return;
-      const rawPageCount = data.pageCount;
-      setGuideBundleMeta((prev) => {
-        const existing = prev[url];
-        const prefs = mergedBundlePrefs(url, existing);
-        const pages = filterBundlePanelPages(data.pages ?? [], prefs.selectedSlugs);
-        const pageCount = pages.length > 0 ? pages.length : rawPageCount;
-        return {
-          ...prev,
-          [url]: {
-            title: data.title ?? existing?.title ?? "GameFAQs guide",
-            pageCount,
-            pages: pages as { slug: string; title: string; url: string }[],
-            selectedSlugs: existing?.selectedSlugs ?? prefs.selectedSlugs,
-            skippedSlugs: existing?.skippedSlugs ?? prefs.skippedSlugs,
-            missingPages: existing?.missingPages,
-          },
-        };
-      });
-      setBundleStatusRev((rev) => rev + 1);
-    } catch (error) {
-      console.error("Bundle discovery refresh failed:", error);
-    } finally {
-      setRefreshingBundleUrl(null);
-    }
-  }, []);
-
-  const bundlePageTotal = preferredUrls.reduce(
-    (sum, url) => sum + (guideBundleMeta[url]?.pageCount ?? 0),
-    0,
-  );
-
-  useEffect(() => {
-    void refreshSteamStatus();
-  }, [refreshSteamStatus]);
-
-  const handleSteamReturn = useCallback(
-    (result: "signin" | "linked" | "error") => {
-      if (result === "error") {
-        setError("Steam sign-in failed. Try again.");
-        return;
-      }
-      if (result === "signin") {
-        // Bridge the gg_steam cookie into a Supabase session. Runs once,
-        // independent of the (still signed-out) user state.
-        if (steamSigninHandledRef.current) return;
-        steamSigninHandledRef.current = true;
-        void loginWithSteam().then((ok) => {
-          // Popup flow: this window never reloaded, so the auth modal is still
-          // open behind it. Pop the pushed overlay entry to close it on success.
-          if (ok && authOpen) window.history.back();
-        });
-        return;
-      }
-      // "linked": needs the signed-in Supabase user; the popup opener always has
-      // it, and the full-redirect effect below only calls us once `user` is set.
-      if (!user || steamLinkHandledRef.current) return;
-      steamLinkHandledRef.current = true;
-      void (async () => {
-        const status = await linkSteamToAccount();
-        // This Steam already has its own account, so it can't also be attached
-        // here. Offer to jump into that Steam account instead of dead-ending.
-        if (status === "is_login_account") {
-          const ok = await askConfirm(
-            "This Steam already has its own account, so it can't also be added to this one. Sign in with your Steam account instead? You'll switch out of the account you're in now.",
-            "Use your Steam account",
-            false,
-          );
-          if (ok) await loginWithSteam();
-        }
-      })();
-    },
-    [user, authOpen, linkSteamToAccount, loginWithSteam, askConfirm],
-  );
-
-  // Popup flow (mobile PWA): the Steam callback runs in a browser tab and posts
-  // its result back here instead of navigating this window. See startSteamAuth.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    function onMessage(event: MessageEvent) {
-      if (event.origin !== window.location.origin) return;
-      const data = event.data as { gg?: string; intent?: string; error?: boolean };
-      if (!data || data.gg !== "steam") return;
-      handleSteamReturn(
-        data.error ? "error" : data.intent === "signin" ? "signin" : "linked",
-      );
-    }
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [handleSteamReturn]);
-
-  // Full-redirect fallback (popup blocked): the callback lands back on `/?steam=`.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const steam = params.get("steam");
-    if (!steam) return;
-    // "linked" needs `user` loaded; wait rather than strip the param and no-op.
-    if (steam === "linked" && !user) return;
-
-    params.delete("steam");
-    const rest = params.toString();
-    window.history.replaceState(
-      {},
-      "",
-      `${window.location.pathname}${rest ? `?${rest}` : ""}`,
-    );
-
-    if (steam === "error") handleSteamReturn("error");
-    else if (steam === "signin") handleSteamReturn("signin");
-    else if (steam === "linked") handleSteamReturn("linked");
-  }, [user, handleSteamReturn]);
-
-  // On sign-in, only REFRESH status (surfaces an already-linked account's Steam).
-  // Linking happens solely on the explicit `?steam=linked` return above, so a
-  // leftover device cookie can never silently attach to whoever signs in next.
-  useEffect(() => {
-    if (!user) return;
-    void (async () => {
-      const supabase = getSupabase();
-      const token = (await supabase?.auth.getSession())?.data.session?.access_token;
-      await refreshSteamStatus(token);
-    })();
-  }, [refreshSteamStatus, user]);
 
   useEffect(() => {
     if (!menuOpenId) return;
@@ -1275,42 +642,6 @@ export default function Home() {
   }, [user]);
 
   useEffect(() => {
-    registerBundlePrefsSync(getSupabase());
-  }, []);
-
-  useEffect(() => {
-    if (!user) return;
-    hydrateBundlePrefsFromUser(user.user_metadata, getSupabase());
-    const bundleUrls = preferredUrls.filter((url) =>
-      isActiveGamefaqsBundle(url, guideBundleMeta[url]),
-    );
-    if (!bundleUrls.length) return;
-    setGuideBundleMeta((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      for (const url of bundleUrls) {
-        const row = next[url];
-        if (!row) continue;
-        const prefs = getBundlePrefs(url);
-        const skippedSame =
-          JSON.stringify(row.skippedSlugs ?? []) === JSON.stringify(prefs.skippedSlugs);
-        const selectedSame =
-          JSON.stringify(row.selectedSlugs ?? null) ===
-          JSON.stringify(prefs.selectedSlugs ?? null);
-        if (skippedSame && selectedSame) continue;
-        changed = true;
-        next[url] = {
-          ...row,
-          skippedSlugs: prefs.skippedSlugs,
-          selectedSlugs: prefs.selectedSlugs ?? row.selectedSlugs,
-        };
-      }
-      return changed ? next : prev;
-    });
-    setBundleStatusRev((rev) => rev + 1);
-  }, [user?.id, preferredUrls]);
-
-  useEffect(() => {
     if (!game.trim()) {
       setGameSpoilerMajor(false);
       return;
@@ -1391,7 +722,7 @@ export default function Home() {
     setGame("");
     setPlatform("");
     setPreferredUrls([]);
-    setGuideBundleMeta({});
+    resetGuideBundle();
     if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
     setCover("");
     setPendingCover(null);
@@ -1740,19 +1071,6 @@ export default function Home() {
     setEditingGame(true);
   }
 
-  function connectSteam() {
-    if (!user) {
-      setError("Sign in first, then connect Steam.");
-      setAuthOpen(true);
-      pushOverlayHistory();
-      return;
-    }
-    // Popup so an installed PWA doesn't hand the steamcommunity.com nav to the
-    // native Steam app; the callback posts back here. Blocked -> full redirect.
-    const url = "/api/steam/login?intent=link";
-    const w = window.open(`${url}&popup=1`, "gg_steam_auth", "width=520,height=700");
-    if (!w) window.location.href = url;
-  }
 
   function startFromSteamGame(game: SteamGame) {
     if (steamLibraryOpen) dismissOverlay();
@@ -1776,7 +1094,7 @@ export default function Home() {
     setGame(game.name);
     setPlatform("PC");
     setPreferredUrls([]);
-    setGuideBundleMeta({});
+    resetGuideBundle();
     if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
     setCover(coverEnabled ? game.cover : "");
     setPendingCover(null);
@@ -1888,22 +1206,8 @@ export default function Home() {
     return urls;
   }
 
-  async function signOut() {
-    await getSupabase()?.auth.signOut();
-    // Clear the device Steam session too — otherwise the leftover gg_steam
-    // cookie auto-links to the next account signed in on this browser
-    // (shared-device library leak).
-    await fetch("/api/steam/pending", { method: "DELETE", credentials: "include" }).catch(
-      () => {},
-    );
-    setSteamId(null);
-    // Prevent cross-account bundle-pref bleed on shared devices.
-    clearBundlePrefs();
-    try { window.localStorage.removeItem("gg:recent-chats-cache"); } catch {}
-    // Reset the open thread (it referenced a signed-in chat); loadChats then
-    // repopulates from anon localStorage. Previously handled by the !user effect.
-    newGame();
-  }
+
+  onSignedOutRef.current = newGame;
 
   function toggleRowMenu(id: string, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
