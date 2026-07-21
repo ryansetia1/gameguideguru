@@ -169,7 +169,9 @@ function gameCardGuideRow(
       : "GameFAQs bundle"
     : uploaded
       ? `${uploadedGuideFileTypeLabel(url)} · ${uploadedGuideFilename(url)}`
-      : guideUrlsSummary([url]);
+      : meta?.title 
+        ? meta.title
+        : guideUrlsSummary([url]);
   const selectionLocked = Boolean(bundlePrefs.selectedSlugs?.length);
   const discoveredPages = filterBundlePanelPages(
     meta?.pages?.map((page) => ({
@@ -1294,21 +1296,19 @@ export default function Home() {
   // Hydrate GameFAQs bundle title, page list, and index status from Supabase only.
   useEffect(() => {
     let cancelled = false;
-    const bundleUrls = preferredUrls.filter((url) =>
-      isActiveGamefaqsBundle(url, guideBundleMeta[url]),
-    );
-    if (!bundleUrls.length) return;
+    const urlsToFetch = preferredUrls.filter((url) => !isUploadedGuideUrl(url));
+    if (!urlsToFetch.length) return;
 
     setBundlePanelLoad((prev) => {
       const next = { ...prev };
-      for (const url of bundleUrls) {
+      for (const url of urlsToFetch) {
         next[url] = { meta: false, status: false };
       }
       return next;
     });
 
     void Promise.all(
-      bundleUrls.map(async (url) => {
+      urlsToFetch.map(async (url) => {
         try {
           const response = await fetch(
             `/api/guide-bundle/status?url=${encodeURIComponent(url)}`,
@@ -1320,7 +1320,7 @@ export default function Home() {
             discoveryPages?: { slug: string; title: string; url: string }[];
             pages?: { slug: string; title: string; url: string; chunks: number }[];
           } = await response.json();
-          if (!data.discoveryPages?.length && !data.pages?.length) return null;
+          if (!data.title && !data.discoveryPages?.length && !data.pages?.length) return null;
           return { url, data };
         } catch {
           return null;
@@ -1375,14 +1375,12 @@ export default function Home() {
 
   // Keep bundle skip/select prefs in sync with localStorage (survives refresh).
   useEffect(() => {
-    const bundleUrls = preferredUrls.filter((url) =>
-      isActiveGamefaqsBundle(url, guideBundleMeta[url]),
-    );
-    if (!bundleUrls.length) return;
+    const urlsToSync = preferredUrls.filter((url) => !isUploadedGuideUrl(url));
+    if (!urlsToSync.length) return;
     setGuideBundleMeta((prev) => {
       let changed = false;
       const next = { ...prev };
-      for (const url of bundleUrls) {
+      for (const url of urlsToSync) {
         const row = next[url];
         if (!row) continue;
         const prefs = getBundlePrefs(url);

@@ -179,13 +179,15 @@ export default function AdminPage() {
     const solveStart = events.find(e => e.event_type === "solve_start");
     const uploadStart = events.find(e => e.event_type === "upload_start");
     const discoveryStart = events.find(e => e.event_type === "discovery_start");
+    const ingestStart = events.find(e => e.event_type === "ingest_start");
     
     const game = solveStart?.metadata?.game || uploadStart?.metadata?.game;
     const question = solveStart?.metadata?.question 
       || (uploadStart?.metadata?.filename ? `Uploading: ${uploadStart.metadata.filename}` : undefined)
-      || (discoveryStart?.metadata?.url ? `Checking: ${discoveryStart.metadata.url}` : undefined);
+      || (discoveryStart?.metadata?.url ? `Checking: ${discoveryStart.metadata.url}` : undefined)
+      || (ingestStart ? `Ingesting guides` : undefined);
     
-    const category = uploadStart ? "Upload" : discoveryStart ? "Checking" : "Chat";
+    const category = uploadStart ? "Upload" : discoveryStart ? "Checking" : ingestStart ? "Ingest" : "Chat";
     
     const isFinished = events.some(e => 
       e.event_type === "generation_complete" || 
@@ -194,7 +196,9 @@ export default function AdminPage() {
       e.event_type === "solve_error" ||
       e.event_type === "upload_error" ||
       e.event_type === "discovery_complete" ||
-      e.event_type === "discovery_error"
+      e.event_type === "discovery_error" ||
+      e.event_type === "ingest_url_complete" ||
+      e.event_type === "ingest_url_error"
     );
     const isNew = !isFinished && events.length <= 3;
     const status = isFinished ? "Finished" : isNew ? "New" : "Processing";
@@ -364,8 +368,8 @@ export default function AdminPage() {
                             textTransform: "uppercase", 
                             padding: "2px 6px", 
                             borderRadius: "4px", 
-                            background: trace.category === "Chat" ? "var(--paper-strong)" : trace.category === "Checking" ? "var(--action)" : "var(--signal-dark)",
-                            color: trace.category === "Chat" ? "var(--muted)" : trace.category === "Checking" ? "#fff" : "var(--signal)",
+                            background: trace.category === "Chat" ? "var(--paper-strong)" : trace.category === "Checking" ? "var(--action)" : trace.category === "Ingest" ? "var(--signal)" : "var(--signal-dark)",
+                            color: trace.category === "Chat" ? "var(--muted)" : trace.category === "Checking" ? "#fff" : trace.category === "Ingest" ? "var(--on-signal)" : "var(--signal)",
                             border: trace.category === "Chat" ? "1px solid var(--line)" : "none"
                           }}>
                             {trace.category}

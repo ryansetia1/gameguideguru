@@ -109,7 +109,31 @@ export async function getBundleIndexStatus(
 ): Promise<BundleIndexStatus | null> {
   const parsed = parseGamefaqsFaqUrl(rawUrl);
   const supabase = getServerClient();
-  if (!parsed || !supabase) return null;
+  if (!supabase) return null;
+
+  if (!parsed) {
+    // For non-GameFAQs single pages, check if we stored a title during ingest
+    const normalized = normalizeGuideUrl(rawUrl);
+    const { data } = await supabase
+      .from("guide_bundle_cache")
+      .select("data")
+      .eq("bundle_key", normalized)
+      .maybeSingle();
+
+    if (data?.data && typeof data.data === "object" && "title" in data.data) {
+      return {
+        bundleKey: normalized,
+        canonicalUrl: normalized,
+        title: String(data.data.title),
+        pageCount: 1,
+        discoveryPages: [],
+        pagesIndexed: 0,
+        chunkCount: 0,
+        pages: [],
+      };
+    }
+    return null;
+  }
 
   try {
     const cached = await getCachedBundleDiscovery(parsed.bundleKey, { allowStale: true });
@@ -424,6 +448,24 @@ async function ingestSingleGuidePage(
   }
 
   const guideUrl = normalizeGuideUrl(rawUrl);
+
+  // Try to fetch the HTML title to store it in the database for the UI
+  try {
+    const res = await fetch(guideUrl, { signal: signal ?? AbortSignal.timeout(3000) });
+    if (res.ok) {
+      const html = await res.text();
+      const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      if (match) {
+        const htmlTitle = match[1].trim().replace(/&#x27;/g, "'").replace(/&quot;/g, '"');
+        await supabase.from("guide_bundle_cache").upsert({
+          bundle_key: guideUrl,
+          data: { title: htmlTitle }
+        });
+      }
+    }
+  } catch (e) {
+    // Ignore fetch errors, we just won't have a title
+  }
 
   if (await isGuideIndexed(guideUrl)) {
     const { count } = await supabase
