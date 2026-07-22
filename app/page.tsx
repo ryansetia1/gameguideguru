@@ -410,7 +410,7 @@ export default function Home() {
     const { data, error: loadError } = await supabase
       .from("chats")
       .select(
-        "id, game, platform, preferred_guide_url, preferred_guide_urls, cover_url, release_year, updated_at",
+        "id, game, platform, preferred_guide_url, preferred_guide_urls, cover_url, release_year, updated_at, messages",
       )
       .order("updated_at", { ascending: false });
     if (!loadError && data) setChats(data as Chat[]);
@@ -826,47 +826,51 @@ export default function Home() {
     });
   }
 
+  function commitOpenChat(chat: Chat, loaded: Message[], isBgLoading: boolean) {
+    jumpRef.current = true;
+    setChatUrl(chat.id);
+    clearSessionDraft();
+    setActiveChatId(chat.id);
+    setGame(chat.game);
+    setPlatform(chat.platform);
+    setPreferredUrls(guideUrlsFromChat(chat));
+    if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
+    setCover(chat.cover_url ?? "");
+    setPendingCover(null);
+    replacedCoverRef.current = null;
+    clearPendingImages();
+    setReleaseYear(chat.release_year ?? "");
+    setEditingGame(false);
+    setMessages(loaded);
+    setLoading(isBgLoading || false);
+    setGenerationStatus(backgroundStatusRef.current[chat.id] || null);
+    conversationGame.current = chat.game;
+    setInput("");
+    setError("");
+    setEditingIndex(null);
+    setSidebarOpen(false);
+    setMenuOpenId(null);
+    setTemporary(false);
+  }
+
   async function openChat(chat: Chat) {
     openingChatIdRef.current = chat.id;
     try {
-      const isBgLoading = backgroundLoadingRef.current[chat.id];
-      const cached = backgroundMessagesRef.current[chat.id];
-      let loaded: Message[];
-      if (cached) {
-        loaded = cached;
-      } else {
-        const supabase = getSupabase();
-        loaded =
-          supabase && user
-            ? ((await resolveThreadMessages(supabase, chat)) as Message[])
-            : parseStoredMessages(chat.messages);
-      }
-      if (openingChatIdRef.current !== chat.id) return;
+      const isBgLoading = backgroundLoadingRef.current[chat.id] ?? false;
+      const preview =
+        backgroundMessagesRef.current[chat.id] ?? parseStoredMessages(chat.messages);
+      const supabase = getSupabase();
 
-      jumpRef.current = true;
-      setChatUrl(chat.id);
-      clearSessionDraft();
-      setActiveChatId(chat.id);
-      setGame(chat.game);
-      setPlatform(chat.platform);
-      setPreferredUrls(guideUrlsFromChat(chat));
-      if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
-      setCover(chat.cover_url ?? "");
-      setPendingCover(null);
-      replacedCoverRef.current = null;
-      clearPendingImages();
-      setReleaseYear(chat.release_year ?? "");
-      setEditingGame(false);
-      setMessages(loaded);
-      setLoading(isBgLoading || false);
-      setGenerationStatus(backgroundStatusRef.current[chat.id] || null);
-      conversationGame.current = chat.game;
-      setInput("");
-      setError("");
-      setEditingIndex(null);
-      setSidebarOpen(false);
-      setMenuOpenId(null);
-      setTemporary(false);
+      if (preview.length) commitOpenChat(chat, preview, isBgLoading);
+
+      if (supabase && user) {
+        const fresh = (await resolveThreadMessages(supabase, chat)) as Message[];
+        if (openingChatIdRef.current !== chat.id) return;
+        if (preview.length) setMessages(fresh);
+        else commitOpenChat(chat, fresh, isBgLoading);
+      } else if (!preview.length) {
+        commitOpenChat(chat, parseStoredMessages(chat.messages), isBgLoading);
+      }
     } finally {
       if (openingChatIdRef.current === chat.id) openingChatIdRef.current = null;
     }
