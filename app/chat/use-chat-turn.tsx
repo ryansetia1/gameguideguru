@@ -56,6 +56,19 @@ export function useChatTurn(deps: ChatTurnDeps) {
     }
   }
 
+  // A file/bundle picked but not yet added won't be used this turn — make sure
+  // the player didn't think it was uploaded (the silent-guide-loss trap). Shared
+  // by new turns, edit-and-send, and retry so none can bypass it.
+  async function confirmGuidePending() {
+    const d = depsRef.current;
+    if (!d.guidePending) return true;
+    return d.askConfirm(
+      "You picked a guide but haven't added it yet, so it won't be used. Send anyway?",
+      "Send anyway",
+      false,
+    );
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     const d = depsRef.current;
     event.preventDefault();
@@ -65,6 +78,8 @@ export function useChatTurn(deps: ChatTurnDeps) {
     }
     const question = d.input.trim();
     if (!d.game.trim() || question.length < 2 || d.loading) return;
+
+    if (!(await confirmGuidePending())) return;
 
     const switching =
       d.messages.length > 0 &&
@@ -118,6 +133,8 @@ export function useChatTurn(deps: ChatTurnDeps) {
     const text = d.input.trim();
     if (text.length < 2 || d.loading) return;
 
+    if (!(await confirmGuidePending())) return;
+
     const dropped = d.messages.slice(index + 2);
     if (!(await confirmDropImages(dropped))) return;
 
@@ -151,6 +168,7 @@ export function useChatTurn(deps: ChatTurnDeps) {
   async function retry(index: number) {
     const d = depsRef.current;
     if (d.loading || index < 1 || d.messages[index - 1].role !== "user") return;
+    if (!(await confirmGuidePending())) return;
     const question = d.messages[index - 1].content;
     const existingImages = d.messages[index - 1].images || [];
     const dropped = d.messages.slice(index + 1);

@@ -285,7 +285,18 @@ export function HomeSetup({
                   <button
                     type="button"
                     className="guide-cta-skip"
-                    onClick={() => onSetOptPanel(null)}
+                    onClick={async () => {
+                      if (guidePending) {
+                        const ok = await onRequestConfirm({
+                          message:
+                            "You picked a guide but haven't added it yet. Close without adding?",
+                          confirmLabel: "Close without adding",
+                          danger: true,
+                        });
+                        if (!ok) return;
+                      }
+                      onSetOptPanel(null);
+                    }}
                   >
                     {preferredUrls.length > 0 ? "Close" : "Skip for now"}
                   </button>
@@ -297,12 +308,12 @@ export function HomeSetup({
                   onBundleMetaChange={onBundleMetaChange}
                   onGuideCheckChange={onGuideCheckChange}
                   onPendingChange={onGuidePendingChange}
-                  onRequestConfirm={onRequestConfirm}
                   guideIndexState={guideIndexState}
                   game={game}
                   platform={platform}
                   disabled={loading}
                   userId={user?.id}
+                  onDone={() => onSetOptPanel(null)}
                 />
               </div>
             ) : preferredUrls.length > 0 ? (

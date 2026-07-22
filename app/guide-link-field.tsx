@@ -50,8 +50,8 @@ type Props = {
   onBundleMetaChange?: (meta: Record<string, GuideBundleMeta>) => void;
   onGuideCheckChange?: (checking: boolean) => void;
   onPendingChange?: (pending: boolean) => void;
-  onRequestConfirm?: (options: { message: string; confirmLabel?: string; danger?: boolean }) => Promise<boolean>;
   guideIndexState?: Record<string, "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending">;
+  onDone?: () => void;
 };
 
 function hostLabel(url: string) {
@@ -112,8 +112,8 @@ export function GuideLinkField({
   onBundleMetaChange,
   onGuideCheckChange,
   onPendingChange,
-  onRequestConfirm,
   guideIndexState = {},
+  onDone,
 }: Props) {
   const [mode, setMode] = useState<"link" | "search" | "upload">("link");
   const [showInfo, setShowInfo] = useState(false);
@@ -424,26 +424,34 @@ export function GuideLinkField({
     return value.some((entry) => isSamePreferredGuide(entry, cleaned));
   };
 
-  const handleFileUpload = useCallback(async () => {
-    if (!uploadFile || !userId || uploading) return;
+  // Auto-upload on pick: no "staged but not committed" state, so a file can't be
+  // silently lost by sending, editing, retrying, tab-switching, or closing. The
+  // file only lives in state while it's actively uploading (drives the spinner).
+  // ponytail: no in-flight cancel; uploads are capped at 10MB, remove the guide
+  // from the list afterward if it was the wrong file. Add AbortController if
+  // large-guide uploads make the wait painful.
+  const handleFileUpload = useCallback(async (file: File) => {
+    if (!file || !userId || uploading) return;
+    if (fileInputRef.current) fileInputRef.current.value = "";
     if (atMax) {
       setUploadError(`You can add up to ${MAX_GUIDE_URLS} guides.`);
       return;
     }
 
     const isDuplicate = value.some(
-      (url) => isUploadedGuideUrl(url) && uploadedGuideFilename(url) === uploadFile.name
+      (url) => isUploadedGuideUrl(url) && uploadedGuideFilename(url) === file.name
     );
     if (isDuplicate) {
       setUploadError("That file is already in your guide list.");
       return;
     }
 
+    setUploadFile(file);
     setUploading(true);
     setUploadError("");
     try {
       const form = new FormData();
-      form.append("file", uploadFile);
+      form.append("file", file);
       form.append("userId", userId);
       if (trimmedGame) form.append("game", trimmedGame);
       if (platform.trim()) form.append("platform", platform.trim());
@@ -467,17 +475,15 @@ export function GuideLinkField({
         return;
       }
 
-      const next = [...value, payload.guideUrl];
-      onChange(next);
-      setUploadFile(null);
+      onChange([...value, payload.guideUrl]);
       setUploadError("");
-      if (fileInputRef.current) fileInputRef.current.value = "";
     } catch {
       setUploadError("Upload failed. Check your connection and try again.");
     } finally {
       setUploading(false);
+      setUploadFile(null);
     }
-  }, [uploadFile, userId, uploading, atMax, trimmedGame, platform, value, onChange]);
+  }, [userId, uploading, atMax, trimmedGame, platform, value, onChange]);
 
   return (
     <div className="guide-link-field">
@@ -789,15 +795,52 @@ export function GuideLinkField({
               disabled={disabled || uploading || atMax}
               style={{ display: "none" }}
               onChange={(e) => {
-                setUploadFile(e.target.files?.[0] ?? null);
+                const file = e.target.files?.[0] ?? null;
                 setUploadError("");
+                if (file) void handleFileUpload(file);
               }}
             />
-            {!uploadFile ? (
+            {uploading ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", width: "100%", padding: "12px", border: "1px dashed var(--line)" }}>
+                <span className="guide-search-spinner loader" aria-hidden="true" />
+                <span className="field-hint" style={{ margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--ink)" }}>
+                  Uploading &amp; indexing {uploadFile?.name ?? "your file"}…
+                </span>
+              </div>
+            ) : value.length > 0 ? (
+              <div style={{ display: "flex", gap: "10px", width: "100%" }}>
+                <button
+                  type="button"
+                  className="nav-button"
+                  disabled={disabled || atMax}
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{ flex: 1, justifyContent: "center" }}
+                >
+                  Add more
+                </button>
+                {onDone && (
+                  <button
+                    type="button"
+                    className="nav-button"
+                    disabled={disabled}
+                    onClick={onDone}
+                    style={{
+                      flex: 1,
+                      justifyContent: "center",
+                      background: "var(--signal)",
+                      color: "var(--on-signal)",
+                      borderColor: "var(--signal)",
+                    }}
+                  >
+                    Done
+                  </button>
+                )}
+              </div>
+            ) : (
               <button
                 type="button"
                 className="nav-button"
-                disabled={disabled || uploading || atMax}
+                disabled={disabled || atMax}
                 onClick={() => fileInputRef.current?.click()}
                 style={{
                   background: "var(--signal)",
@@ -809,50 +852,6 @@ export function GuideLinkField({
               >
                 Choose File
               </button>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px", alignItems: "flex-start", width: "100%", padding: "12px", border: "1px dashed var(--line)", borderRadius: "6px" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "2px", overflow: "hidden" }}>
-                    <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Ready to upload</span>
-                    <span className="field-hint" style={{ margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--ink)" }}>
-                      {uploadFile.name} <span style={{ color: "var(--muted)" }}>· {(uploadFile.size / 1024).toFixed(0)} KB</span>
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const confirmed = onRequestConfirm
-                        ? await onRequestConfirm({ message: "Remove this file from the staging area?", confirmLabel: "Remove", danger: true })
-                        : window.confirm("Remove this file from the staging area?");
-                      if (confirmed) {
-                        setUploadFile(null);
-                        setUploadError("");
-                        if (fileInputRef.current) fileInputRef.current.value = "";
-                      }
-                    }}
-                    aria-label="Remove selected file"
-                    title="Remove selected file"
-                    style={{ background: "var(--paper)", border: "1px solid var(--line)", borderRadius: "4px", cursor: "pointer", color: "var(--text-subtle)", display: "flex", padding: "4px", flexShrink: 0 }}
-                  >
-                    <IconX size={14} />
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  className="nav-button"
-                  disabled={disabled || uploading || !uploadFile || atMax}
-                  onClick={handleFileUpload}
-                  style={{
-                    background: "var(--signal)",
-                    color: "var(--on-signal)",
-                    borderColor: "var(--signal)",
-                    width: "100%",
-                    justifyContent: "center",
-                  }}
-                >
-                  {uploading ? "Uploading…" : `Upload & index (${(uploadFile.size / (1024 * 1024)).toFixed(2)} MB)`}
-                </button>
-              </div>
             )}
           </div>
           {uploadError && <p className="guide-search-error">{uploadError}</p>}

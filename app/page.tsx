@@ -1319,6 +1319,7 @@ export default function Home() {
     guideBundleMeta,
     bundleIndexStatus,
     guideIndexState,
+    guidePending,
     spoilerPrefs,
     setActiveChatId,
     setChats,

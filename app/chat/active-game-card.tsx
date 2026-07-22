@@ -145,7 +145,6 @@ export function ActiveGameCard({
             onBundleMetaChange={onBundleMetaChange}
             onGuideCheckChange={onGuideCheckChange}
             onPendingChange={onGuidePendingChange}
-            onRequestConfirm={onRequestConfirm}
             guideIndexState={guideIndexState}
             game={game}
             platform={platform}

@@ -66,6 +66,8 @@ export type ChatTurnDeps = {
   clearPendingImages: () => void;
   deleteMessageImages: (messages: Message[]) => Promise<void>;
   askConfirm: (message: string, confirmLabel?: string, danger?: boolean) => Promise<boolean>;
+  /** A guide file/bundle is staged in the picker but not yet added — guard sending without it. */
+  guidePending: boolean;
   applyIngestRowToMeta: (
     url: string,
     row: Record<string, unknown>,

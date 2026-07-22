@@ -5,7 +5,6 @@ import { useEffect, useRef, useState } from "react";
 import { tgdbPlatformToLabel } from "@/lib/platforms.js";
 
 import { ClearButton } from "./clear-button";
-import { IconCheck } from "./icons";
 
 type Game = {
   id: number;
@@ -231,13 +230,12 @@ export function GameAutocomplete({
   const showPanel = open && query.length >= 2;
   const showCustom = query.length >= 2;
   const resultOffset = showCustom ? 1 : 0;
-  const showCommit = query.length >= 3 && !loading && !disabled;
   const grouped = groupByPlatform(results);
   const showGroupHeaders = grouped.length > 1;
 
   return (
     <div
-      className={`combo field-clear-wrap${showCommit ? " has-commit" : ""}`}
+      className="combo field-clear-wrap"
       ref={rootRef}
     >
       <input
@@ -263,20 +261,6 @@ export function GameAutocomplete({
         disabled={disabled}
       />
       {loading && <span className="combo-spinner loader" aria-hidden="true" />}
-      {showCommit && (
-        <button
-          type="button"
-          className="field-commit"
-          aria-label="Use typed game name"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => {
-            commitTyped();
-            inputRef.current?.focus();
-          }}
-        >
-          <IconCheck size={16} />
-        </button>
-      )}
       <ClearButton
         show={value.length > 0 && !loading && !disabled}
         onClear={() => {
