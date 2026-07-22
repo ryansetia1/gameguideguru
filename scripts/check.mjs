@@ -112,7 +112,7 @@ import {
   tailTurnIndexFromMessages,
 } from "../lib/chat-thread-persist.js";
 import { compareThreadSources } from "../lib/chat-thread-audit.js";
-import { pipelineSourceLabel, sourceHostname } from "../lib/chat-message-ui.js";
+import { answerModeInfo, pipelineSourceLabel, sourceHostname } from "../lib/chat-message-ui.js";
 import {
   CHAT_QUERY_PARAM,
   coerceSessionDraft,
@@ -1393,5 +1393,15 @@ assert.ok(auditBad.issues.some((issue) => issue.startsWith("turn_count")));
 
 assert.equal(sourceHostname("https://www.example.com/path"), "example.com");
 assert.equal(pipelineSourceLabel("rag", undefined), "Your guide");
+
+// answerModeInfo: the answer-card mode chip / inline upsell gate.
+assert.equal(answerModeInfo("rag", undefined).guideBacked, true);
+assert.equal(answerModeInfo("web", undefined).guideBacked, false);
+assert.equal(answerModeInfo(undefined, undefined).guideBacked, false); // "AI knowledge"
+assert.equal(
+  answerModeInfo("rag", [{ title: "x", url: "upload://u/guide.pdf" }]).guideBacked,
+  true,
+);
+assert.equal(answerModeInfo("web", undefined).label, "Web search");
 
 console.log("Self-check passed.");

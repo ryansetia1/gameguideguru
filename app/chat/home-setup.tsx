@@ -5,7 +5,6 @@ import { GuideLinkField, type GuideBundleMeta } from "../guide-link-field";
 import { PlatformSelect } from "../platform-select";
 import { IconGrid, IconPlus, IconX } from "../icons";
 import { guideUrlsSummary } from "@/lib/guide-urls.js";
-import { GAME_SPOILER_HINT } from "@/lib/spoiler-prefs.js";
 import type { Chat } from "@/lib/supabase";
 import { CoverThumb, displayPlatform } from "./cover-thumb";
 import { RotatingHeadline, RotatingWord, SteamIcon } from "./hero-marketing";
@@ -122,7 +121,9 @@ export function HomeSetup({
             </p>
             <RotatingHeadline />
             <p className="intro">
-              Say the game and where you&apos;re stuck. We turn web guides into steps you can act on.
+              Say the game and ask away.
+              {!hasRecent &&
+                " Add a walkthrough you trust and answers come straight from it."}
             </p>
           </section>
         </div>
@@ -275,36 +276,20 @@ export function HomeSetup({
             </div>
           </div>
           <div className="opt-group">
-            <div className="opt-tabs">
-              <button
-                type="button"
-                className={`opt-tab${optPanel === "guide" ? " open" : ""}`}
-                aria-expanded={optPanel === "guide"}
-                aria-controls="opt-panel-guide"
-                onClick={() => onSetOptPanel((cur) => (cur === "guide" ? null : "guide"))}
-              >
-                <span className="opt-summary-label">Preferred guides (optional)</span>
-                {preferredUrls.length > 0 && (
-                  <span className="opt-summary-value">
-                    {guideUrlsSummary(preferredUrls, guideBundleMeta)}
+            {optPanel === "guide" ? (
+              <div className="opt-panel guide-cta-panel" id="opt-panel-guide">
+                <div className="guide-cta-panel-head">
+                  <span className="guide-cta-panel-title">
+                    {preferredUrls.length > 0 ? "Your guides" : "Add a guide"}
                   </span>
-                )}
-              </button>
-              <button
-                type="button"
-                className={`opt-tab${optPanel === "spoiler" ? " open" : ""}`}
-                aria-expanded={optPanel === "spoiler"}
-                aria-controls="opt-panel-spoiler"
-                onClick={() => onSetOptPanel((cur) => (cur === "spoiler" ? null : "spoiler"))}
-              >
-                <span className="opt-summary-label">Spoilers</span>
-                <span className={`opt-summary-value${gameSpoilerMajor ? " is-on" : ""}`}>
-                  {gameSpoilerMajor ? "On for this game" : "Off"}
-                </span>
-              </button>
-            </div>
-            {optPanel === "guide" && (
-              <div className="opt-panel" id="opt-panel-guide">
+                  <button
+                    type="button"
+                    className="guide-cta-skip"
+                    onClick={() => onSetOptPanel(null)}
+                  >
+                    {preferredUrls.length > 0 ? "Close" : "Skip for now"}
+                  </button>
+                </div>
                 <GuideLinkField
                   value={preferredUrls}
                   onChange={onPreferredUrlsChange}
@@ -320,13 +305,42 @@ export function HomeSetup({
                   userId={user?.id}
                 />
               </div>
+            ) : preferredUrls.length > 0 ? (
+              <button
+                type="button"
+                className="guide-cta is-added"
+                aria-expanded={false}
+                aria-controls="opt-panel-guide"
+                onClick={() => onSetOptPanel("guide")}
+              >
+                <span className="guide-cta-dot" aria-hidden="true" />
+                <span className="guide-cta-body">
+                  <strong>{guideUrlsSummary(preferredUrls, guideBundleMeta)}</strong>
+                  <small>Answers come straight from your guide.</small>
+                </span>
+                <span className="guide-cta-cue">Manage</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="guide-cta"
+                aria-expanded={false}
+                aria-controls="opt-panel-guide"
+                onClick={() => onSetOptPanel("guide")}
+              >
+                <span className="guide-cta-body">
+                  <strong>Back your answers with a guide</strong>
+                  <small>Paste a walkthrough, wiki page, or PDF. Not required.</small>
+                </span>
+                <span className="guide-cta-cue icon-inline">
+                  <IconPlus /> Add a guide
+                </span>
+              </button>
             )}
-            {optPanel === "spoiler" && (
-              <div className="opt-panel" id="opt-panel-spoiler">
-                <p className="field-hint">{GAME_SPOILER_HINT}</p>
-                <SpoilerToggle prefs={{ major: gameSpoilerMajor }} onChange={onGameSpoilerChange} />
-              </div>
-            )}
+
+            <div className="opt-spoiler-row">
+              <SpoilerToggle prefs={{ major: gameSpoilerMajor }} onChange={onGameSpoilerChange} compact />
+            </div>
           </div>
           {editingGame && (
             <div className="field field-wide setup-done">

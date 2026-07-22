@@ -875,22 +875,19 @@ export function GuideLinkField({
           role="presentation"
         >
           <div className="confirm-modal" role="dialog" aria-modal="true" style={{ textAlign: "left", maxWidth: "480px" }}>
-            <h3 style={{ marginTop: 0, marginBottom: "16px" }}>Guide Link Best Practices</h3>
+            <h3 style={{ marginTop: 0, marginBottom: "16px" }}>Get the best answers</h3>
             <ul style={{ paddingLeft: "20px", fontSize: "14px", lineHeight: "1.6", display: "flex", flexDirection: "column", gap: "10px", margin: "0 0 24px 0", color: "var(--text)" }}>
               <li>
-                <strong>Try Alternatives First:</strong> GameFAQs aggressively blocks AI bots. Whenever possible, use links from other wikis (like IGN, Fandom) or upload a PDF/TXT.
+                <strong>Best results:</strong> upload a PDF or TXT walkthrough, or paste a link from a wiki like IGN or Fandom. These read cleanly every time.
               </li>
               <li>
-                <strong>Risk of Block:</strong> If you use GameFAQs, there&apos;s a high risk of getting blocked (<em>Failed to memorize</em>). The AI might fail to read the page.
+                <strong>Point to the right page:</strong> on big wikis, paste the exact page (like the &quot;Weapons&quot; page), not the wiki homepage. The AI reads the page you give it, it won&apos;t crawl the site.
               </li>
               <li>
-                <strong>Use Single Pages:</strong> If you must use GameFAQs, single-page HTML guides work best. Multi-page bundles take a very long time and often fail midway.
+                <strong>Text pages, not video:</strong> the AI reads text, not videos or images. Skip YouTube and image-heavy pages.
               </li>
               <li>
-                <strong>Text-Only:</strong> AI cannot watch videos or read images. Avoid YouTube links or image-heavy walkthroughs.
-              </li>
-              <li>
-                <strong>Be Specific (Wikis):</strong> For large wikis (e.g., Fandom), paste the exact page URL (like the &quot;Weapons&quot; page) instead of the main wiki link. The AI won&apos;t crawl the whole site.
+                <strong>Using GameFAQs?</strong> It often blocks automated reads. If it fails, a single-page HTML guide works best, or just upload the file instead.
               </li>
             </ul>
             <div className="confirm-actions" style={{ justifyContent: "flex-end" }}>

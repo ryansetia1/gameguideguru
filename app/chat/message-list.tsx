@@ -5,19 +5,25 @@ import {
   IconChevronRight,
   IconDiamond,
   IconPencil,
+  IconPlus,
   IconRefresh,
+  IconX,
 } from "../icons";
 import { AnswerBody } from "./answer-body";
 import type { Message } from "./types";
 import { WRITING_ANSWER_PLACEHOLDER, messageShowsVariantNav } from "@/lib/chat-messages.js";
 import { KIND_LABELS, type Highlight } from "@/lib/highlights.js";
 import {
+  answerModeInfo,
   groupHighlightsByKind,
   isUploadOnlySources,
   pipelineSourceLabel,
   sourceHostname,
   uploadedSourceGuideLabel,
 } from "@/lib/chat-message-ui.js";
+
+/** Stop nudging for a guide after this many answers; re-nudge naturally in a new game. */
+const NUDGE_MAX_ANSWERS = 10;
 
 export type MessageListProps = {
   messages: Message[];
@@ -41,6 +47,9 @@ export type MessageListProps = {
   onRetry: (index: number) => void;
   onNavigateVariant: (msgIndex: number, variantIndex: number) => void;
   onOpenLightbox: (images: string[], index: number) => void;
+  onAddGuide?: () => void;
+  guideUpsellDismissed?: boolean;
+  onDismissGuideUpsell?: () => void;
 };
 
 export function MessageList({
@@ -65,7 +74,14 @@ export function MessageList({
   onRetry,
   onNavigateVariant,
   onOpenLightbox,
+  onAddGuide,
+  guideUpsellDismissed,
+  onDismissGuideUpsell,
 }: MessageListProps) {
+  const answerCount = messages.reduce(
+    (count, message) => (message.role === "assistant" ? count + 1 : count),
+    0,
+  );
   return (
     <section className="feed" aria-live="polite">
       {messages.map((message, index) =>
@@ -193,6 +209,23 @@ export function MessageList({
                   </div>
                 )}
               </div>
+              {message.content !== WRITING_ANSWER_PLACEHOLDER &&
+                (() => {
+                  const mode = answerModeInfo(message.pipelineType, message.sources);
+                  return (
+                    <span
+                      className={`answer-mode-chip${mode.guideBacked ? " is-guide" : ""}`}
+                      title={
+                        mode.guideBacked
+                          ? "Grounded in your guide"
+                          : "Answered from the model's general knowledge"
+                      }
+                    >
+                      <span className="answer-mode-dot" aria-hidden="true" />
+                      {mode.label}
+                    </span>
+                  );
+                })()}
               <button
                 type="button"
                 className="turn-action turn-action-icon"
@@ -244,6 +277,37 @@ export function MessageList({
                 ))}
               </div>
             )}
+            {onAddGuide &&
+              index === lastGuideIndex &&
+              preferredUrlCount === 0 &&
+              !guideUpsellDismissed &&
+              answerCount <= NUDGE_MAX_ANSWERS &&
+              message.content !== WRITING_ANSWER_PLACEHOLDER &&
+              !answerModeInfo(message.pipelineType, message.sources).guideBacked && (
+                <div className="answer-upsell">
+                  <p className="answer-upsell-copy">
+                    Have a walkthrough? Get answers straight from the source.
+                  </p>
+                  <button
+                    type="button"
+                    className="answer-upsell-cta icon-inline"
+                    onClick={onAddGuide}
+                  >
+                    <IconPlus size={14} /> Guide
+                  </button>
+                  {onDismissGuideUpsell && (
+                    <button
+                      type="button"
+                      className="answer-upsell-dismiss"
+                      onClick={onDismissGuideUpsell}
+                      aria-label="Don't show this for this game"
+                      title="Don't show this for this game"
+                    >
+                      <IconX size={14} />
+                    </button>
+                  )}
+                </div>
+              )}
             {isUploadOnlySources(message.sources) && (
               <div className="sources sources-static" aria-label="Sources">
                 <p className="sources-static-label">
@@ -288,14 +352,6 @@ export function MessageList({
                   </ol>
                 </details>
               )}
-            {message.pipelineType && (!message.sources || message.sources.length === 0) && (
-              <div
-                className="source-pipeline-label"
-                style={{ marginTop: "12px", fontSize: "13px", color: "var(--text-muted)" }}
-              >
-                Source: {pipelineSourceLabel(message.pipelineType, message.sources)}
-              </div>
-            )}
           </article>
         ),
       )}

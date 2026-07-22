@@ -962,9 +962,105 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
   border-bottom: 1px solid var(--line);
   padding: 8px 12px 8px 16px;
+}
+
+/* Names each answer's source mode at a glance: accent dot = grounded in a guide,
+   muted dot = from the model's general knowledge / web. Pushed right, ahead of
+   the regenerate button; wraps under on very narrow screens via .guide-head. */
+.answer-mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 1px 7px;
+  font-family: var(--font-sans);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--muted) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--muted) 20%, transparent);
+}
+
+.answer-mode-chip.is-guide {
+  color: var(--signal-dark);
+  background: color-mix(in srgb, var(--signal) 14%, transparent);
+  border-color: color-mix(in srgb, var(--signal) 40%, transparent);
+}
+
+.answer-mode-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  background: currentColor;
+}
+
+/* Thin inline nudge under the LATEST knowledge-only answer, only when the game
+   has no guide and the player hasn't dismissed it. Copy left, action right.
+   Dashed accent = inviting/optional, not an error. */
+.answer-upsell {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin: 10px 16px 4px;
+  padding: 6px 8px 6px 12px;
+  border: 1px dashed color-mix(in srgb, var(--signal) 45%, var(--line));
+  background: color-mix(in srgb, var(--signal) 6%, transparent);
+}
+
+.answer-upsell-copy {
+  flex: 1 1 160px;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.answer-upsell-cta {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--on-signal);
+  background: var(--signal);
+  border: 1px solid var(--signal);
+  cursor: pointer;
+}
+
+.answer-upsell-cta:hover {
+  filter: brightness(0.96);
+}
+
+.answer-upsell-dismiss {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  min-width: 32px;
+  padding: 6px;
+  color: var(--text-subtle);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.answer-upsell-dismiss:hover {
+  color: var(--ink);
 }
 
 /* Editing swaps the green bubble for the composer (portaled into .composer-edit-slot),
@@ -2706,12 +2802,6 @@ details.sources small {
   cursor: pointer;
 }
 
-/* Setup toggle spans the panel; the compact menu variant stays inline. */
-.opt-panel .spoiler-toggle {
-  display: flex;
-  width: 100%;
-}
-
 /* Checked = spoilers ON: switch to the app's spoiler-red nuance (not the mint
    accent) so it reads as a warning that reveals will show. */
 .spoiler-toggle:has(input:checked) {
@@ -3863,44 +3953,94 @@ details.sources small {
   gap: 12px;
 }
 
-.opt-tabs {
+/* Guide is the core feature, not a buried "optional" tab: a full-width invitation
+   card with an accent bar. The whole card is the tap target (mobile-friendly);
+   the cue just reinforces it. is-added state drops the accent + fill for a calm
+   "already set" look. */
+.guide-cta {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 12px;
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  min-height: 44px;
+  border: 1.5px solid var(--line);
+  background: var(--paper-strong);
+  box-shadow: inset 3px 0 0 var(--signal);
+  cursor: pointer;
+  transition: background 160ms ease;
 }
 
-.opt-tab {
-  flex: 1 1 calc(50% - 6px);
-  min-width: 0;
-  /* Clip a long value (e.g. a guide host) to this half so it can't spill over
-     the neighbouring trigger. */
-  overflow: hidden;
+.guide-cta:hover {
+  background: color-mix(in srgb, var(--signal) 8%, var(--paper-strong));
 }
 
-/* Secondary value (guide host / spoiler state) truncates instead of overflowing. */
-.opt-tab .opt-summary-value {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.guide-cta.is-added {
+  box-shadow: none;
 }
 
-.opt-panel {
+.guide-cta-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  animation: opt-reveal 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
 
-/* Collapsible section trigger (native <details>) */
-.opt-summary,
-.opt-tab {
+.guide-cta-body strong {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.guide-cta-body small {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-subtle);
+}
+
+.guide-cta-cue {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  min-height: 40px;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--on-signal);
+  background: var(--signal);
+  border: 1px solid var(--signal);
+}
+
+.guide-cta.is-added .guide-cta-cue {
+  color: var(--ink);
+  background: transparent;
+  border-color: var(--ink);
+}
+
+.guide-cta-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  background: var(--signal);
+}
+
+.guide-cta-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  padding: 4px 0;
-  cursor: pointer;
-  list-style: none;
+}
+
+.guide-cta-panel-title {
   font-family: var(--font-sans);
   font-size: 0.62rem;
   font-weight: 700;
@@ -3909,32 +4049,67 @@ details.sources small {
   color: var(--muted);
 }
 
-/* .opt-tab is a <button>; strip its chrome and left-align like the old summary. */
-.opt-tab {
+.guide-cta-skip {
   border: none;
   background: none;
-  text-align: left;
+  cursor: pointer;
+  padding: 8px;
+  min-height: 44px;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-subtle);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-.opt-summary::-webkit-details-marker {
-  display: none;
+.guide-cta-skip:hover {
+  color: var(--ink);
 }
 
-.opt-summary::before,
-.opt-tab::before {
-  content: "+";
-  display: inline-grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  flex: none;
-  border: 1.5px solid currentColor;
-  font-size: 0.85rem;
-  line-height: 1;
+/* Quiet full-width settings row under the guide card: label left, checkbox
+   right, lighter border so it reads as subordinate to the guide, not a second
+   competing card. Scoped here so the game-card compact toggle is unaffected. */
+.opt-spoiler-row {
+  display: flex;
 }
 
-.opt-tab.open::before {
-  content: "−";
+.opt-spoiler-row .spoiler-toggle {
+  display: flex;
+  width: 100%;
+  gap: 12px;
+  border-color: var(--line);
+}
+
+.opt-spoiler-row .spoiler-toggle span {
+  order: -1;
+  margin-right: auto;
+  color: var(--text-subtle);
+  font-weight: 600;
+}
+
+.opt-spoiler-row .spoiler-toggle:has(input:checked) span {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* On phones the cue drops under the copy as a full-width tap target. */
+@media (max-width: 480px) {
+  .guide-cta {
+    flex-wrap: wrap;
+  }
+  .guide-cta-cue {
+    flex: 1 1 100%;
+    justify-content: center;
+    min-height: 44px;
+  }
+}
+
+.opt-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: opt-reveal 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 /* Content reveal when a section opens — the .opt-panel mounts fresh, so this
@@ -3948,23 +4123,6 @@ details.sources small {
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-.opt-summary:hover,
-.opt-tab:hover {
-  color: var(--ink);
-}
-
-.opt-summary-value {
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 600;
-  color: var(--text-subtle);
-}
-
-/* Spoilers active: flag it in the app's spoiler-red even while collapsed. */
-.opt-summary-value.is-on {
-  color: var(--danger);
 }
 
 .guide-link-modes {

@@ -51,6 +51,7 @@ import {
   upsertLocalGame,
 } from "@/lib/local-games.js";
 import { steamAppIdFromCoverUrl, steamIdFromMetadata } from "@/lib/steam.js";
+import { dismissGuideNudge, isGuideNudgeDismissed } from "@/lib/guide-nudge.js";
 import { getSpeechRecognition } from "@/lib/voice.js";
 import {
   clearSessionDraft,
@@ -141,6 +142,7 @@ export default function Home() {
     onCancel: () => void;
   } | null>(null);
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [guideNudgeDismissed, setGuideNudgeDismissed] = useState(false);
 
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => setIsMounted(true), []);
@@ -380,6 +382,12 @@ export default function Home() {
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
   }, [activeChatId]);
+
+  // The in-answer guide nudge is dismissable per game; reload that flag when the
+  // open game changes so a "not now" on one game doesn't hide it on another.
+  useEffect(() => {
+    setGuideNudgeDismissed(isGuideNudgeDismissed(game));
+  }, [game]);
 
   useEffect(() => {
     userRef.current = user;
@@ -1641,6 +1649,15 @@ export default function Home() {
           onRetry={retry}
           onNavigateVariant={onNavigateVariant}
           onOpenLightbox={(images, index) => setLightboxState({ images, index })}
+          onAddGuide={() => {
+            setShowQuickAdd(true);
+            scrollToTop();
+          }}
+          guideUpsellDismissed={guideNudgeDismissed}
+          onDismissGuideUpsell={() => {
+            dismissGuideNudge(game);
+            setGuideNudgeDismissed(true);
+          }}
         />
       )}
 
