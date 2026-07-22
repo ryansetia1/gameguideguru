@@ -19,6 +19,7 @@ export type PendingImage = {
 export type ComposerShellProps = {
   started: boolean;
   temporary: boolean;
+  inlineEdit: boolean;
   dragActive: boolean;
   composerLocked: boolean;
   coverEnabled: boolean;
@@ -50,6 +51,7 @@ export type ComposerShellProps = {
 export function ComposerShell({
   started,
   temporary,
+  inlineEdit,
   dragActive,
   composerLocked,
   coverEnabled,
@@ -79,7 +81,7 @@ export function ComposerShell({
 }: ComposerShellProps) {
   return (
     <form
-      className={`composer${started || preferredUrlCount > 0 ? " docked" : ""}${temporary ? " temporary" : ""}${dragActive ? " drag-active" : ""}`}
+      className={`composer${started || preferredUrlCount > 0 ? " docked" : ""}${inlineEdit ? " inline-edit" : ""}${temporary ? " temporary" : ""}${dragActive ? " drag-active" : ""}`}
       onSubmit={onSubmit}
       onDragOver={
         coverEnabled && !composerLocked

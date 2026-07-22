@@ -2,6 +2,7 @@
 
 import type { User } from "@supabase/supabase-js";
 import { FormEvent, type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { AuthPanel } from "./auth-panel";
 import { ActiveGameCard } from "./chat/active-game-card";
@@ -181,6 +182,9 @@ export default function Home() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [examplesDismissed, setExamplesDismissed] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  // While editing, the docked composer is portaled into this in-flow slot so it
+  // sits right where the message was (replacing the green bubble).
+  const [editSlotEl, setEditSlotEl] = useState<HTMLDivElement | null>(null);
   const [globalSpoilerMajor, setGlobalSpoilerMajor] = useState(false);
   const [gameSpoilerMajor, setGameSpoilerMajor] = useState(false);
   const spoilerPrefs = effectiveSpoilerPrefs(globalSpoilerMajor, gameSpoilerMajor);
@@ -325,7 +329,9 @@ export default function Home() {
       if (prev > 50 && (input.length >= 20 || input.includes('\n'))) return prev;
       return height;
     });
-  }, [input, isExpanded]);
+    // editSlotEl: the edit portal mounts a fresh textarea after `input` is set,
+    // so re-run to size it to the message being edited (otherwise it stays 1 line).
+  }, [input, isExpanded, editSlotEl]);
 
   useEffect(() => {
     function onPopState() {
@@ -1630,6 +1636,7 @@ export default function Home() {
           lastUserRef={lastUserRef}
           lastGuideRef={lastGuideRef}
           feedRef={feedRef}
+          editSlotRef={setEditSlotEl}
           onStartEdit={startEdit}
           onRetry={retry}
           onNavigateVariant={onNavigateVariant}
@@ -1657,11 +1664,18 @@ export default function Home() {
       />
 
       {/* Composer is useless in the idle carousel state (no game field visible);
-          it returns once "+ New game" reveals the setup form. */}
-      {!quickIdle && (
+          it returns once "+ New game" reveals the setup form.
+          While editing, the composer is portaled into the message slot
+          (editSlotEl) so it replaces the green bubble in place. Input/images
+          live in page state so they survive the docked<->portal switch;
+          startEdit's setTimeout(0) re-focuses the textarea after it mounts. */}
+      {!quickIdle &&
+        (() => {
+          const composer = (
         <ComposerShell
           started={started}
           temporary={temporary}
+          inlineEdit={editingIndex !== null}
           dragActive={dragActive}
           composerLocked={composerLocked}
           coverEnabled={coverEnabled}
@@ -1691,7 +1705,12 @@ export default function Home() {
           onStopGeneration={stopGeneration}
           onCancelEdit={cancelEdit}
         />
-      )}
+          );
+          if (editingIndex !== null) {
+            return editSlotEl ? createPortal(composer, editSlotEl) : null;
+          }
+          return composer;
+        })()}
       {!hasRecent && homeMode && !examplesDismissed && (
         <div className="examples-block" aria-label="Examples">
           <div className="examples-head">

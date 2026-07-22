@@ -36,6 +36,7 @@ export type MessageListProps = {
   lastUserRef: RefObject<HTMLDivElement | null>;
   lastGuideRef: RefObject<HTMLElement | null>;
   feedRef: RefObject<HTMLDivElement | null>;
+  editSlotRef: (el: HTMLDivElement | null) => void;
   onStartEdit: (index: number) => void;
   onRetry: (index: number) => void;
   onNavigateVariant: (msgIndex: number, variantIndex: number) => void;
@@ -59,6 +60,7 @@ export function MessageList({
   lastUserRef,
   lastGuideRef,
   feedRef,
+  editSlotRef,
   onStartEdit,
   onRetry,
   onNavigateVariant,
@@ -71,12 +73,13 @@ export function MessageList({
           <div
             className={`turn user${editingIndex === index ? " editing" : ""}`}
             key={index}
+            id={`msg-${index}`}
             ref={index === lastUserIndex ? lastUserRef : undefined}
           >
             {editingIndex === index ? (
-              <div style={{ opacity: 0.6, fontStyle: "italic", padding: "8px 0" }}>
-                <p>Your message will start from here...</p>
-              </div>
+              // The composer is portaled into this slot (see page.tsx) so editing
+              // happens right where the message sits, replacing the green bubble.
+              <div className="composer-edit-slot" ref={editSlotRef} />
             ) : (
               <>
                 {message.images && message.images.length > 0 && (

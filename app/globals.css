@@ -967,16 +967,28 @@ h1 {
   padding: 8px 12px 8px 16px;
 }
 
+/* Editing swaps the green bubble for the composer (portaled into .composer-edit-slot),
+   so the turn is just a full-width container, no fill of its own. */
 .turn.user.editing {
   align-self: stretch;
   align-items: stretch;
   max-width: 100%;
   width: 100%;
-  padding: 12px;
-  /* Editing has no .user-bubble child, so keep the fill on the turn itself. */
-  border: 1.5px solid var(--ink);
-  background: var(--signal);
-  color: var(--on-signal);
+}
+
+.composer-edit-slot {
+  width: 100%;
+}
+
+/* Portaled inline for edit: drop the docked sticky positioning and flow in place.
+   Two classes (.docked.inline-edit) so it beats .composer.docked regardless of
+   source order. */
+.composer.docked.inline-edit {
+  position: static;
+  bottom: auto;
+  z-index: auto;
+  margin-top: 0;
+  width: 100%;
 }
 
 .edit-box {
