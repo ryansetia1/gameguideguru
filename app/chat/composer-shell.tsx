@@ -185,7 +185,7 @@ export function ComposerShell({
               }}
               placeholder={voiceListening ? "" : !hasGame ? "Enter a game name first" : ""}
               rows={1}
-              maxLength={300}
+              maxLength={2000}
               required
               disabled={composerLocked}
             />

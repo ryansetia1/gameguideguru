@@ -1436,7 +1436,8 @@ details.sources ol li + li {
 /* Scoped to the citation <ol>; the collapsible guides reuse details.sources but
    hold a <div>/<ul>, so an unscoped `li a` grid used to squeeze guide search
    titles into the 30px first column (per-word wrapping). */
-details.sources ol li a {
+details.sources ol li a,
+details.sources ol li .source-static-row {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr) 24px;
   gap: 9px;

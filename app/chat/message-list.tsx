@@ -21,6 +21,7 @@ import {
   sourceHostname,
   uploadedSourceGuideLabel,
 } from "@/lib/chat-message-ui.js";
+import { isUploadedGuideUrl } from "@/lib/guide-urls.js";
 
 /** Stop nudging for a guide after this many answers; re-nudge naturally in a new game. */
 const NUDGE_MAX_ANSWERS = 10;
@@ -333,22 +334,42 @@ export function MessageList({
                     )}
                   </summary>
                   <ol>
-                    {message.sources.map((source, i) => (
-                      <li key={`${source.url}-${i}`}>
-                        <a href={source.url} target="_blank" rel="noreferrer">
-                          <span className="source-number">
-                            {String(i + 1).padStart(2, "0")}
-                          </span>
-                          <span>
-                            <strong>{source.title}</strong>
-                            <small>{sourceHostname(source.url)}</small>
-                          </span>
-                          <span className="source-arrow" aria-hidden="true">
-                            <IconArrowUpRight />
-                          </span>
-                        </a>
-                      </li>
-                    ))}
+                    {message.sources.map((source, i) => {
+                      const number = (
+                        <span className="source-number">
+                          {String(i + 1).padStart(2, "0")}
+                        </span>
+                      );
+                      // Uploaded files have no real URL to open (upload://…), so
+                      // render them as plain text, not a broken link.
+                      if (isUploadedGuideUrl(source.url)) {
+                        return (
+                          <li key={`${source.url}-${i}`}>
+                            <div className="source-static-row">
+                              {number}
+                              <span>
+                                <strong>{source.title}</strong>
+                                <small>{uploadedSourceGuideLabel([source])}</small>
+                              </span>
+                            </div>
+                          </li>
+                        );
+                      }
+                      return (
+                        <li key={`${source.url}-${i}`}>
+                          <a href={source.url} target="_blank" rel="noreferrer">
+                            {number}
+                            <span>
+                              <strong>{source.title}</strong>
+                              <small>{sourceHostname(source.url)}</small>
+                            </span>
+                            <span className="source-arrow" aria-hidden="true">
+                              <IconArrowUpRight />
+                            </span>
+                          </a>
+                        </li>
+                      );
+                    })}
                   </ol>
                 </details>
               )}

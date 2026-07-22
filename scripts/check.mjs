@@ -390,7 +390,7 @@ assert.match(
 );
 assert.match(
   guideIngestHint({ available: true, indexed: false }) ?? "",
-  /web search/i,
+  /different link or source/i,
 );
 assert.equal(guideIngestHint({ available: false, indexed: false }), null);
 assert.equal(guideIngestHint({ available: true, indexed: true }), null);

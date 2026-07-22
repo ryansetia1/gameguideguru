@@ -125,7 +125,7 @@ export async function POST(request: Request) {
   }
 
   const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-  const question = cleanText(record.question, 300);
+  const question = cleanText(record.question, 2000);
   const game = cleanText(record.game, 120);
   const platform = cleanText(record.platform, 40);
   const preferredUrls = coerceGuideUrlsFromBody(record);
@@ -352,7 +352,15 @@ export async function POST(request: Request) {
         generationLatencyMs = Date.now() - generationStart;
         await logTraceEvent("generation_complete", `Answer generated in ${generationLatencyMs}ms`, generationLatencyMs, { pipelineType, sourceCount: sources.length });
         finalAnswer = answer;
-        finalSources = sources.map(({ title, url }) => ({ title, url }));
+        // Dedupe by URL so multiple RAG chunks from the same page don't render as
+        // "(section 1)"/"(section 2)" links that all open the exact same URL. We
+        // have no real per-section anchors, so the section suffix is dropped too.
+        const seenSourceUrls = new Set<string>();
+        finalSources = sources.flatMap(({ title, url }) => {
+          if (seenSourceUrls.has(url)) return [];
+          seenSourceUrls.add(url);
+          return [{ title: title.replace(/\s*\(section \d+\)\s*$/i, ""), url }];
+        });
 
         sendEvent("result", {
           answer,
