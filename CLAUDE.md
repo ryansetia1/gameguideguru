@@ -372,6 +372,9 @@ do not sync to the cloud or use Storage uploads.
   history, imageCount, spoilerPrefs, playerName })` (sources may carry
   `preferred: true` for RAG chunks — labels them PREFERRED GUIDE and injects a
   fidelity directive; adds a visual-context note when images are attached;
+  **experimental** character-naming rules when `imageCount > 0` (`IMAGE_CHARACTER_RULES`
+  — see [`docs/plan/image-character-recognition.md`](docs/plan/image-character-recognition.md):
+  patut dicoba, riskan; full revert steps there),
   `playerName` only on the first turn — follow-ups get a no-greeting rule to stop
   repeated "hello again" salutations),
   plus `REWRITE_INSTRUCTION` + `buildRewritePrompt({ question, history })` for
@@ -814,6 +817,10 @@ large chat or persistence work:
 - [`docs/plan/rag-tuning-roadmap.md`](docs/plan/rag-tuning-roadmap.md): RAG quality
   research (chunk size, `RETRIEVE_K`, `GUIDE_HIT` calibration, reranker vs learned
   router). Phased backlog for the next preferred-guide upgrade; no runtime change yet.
+- [`docs/plan/image-character-recognition.md`](docs/plan/image-character-recognition.md):
+  **Experimental (shipped, prompt-only):** vision character naming on image attachments.
+  Worth trying in production; revert via `git revert` or manual `lib/prompt.js` rollback
+  if wrong IDs, spoiler leaks, or worse search/RAG queries.
 
 ## Working conventions
 

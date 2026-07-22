@@ -206,6 +206,24 @@ assert.match(namedPrompt, /player's name is Ryan/);
 assert.match(namedPrompt, /don't open every reply with it/i);
 assert.doesNotMatch(namedPrompt, /—/); // no em-dashes in user-facing/persona copy
 
+const imagePrompt = buildPrompt({
+  game: "Sonic the Hedgehog",
+  question: "Who is this?",
+  sources: [],
+  imageCount: 1,
+});
+assert.match(imagePrompt, /attached 1 image/);
+assert.match(imagePrompt, /maybe Sonic/);
+assert.match(imagePrompt, /Never assert a name with false certainty/);
+
+const imageRewrite = buildRewritePrompt({
+  question: "How do I beat this boss?",
+  imageCount: 1,
+  game: "Sonic",
+});
+assert.match(imageRewrite, /maybe/);
+assert.match(REWRITE_INSTRUCTION, /character/);
+
 assert.equal(coerceDisplayName("  Ryan  "), "Ryan");
 assert.equal(displayNameFromMetadata({ display_name: "Ayu" }), "Ayu");
 

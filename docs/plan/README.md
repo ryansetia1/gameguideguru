@@ -9,5 +9,6 @@ they describe where the codebase is going, not necessarily what is shipped yet.
 | [chat-persistence-cutover-fixes.md](./chat-persistence-cutover-fixes.md) | **Done** | Close review gaps from normalized cutover (Phases 1–7) |
 | [page-decomposition.md](./page-decomposition.md) | **Done** | Split `app/page.tsx` into focused modules without behaviour change |
 | [rag-tuning-roadmap.md](./rag-tuning-roadmap.md) | **Research** | RAG chunk/K/threshold tuning and reranker upgrade backlog (July 2026) |
+| [image-character-recognition.md](./image-character-recognition.md) | **Experimental** | Prompt-only vision character naming — try in prod, revert if quality drops |
 
 When a plan phase ships, update its status here and cross-link from `CLAUDE.md`.
