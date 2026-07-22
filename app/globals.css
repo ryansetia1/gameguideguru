@@ -16,6 +16,9 @@
   --disabled-text: #5f6762;
   --font-sans: var(--font-rubik), "Rubik", system-ui, sans-serif;
   --nav-icon: 38px;
+  /* Motion: one snappy overshoot easing shared by tactile press/pop feedback so
+     interactions feel springy without each component reinventing a curve. */
+  --ease-pop: cubic-bezier(0.22, 1.2, 0.36, 1);
 }
 
 .icon {
@@ -166,7 +169,10 @@ summary:focus-visible {
 }
 
 main {
+  display: flex;
+  flex-direction: column;
   width: min(100% - 32px, 720px);
+  min-height: 100dvh;
   margin: 0 auto;
   padding: 22px 0 32px;
 }
@@ -923,10 +929,17 @@ h1 {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
+  transition:
+    background 120ms ease,
+    transform 120ms var(--ease-pop);
 }
 
 .turn-action:hover:not(:disabled) {
   background: var(--signal);
+}
+
+.turn-action:active:not(:disabled) {
+  transform: scale(0.93);
 }
 
 .turn-action:disabled {
@@ -1119,6 +1132,20 @@ h1 {
      theme (--line resolves per theme). Interactive controls keep their ink border. */
   border: 1.5px solid var(--line);
   background: var(--paper-strong);
+  /* Reward the answer landing with a gentle spring pop (the one moment that
+     earns extra juice); overrides .turn's plain rise. Plays once on mount. */
+  animation: answer-pop 440ms var(--ease-pop) backwards;
+}
+
+@keyframes answer-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .guide-tag {
@@ -1724,13 +1751,34 @@ details.sources small {
   color: var(--ink);
   cursor: pointer;
   transition:
-    transform 140ms ease,
+    transform 180ms var(--ease-pop),
+    box-shadow 180ms var(--ease-pop),
     background 140ms ease;
 }
 
 .submit:hover:not(:disabled) {
   background: #5cffce;
   transform: translateY(-2px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+/* Tactile press: pop back down onto the surface. */
+.submit:active:not(:disabled) {
+  transform: translateY(0) scale(0.94);
+  box-shadow: 0 0 0 var(--ink);
+}
+
+/* Send icon leans into the "launch" on hover; settles on press. */
+.submit .icon {
+  transition: transform 180ms var(--ease-pop);
+}
+
+.submit:hover:not(:disabled) .icon {
+  transform: translate(1px, -1px);
+}
+
+.submit:active:not(:disabled) .icon {
+  transform: translate(0, 0);
 }
 
 .submit:disabled {
@@ -1821,10 +1869,17 @@ details.sources small {
   font-size: 1.05rem;
   line-height: 1;
   cursor: pointer;
+  transition:
+    background 120ms ease,
+    transform 120ms var(--ease-pop);
 }
 
 .nav-icon-btn:hover {
   background: var(--signal);
+}
+
+.nav-icon-btn:active {
+  transform: scale(0.9);
 }
 
 .nav-button {
@@ -1841,10 +1896,17 @@ details.sources small {
   letter-spacing: 0.1em;
   text-transform: uppercase;
   cursor: pointer;
+  transition:
+    background 120ms ease,
+    transform 120ms var(--ease-pop);
 }
 
 .nav-button:hover {
   background: var(--signal);
+}
+
+.nav-button:active {
+  transform: scale(0.96);
 }
 
 .nav-left {
@@ -2607,10 +2669,17 @@ details.sources small {
   background: var(--paper-strong);
   font-size: 1.1rem;
   cursor: pointer;
+  transition:
+    background 120ms ease,
+    transform 140ms var(--ease-pop);
 }
 
 .composer-attach:hover:not(:disabled) {
   background: var(--signal);
+}
+
+.composer-attach:active:not(:disabled) {
+  transform: scale(0.9);
 }
 
 .composer-attach:disabled {
@@ -2800,6 +2869,15 @@ details.sources small {
   background: var(--paper-strong);
   font-size: 0.85rem;
   cursor: pointer;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    transform 120ms var(--ease-pop);
+}
+
+.spoiler-toggle:active {
+  transform: scale(0.97);
 }
 
 /* Checked = spoilers ON: switch to the app's spoiler-red nuance (not the mint
@@ -2926,6 +3004,13 @@ details.sources small {
   transition: margin-top 320ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Pure quick-home (form closed): grow to fill the viewport so the tip can anchor
+   to the bottom. When the setup form opens it flows right after the carousel
+   instead, so there's no negative space above it. */
+.quick-home:not(.quick-home--form-open) {
+  flex: 1 1 auto;
+}
+
 .quick-home--form-open {
   margin-top: 12px;
 }
@@ -2982,7 +3067,10 @@ details.sources small {
   color: var(--ink);
   font-family: var(--font-sans);
   cursor: pointer;
-  transition: background 120ms ease, transform 120ms ease;
+  transition:
+    background 120ms ease,
+    transform 160ms var(--ease-pop),
+    box-shadow 160ms var(--ease-pop);
 }
 
 @media (min-width: 768px) {
@@ -2992,9 +3080,12 @@ details.sources small {
   }
 }
 
+/* Signature lift: matches .library-card so tappable cards feel one system. */
 .quick-card:hover {
   background: var(--signal);
   color: var(--on-signal);
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 var(--ink);
 }
 
 .quick-card:hover .quick-card-meta small {
@@ -3002,7 +3093,8 @@ details.sources small {
 }
 
 .quick-card:active {
-  transform: translateY(1px);
+  transform: translate(0, 0);
+  box-shadow: 1px 1px 0 var(--ink);
 }
 
 .quick-card .cover-lg {
@@ -3073,11 +3165,22 @@ details.sources small {
   font-size: 0.9rem;
   font-weight: 700;
   cursor: pointer;
-  transition: filter 120ms ease;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition:
+    filter 120ms ease,
+    transform 120ms var(--ease-pop),
+    box-shadow 120ms var(--ease-pop);
 }
 
 .quick-new:hover {
   filter: brightness(0.94);
+  transform: translate(-2px, -2px);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.quick-new:active {
+  transform: translate(0, 0);
+  box-shadow: 1px 1px 0 var(--ink);
 }
 
 .quick-new--cancel {
@@ -3110,12 +3213,22 @@ details.sources small {
   font-size: 0.85rem;
   font-weight: 700;
   cursor: pointer;
-  transition: background 120ms ease;
+  transition:
+    background 120ms ease,
+    transform 120ms var(--ease-pop),
+    box-shadow 120ms var(--ease-pop);
 }
 
 .quick-lib-btn:hover {
   background: var(--signal);
   color: var(--on-signal);
+  transform: translateY(-2px);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.quick-lib-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 0 0 var(--ink);
 }
 
 .quick-lib-btn .icon {
@@ -3127,14 +3240,18 @@ details.sources small {
    it reads as a quiet hint, not a CTA. Square corners per the app theme. */
 .home-tip {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
+  justify-content: center;
   gap: 8px;
-  margin: 6px 2px 0;
-  padding-top: 14px;
-  border-top: 1px dashed var(--line);
+  /* Auto top margin floats it to the bottom of the grown quick-home for balance;
+     centered so it reads as an ambient footer note, not a left-aligned list item. */
+  margin: auto 2px 6px;
+  padding-top: 16px;
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.5;
+  text-align: center;
 }
 
 .home-tip-label {
@@ -3995,11 +4112,17 @@ details.sources small {
   background: var(--paper-strong);
   box-shadow: inset 3px 0 0 var(--signal);
   cursor: pointer;
-  transition: background 160ms ease;
+  transition:
+    background 160ms ease,
+    transform 140ms var(--ease-pop);
 }
 
 .guide-cta:hover {
   background: color-mix(in srgb, var(--signal) 8%, var(--paper-strong));
+}
+
+.guide-cta:active {
+  transform: scale(0.985);
 }
 
 .guide-cta.is-added {

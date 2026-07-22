@@ -48,6 +48,29 @@ tokens via `[data-theme="dark"]`.
   in `.game-card-spoiler`.
 - **Links:** `--signal-dark` with external-link icon pattern (`.icon-inline`).
 
+## Motion (juicy but editorial)
+
+Micro-interactions should feel tactile without clashing with the sharp, flat
+look. One shared overshoot easing token, `--ease-pop`
+(`cubic-bezier(0.22, 1.2, 0.36, 1)`), drives the springy feedback.
+
+- **Tappable cards** (`.quick-card`, `.library-card`) — hover **lifts** with the
+  signature hard offset shadow (`translate(-2px, -2px)` + `box-shadow: Npx Npx 0
+  var(--ink)`), press **settles** back down with a smaller shadow. This is the
+  canonical "juice" pattern; reuse it, don't invent bouncy/rounded variants.
+- **Buttons** (`.submit`, `.quick-new`, `.quick-lib-btn`, `.turn-action`,
+  `.nav-icon-btn`, `.nav-button`, `.composer-attach`, sidebar buttons) — quick
+  `:active` press (`scale(0.9–0.98)` or `translate` settle). Hover keeps the
+  existing `--signal` fill.
+- **Send button** — the icon leans into a "launch" nudge on hover and pops back
+  on press.
+- **Answer arrival** — `.turn.guide` plays a one-time `answer-pop` spring on
+  mount (the single moment that earns extra juice). Keep rewards to meaningful
+  moments; don't animate every state change.
+- Keep durations short (90–200ms for feedback, ~440ms for the answer pop). The
+  global `prefers-reduced-motion` block neutralises keyframe animations; scale/
+  transform *transitions* are subtle and left on, matching existing convention.
+
 ## Copy
 
 See **Copywriting** in `CLAUDE.md` (buddy tone, no em-dash AI tells).

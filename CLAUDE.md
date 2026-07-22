@@ -39,7 +39,10 @@ do not sync to the cloud or use Storage uploads.
   TheGamesDB box art plus optional device upload whose Storage write is DEFERRED to
   the first save (so abandoned drafts cost nothing), with a letter-tile placeholder
   fallback; autocomplete also auto-fills the platform selector via
-  `tgdbPlatformToLabel`; a sticky mini-header (cover + game/platform + back-to-top),
+  `tgdbPlatformToLabel`; a sticky mini-header (cover + game/platform; tap to
+  scroll to top; its left control is a **burger** that opens the sidebar, since
+  the top nav scrolls away — "home" lives on the brand logo (`goHome`) and a
+  **Home** item at the top of the sidebar, not a back arrow),
   a collapsible left sidebar (burger toggle) that lists saved games (cover + game +
   platform·year) with a per-row kebab -> Edit/Delete menu and a Library button that
   opens a 2-column cover-art grid,   per-message image attachments (signed-in only: compressed client-side, one
@@ -85,12 +88,16 @@ do not sync to the cloud or use Storage uploads.
   This Replicate-native cancel replaces the old `request.signal` abort to allow the background `after()` save to complete uninterrupted when the user merely backgrounds the app. A promise-based
   confirm dialog (`askConfirm(message, confirmLabel?, danger=true)` →
   `confirmState`) guards every destructive action (delete chat from the
-  sidebar/game-card/library kebabs, clear cover, and edit/retry when it would drop
-  attached images). Pass `danger:false` for a positive CTA (brand-accent button
+  sidebar/game-card/library kebabs, clear cover, and edit/retry whenever it would
+  drop follow-up turns — `confirmDropFollowups` in `use-chat-turn.tsx` confirms on
+  any dropped turn, naming the message count and, when present, the attached-image
+  count; retrying the last turn drops nothing so it stays confirm-free). Pass
+  `danger:false` for a positive CTA (brand-accent button
   instead of red), e.g. the "Use your Steam account" offer. A themed `snackbar` (`toast`)
   confirms a successful Steam link. The game-card and saved-library cards use the
   sidebar kebab pattern (`menuOpenId`/`toggleRowMenu`) for Edit/Delete; the
-  sticky-header back arrow calls `goHome` (pops the pushed chat entry). Mobile
+  sticky-header burger opens the sidebar and `goHome` (pops the pushed chat entry)
+  is reached via the brand logo / sidebar Home. Mobile
   **edge-swipe**: left→sidebar, right→last-opened library (`lastLibrary`; Steam
   when connected, else saved), signed-in only, disabled while an overlay/edit is
   active.
@@ -110,10 +117,14 @@ do not sync to the cloud or use Storage uploads.
   marketing hero + setup form (+ examples); has saved games → compact hero +
   **Jump back in** carousel (`.quick-home`, native scroll-snap, uniform cards,
   up to 4 + a "+N more" tile that opens the saved library) + **"+ New game"** /
-  **Saved library** / **Steam library** (when connected) buttons. "+ New game"
-  collapses the hero (`.hero-shell--exit`) and reveals the setup form below the
-  carousel with a push-up entrance (`.setup--from-quick`). Sidebar + library are
-  ungated for anon (Steam/profile controls stay `user`-only).
+  **Saved library** / **Steam library** (when connected) buttons, and an ambient
+  bottom-anchored one-line **tip** (`HomeTip` from `HOME_TIPS`, centered, fresh
+  per open). `main` is a `min-height:100dvh` flex column and `.quick-home` grows
+  (`flex:1`) only when the setup form is closed, so the tip sits at the screen
+  bottom for balance but the setup form still flows right after the carousel with
+  no gap. "+ New game" collapses the hero (`.hero-shell--exit`) and reveals the
+  setup form below the carousel with a push-up entrance (`.setup--from-quick`).
+  Sidebar + library are ungated for anon (Steam/profile controls stay `user`-only).
 - `app/platform-select.tsx`: custom themed, searchable, keyboard-accessible
   platform combobox. Delegates filtering to `lib/platforms.js`.
 - `lib/platforms.js`: owns the `PLATFORMS` list and `matchPlatforms(query)`, a
@@ -249,8 +260,12 @@ do not sync to the cloud or use Storage uploads.
   URLs, tiered search only (cached in `lib/search-cache.ts` keyed by `searchQuery`).
   Search is best-effort (skipped if no search API key, failures swallowed); the model
   still answers. Returns `{ answer, highlights, sources, spoilers, guideHint? }`
-  (`spoilers` trimmed to `[]` when `spoilerPrefs.major` is false). Only
-  `REPLICATE_API_TOKEN` is mandatory.
+  (`spoilers` trimmed to `[]` when `spoilerPrefs.major` is false). `sources` are
+  deduped by URL and the RAG "(section N)" title suffix is stripped, so multiple
+  chunks from one guide page don't render as duplicate links to the same URL
+  (no real per-section anchors exist); uploaded-file sources (`upload://`) render
+  as plain non-clickable text in the UI. `question` accepts up to 2000 chars
+  (composer `maxLength` matches). Only `REPLICATE_API_TOKEN` is mandatory.
 - `app/api/guide-bundle/route.ts`: `GET ?url=` previews GameFAQs multi-page FAQ
   bundles (page count + section list) before the user confirms add. Discovery
   uses `lib/gamefaqs-discover.ts` (site search + extract TOC enrichment; GameFAQs
@@ -412,10 +427,13 @@ do not sync to the cloud or use Storage uploads.
   import from this single module instead of each maintaining a private singleton.
   Separate from `lib/supabase.ts` (`getSupabase`) which is the browser client
   used by `page.tsx` (with auth session).
-- `lib/hero-copy.js`: rotating home marketing copy — `FUN_ROLES` (eyebrow
-  "Companion for …", cycles on a timer; tap pauses/resumes) and `HERO_LINES`
+- `lib/hero-copy.js`: rotating home copy — `FUN_ROLES` (eyebrow
+  "Companion for …", cycles on a timer; tap pauses/resumes), `HERO_LINES`
   (`[hook, payoff]` headline pairs; one picked at random per open; index 0 is the
-  SSR-stable default).
+  SSR-stable default), and `HOME_TIPS` (short feature tips for the quick-home
+  bottom `HomeTip`; index 0 SSR-stable). Hero `h1` is sized to track the
+  quick-home headline on mobile (`clamp(2.4rem, 11.5vw, 6.1rem)`) so long two-part
+  lines never spill to 4 rows and push the composer below the fold.
 - `app/profile-menu.tsx`: signed-in nav avatar dropdown — link to `/profile`,
   global spoiler toggle, theme picker (System/Light/Dark via `lib/theme.js`),
   sign out. Theme/spoiler writes sync to `user_metadata` when signed in.
