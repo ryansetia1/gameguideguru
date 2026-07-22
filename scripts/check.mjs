@@ -216,6 +216,8 @@ const imagePrompt = buildPrompt({
 assert.match(imagePrompt, /attached 1 image/);
 assert.match(imagePrompt, /maybe Sonic/);
 assert.match(imagePrompt, /Never assert a name with false certainty/);
+// Silent correction: fix a prior misID without apologising or narrating it.
+assert.match(imagePrompt, /do not apologise, announce that you were wrong/);
 
 const imageRewrite = buildRewritePrompt({
   question: "How do I beat this boss?",

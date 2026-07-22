@@ -197,9 +197,18 @@ export async function POST(request: Request) {
 
         let searchTopic = retryContext?.searchTopic || (await getCachedSearch(rewriteCacheKey)) as string | null;
         if (typeof searchTopic !== "string") {
+          // Fix A: on image turns, drop prior Guide (assistant) turns from the
+          // rewrite's history. A past answer's character ID poisons "ini"/"this"
+          // follow-ups (trace 192da351 → d1c3401f: rewrite inherited a wrong GF
+          // name). The current image is the source of truth; user turns stay for
+          // topical context. summarize still gets full history + the trust-image
+          // guard, so multi-turn continuity is preserved there.
+          const rewriteHistory = images.length
+            ? history.filter((turn) => turn.role === "user")
+            : history;
           searchTopic = await resolveQuestion({
             question,
-            history,
+            history: rewriteHistory,
             game,
             platform,
             userId,

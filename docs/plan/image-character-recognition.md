@@ -51,8 +51,23 @@ When `imageCount > 0`:
 | Prior-ID rule in system rewrite | `REWRITE_INSTRUCTION`, `REWRITE_RAG_INSTRUCTION` |
 | `IMAGE_ANCHOR_TRUST_IMAGE` | `buildImageSubjectAnchor()` — anchor yields to fresh vision |
 
-**Not shipped (yet):** stripping assistant visual-ID lines from history on image turns
-(section D backlog). Prompt-only guard first; delete history rows if traces still poison.
+### D. Rewrite history strip + silent correction (July 2026)
+
+Prompt-only guard C helped summarize self-correct (trace `d1c3401f`), but the **rewrite**
+still inherited the wrong ID from history, so retrieval ran on the wrong subject, and the
+self-correction narrated an apology.
+
+| Fix | Where |
+|-----|-------|
+| **Strip prior Guide (assistant) turns from the rewrite history on image turns** | `app/api/solve/route.ts` (`rewriteHistory` filter before `resolveQuestion`). User turns stay; summarize keeps full history + trust-image guard. |
+| **Silent correction** (`IMAGE_SILENT_CORRECTION`) | `buildPrompt` image block — re-read and answer correctly without apologising or naming the earlier mistake. |
+
+**Still a ceiling (not fixable prompt-only):** obscure characters the model has no visual
+model of. Verified July 2026 — the same Pandemona screenshot in 3 fresh chats returned 3
+*different* confident wrong names (Leviathan, Sorceress Adel, Jumbo Cactuar) with invented
+acquisition steps, and **zero hedges**. Confidence is uncalibrated, so "hedge when unsure"
+never fires. The only mechanism that surfaces this is **self-consistency voting** (sample the
+ID 2–3× and hedge on disagreement) — not yet shipped.
 
 ## Why it is risky
 
