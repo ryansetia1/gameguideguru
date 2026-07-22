@@ -3239,19 +3239,30 @@ details.sources small {
 /* Ambient one-liner filling the bottom of quick-home. Muted + dashed top rule so
    it reads as a quiet hint, not a CTA. Square corners per the app theme. */
 .home-tip {
+  /* Sticky to the screen bottom so it balances on any mobile height (stays
+     visible instead of being pushed below the fold on short screens). quick-home
+     grows above it (flex:1) to fill the gap. Centered so it reads as an ambient
+     footer note, not a left-aligned list item. */
+  position: sticky;
+  bottom: max(10px, env(safe-area-inset-bottom));
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: center;
   gap: 8px;
-  /* Auto top margin floats it to the bottom of the grown quick-home for balance;
-     centered so it reads as an ambient footer note, not a left-aligned list item. */
-  margin: auto 2px 6px;
-  padding-top: 16px;
+  margin: auto 2px 0;
+  padding: 16px 0 10px;
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.5;
   text-align: center;
+}
+
+/* Setup form + docked composer own the bottom: drop to static flow right after
+   the form so the tip never overlaps the composer or leaves a gap above itself. */
+.home-tip--anchored {
+  position: static;
+  margin-top: 8px;
 }
 
 .home-tip-label {

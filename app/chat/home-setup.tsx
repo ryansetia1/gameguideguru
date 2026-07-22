@@ -184,7 +184,6 @@ export function HomeSetup({
                   </button>
                 )}
               </div>
-              <HomeTip />
             </>
           ) : (
             !editingGame && (
@@ -386,6 +385,12 @@ export function HomeSetup({
           )}
         </section>
       ) : null}
+
+      {/* Ambient tip: sticky to the screen bottom on the pure quick-home so it
+          balances on any height. When "+ New game" opens the setup form (and its
+          docked composer takes the bottom), it drops to static flow right after
+          the form so it never fights the composer or leaves a gap. */}
+      {showCarousel && <HomeTip anchored={newGameOpen} />}
     </>
   );
 }

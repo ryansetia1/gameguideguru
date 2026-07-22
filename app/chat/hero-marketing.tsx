@@ -187,14 +187,16 @@ export function RotatingWord() {
 }
 
 /** Ambient one-line tip at the bottom of quick-home. Picks a fresh tip per open;
- *  index 0 is the SSR-stable default so hydration matches. */
-export function HomeTip() {
+ *  index 0 is the SSR-stable default so hydration matches. `anchored` drops it
+ *  from sticky-bottom to static flow (used when the setup form + docked composer
+ *  own the screen bottom). */
+export function HomeTip({ anchored = false }: { anchored?: boolean }) {
   const [i, setI] = useState(0);
   useEffect(() => {
     setI(Math.floor(Math.random() * HOME_TIPS.length));
   }, []);
   return (
-    <p className="home-tip">
+    <p className={`home-tip${anchored ? " home-tip--anchored" : ""}`}>
       <span className="home-tip-label">Tip</span>
       {HOME_TIPS[i]}
     </p>
