@@ -117,6 +117,11 @@ export function MessageList({
               </>
             )}
           </div>
+        ) : loading && message.content === WRITING_ANSWER_PLACEHOLDER ? (
+          // Regen: this bubble is just the placeholder while the loading card
+          // below shows progress — hide it so "Writing answer..." isn't doubled.
+          // The real answer replaces the placeholder and the bubble returns.
+          null
         ) : (
           <article
             className="turn guide"
