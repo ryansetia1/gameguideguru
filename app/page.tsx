@@ -219,6 +219,8 @@ export default function Home() {
   const backgroundMessagesRef = useRef<Record<string, Message[]>>({});
   const backgroundLoadingRef = useRef<Record<string, boolean>>({});
   const backgroundStatusRef = useRef<Record<string, string | null>>({});
+  // Guards session URL/draft sync while openChat is still fetching messages.
+  const openingChatIdRef = useRef<string | null>(null);
   const conversationGame = useRef("");
   const activeChatIdRef = useRef<string | null>(null);
   // Snapshot of the thread open before entering temporary chat, so turning it off
@@ -495,6 +497,7 @@ export default function Home() {
   useEffect(() => {
     if (!sessionHydratedRef.current) return;
     if (messages.length === 0) {
+      if (openingChatIdRef.current) return;
       clearSessionDraft();
       setChatUrl(null);
       return;
@@ -824,41 +827,49 @@ export default function Home() {
   }
 
   async function openChat(chat: Chat) {
-    jumpRef.current = true;
-    setChatUrl(chat.id);
-    clearSessionDraft();
-    setActiveChatId(chat.id);
-    setGame(chat.game);
-    setPlatform(chat.platform);
-    setPreferredUrls(guideUrlsFromChat(chat));
-    if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
-    setCover(chat.cover_url ?? "");
-    setPendingCover(null);
-    replacedCoverRef.current = null;
-    clearPendingImages();
-    setReleaseYear(chat.release_year ?? "");
-    setEditingGame(false);
-    const isBgLoading = backgroundLoadingRef.current[chat.id];
-    const cached = backgroundMessagesRef.current[chat.id];
-    if (cached) {
-      setMessages(cached);
-    } else {
-      const supabase = getSupabase();
-      const loaded: Message[] =
-        supabase && user
-          ? ((await resolveThreadMessages(supabase, chat)) as Message[])
-          : parseStoredMessages(chat.messages);
+    openingChatIdRef.current = chat.id;
+    try {
+      const isBgLoading = backgroundLoadingRef.current[chat.id];
+      const cached = backgroundMessagesRef.current[chat.id];
+      let loaded: Message[];
+      if (cached) {
+        loaded = cached;
+      } else {
+        const supabase = getSupabase();
+        loaded =
+          supabase && user
+            ? ((await resolveThreadMessages(supabase, chat)) as Message[])
+            : parseStoredMessages(chat.messages);
+      }
+      if (openingChatIdRef.current !== chat.id) return;
+
+      jumpRef.current = true;
+      setChatUrl(chat.id);
+      clearSessionDraft();
+      setActiveChatId(chat.id);
+      setGame(chat.game);
+      setPlatform(chat.platform);
+      setPreferredUrls(guideUrlsFromChat(chat));
+      if (cover.startsWith("blob:")) URL.revokeObjectURL(cover);
+      setCover(chat.cover_url ?? "");
+      setPendingCover(null);
+      replacedCoverRef.current = null;
+      clearPendingImages();
+      setReleaseYear(chat.release_year ?? "");
+      setEditingGame(false);
       setMessages(loaded);
+      setLoading(isBgLoading || false);
+      setGenerationStatus(backgroundStatusRef.current[chat.id] || null);
+      conversationGame.current = chat.game;
+      setInput("");
+      setError("");
+      setEditingIndex(null);
+      setSidebarOpen(false);
+      setMenuOpenId(null);
+      setTemporary(false);
+    } finally {
+      if (openingChatIdRef.current === chat.id) openingChatIdRef.current = null;
     }
-    setLoading(isBgLoading || false);
-    setGenerationStatus(backgroundStatusRef.current[chat.id] || null);
-    conversationGame.current = chat.game;
-    setInput("");
-    setError("");
-    setEditingIndex(null);
-    setSidebarOpen(false);
-    setMenuOpenId(null);
-    setTemporary(false);
   }
 
   // Autocomplete pick carries box art + year + platform; manual typing clears the
