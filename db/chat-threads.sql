@@ -42,6 +42,8 @@ alter table public.chat_turns enable row level security;
 alter table public.chat_responses enable row level security;
 alter table public.chat_turn_state enable row level security;
 
+-- Idempotent: safe to re-run if a prior apply stopped mid-file.
+drop policy if exists "chat_turns_select_own" on public.chat_turns;
 create policy "chat_turns_select_own"
   on public.chat_turns for select
   to authenticated
@@ -53,6 +55,7 @@ create policy "chat_turns_select_own"
     )
   );
 
+drop policy if exists "chat_turns_insert_own" on public.chat_turns;
 create policy "chat_turns_insert_own"
   on public.chat_turns for insert
   to authenticated
@@ -64,6 +67,7 @@ create policy "chat_turns_insert_own"
     )
   );
 
+drop policy if exists "chat_turns_update_own" on public.chat_turns;
 create policy "chat_turns_update_own"
   on public.chat_turns for update
   to authenticated
@@ -75,6 +79,7 @@ create policy "chat_turns_update_own"
     )
   );
 
+drop policy if exists "chat_turns_delete_own" on public.chat_turns;
 create policy "chat_turns_delete_own"
   on public.chat_turns for delete
   to authenticated
@@ -86,6 +91,7 @@ create policy "chat_turns_delete_own"
     )
   );
 
+drop policy if exists "chat_responses_select_own" on public.chat_responses;
 create policy "chat_responses_select_own"
   on public.chat_responses for select
   to authenticated
@@ -99,6 +105,7 @@ create policy "chat_responses_select_own"
     )
   );
 
+drop policy if exists "chat_responses_insert_own" on public.chat_responses;
 create policy "chat_responses_insert_own"
   on public.chat_responses for insert
   to authenticated
@@ -112,6 +119,7 @@ create policy "chat_responses_insert_own"
     )
   );
 
+drop policy if exists "chat_responses_update_own" on public.chat_responses;
 create policy "chat_responses_update_own"
   on public.chat_responses for update
   to authenticated
@@ -125,6 +133,7 @@ create policy "chat_responses_update_own"
     )
   );
 
+drop policy if exists "chat_responses_delete_own" on public.chat_responses;
 create policy "chat_responses_delete_own"
   on public.chat_responses for delete
   to authenticated
@@ -138,6 +147,7 @@ create policy "chat_responses_delete_own"
     )
   );
 
+drop policy if exists "chat_turn_state_select_own" on public.chat_turn_state;
 create policy "chat_turn_state_select_own"
   on public.chat_turn_state for select
   to authenticated
@@ -151,6 +161,7 @@ create policy "chat_turn_state_select_own"
     )
   );
 
+drop policy if exists "chat_turn_state_insert_own" on public.chat_turn_state;
 create policy "chat_turn_state_insert_own"
   on public.chat_turn_state for insert
   to authenticated
@@ -164,6 +175,7 @@ create policy "chat_turn_state_insert_own"
     )
   );
 
+drop policy if exists "chat_turn_state_update_own" on public.chat_turn_state;
 create policy "chat_turn_state_update_own"
   on public.chat_turn_state for update
   to authenticated
@@ -177,6 +189,7 @@ create policy "chat_turn_state_update_own"
     )
   );
 
+drop policy if exists "chat_turn_state_delete_own" on public.chat_turn_state;
 create policy "chat_turn_state_delete_own"
   on public.chat_turn_state for delete
   to authenticated

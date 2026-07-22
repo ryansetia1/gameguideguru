@@ -307,6 +307,12 @@ improvements.
 
 ```
 [ ] db/chat-threads.sql applied on target Supabase project
+    (If you see "policy … already exists", schema is already applied — run verify below, then skip to backfill.)
+[ ] Verify schema (Supabase SQL editor):
+    select tablename from pg_tables
+    where schemaname = 'public'
+      and tablename in ('chat_turns', 'chat_responses', 'chat_turn_state');
+    -- expect 3 rows; re-run chat-threads.sql is safe (policies use drop if exists)
 [ ] npm run backfill:chats:dry   — review output
 [ ] npm run backfill:chats       — populate chat_turns / chat_responses / chat_turn_state
 [ ] npm run backfill:chats:verify — 0 mismatches (or documented exceptions)
