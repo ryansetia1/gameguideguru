@@ -10,6 +10,7 @@ import { ComposerShell } from "./chat/composer-shell";
 import { CoverThumb, displayPlatform } from "./chat/cover-thumb";
 import { GamesSidebar } from "./chat/games-sidebar";
 import { HomeSetup } from "./chat/home-setup";
+import { HomeTip } from "./chat/hero-marketing";
 import { MessageList } from "./chat/message-list";
 import { useChatTurn } from "./chat/use-chat-turn";
 import { useGuideBundle } from "./chat/use-guide-bundle";
@@ -316,7 +317,10 @@ export default function Home() {
 
   // Grow the composer to fit its text (down to one line when empty), capped by
   // the CSS max-height which then scrolls. Runs on every input + after clearing.
-  const isExpanded = composerHeight > 50;
+  // Gate on having input: an empty composer is always one line, so a stale
+  // composerHeight (kept across chat open/switch) can't wrongly render it
+  // expanded until the next keystroke re-measures it.
+  const isExpanded = input.trim().length > 0 && composerHeight > 50;
   
   useEffect(() => {
     const el = composerRef.current;
@@ -1750,6 +1754,11 @@ export default function Home() {
           }
           return composer;
         })()}
+      {/* Ambient quick-home tip. On the pure carousel it sticks to the screen
+          bottom (composer/examples/disclaimer are all hidden, so it's the last
+          flow child). On "+ New game" it renders after the composer as static
+          flow so it never sits above and distracts from the input. */}
+      {showCarousel && <HomeTip anchored={newGameOpen} />}
       {!hasRecent && homeMode && !examplesDismissed && (
         <div className="examples-block" aria-label="Examples">
           <div className="examples-head">
