@@ -16,7 +16,6 @@ import { useGuideBundle } from "./chat/use-guide-bundle";
 import { useHomeSession } from "./chat/use-home-session";
 import { type Message, parseStoredMessages } from "./chat/types";
 import {
-  IconArrowLeft,
   IconChevronDown,
   IconIncognito,
   IconX,
@@ -1400,7 +1399,15 @@ export default function Home() {
               <span aria-hidden="true" />
             </button>
           )}
-          <a className="brand" href="#" aria-label="Game Guide Go, home">
+          <a
+            className="brand"
+            href="#"
+            aria-label="Game Guide Go, home"
+            onClick={(event) => {
+              event.preventDefault();
+              goHome();
+            }}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="brand-mark" src="/logo.png" alt="" width={38} height={38} />
             <span>GAME GUIDE GO</span>
@@ -1446,6 +1453,16 @@ export default function Home() {
           setMenuOpenId(null);
           dismissOverlay();
         }}
+        onGoHome={() => {
+          // newGame() resets straight to the home view and closes the sidebar.
+          // We don't route through goHome()'s history.back() here: the open
+          // sidebar pushed its own overlay entry, so a single back() would just
+          // close the sidebar and stay in the chat.
+          // ponytail: the pushed chat/overlay entries linger in history, so a
+          // hardware-back from home can dead-click once; fix with an explicit
+          // history unwind if it ever bothers anyone.
+          newGame();
+        }}
         onOpenSavedLibrary={openSavedLibrary}
         onConnectSteam={connectSteam}
         onOpenSteamLibrary={openSteamLibrary}
@@ -1476,14 +1493,18 @@ export default function Home() {
         >
           <button
             type="button"
-            className="sticky-back"
+            className="nav-icon-btn burger"
             onClick={(event) => {
               event.stopPropagation();
-              goHome();
+              setSidebarOpen(true);
+              pushOverlayHistory();
             }}
-            aria-label="Back to home"
+            aria-label="Open your games"
+            aria-expanded={sidebarOpen}
           >
-            <IconArrowLeft />
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
           </button>
           {coverEnabled && <CoverThumb cover={cover} name={game} className="cover-mini" />}
           <div className="sticky-meta">

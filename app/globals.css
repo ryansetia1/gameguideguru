@@ -84,11 +84,6 @@
   height: 20px;
 }
 
-.sticky-back .icon {
-  width: 18px;
-  height: 18px;
-}
-
 .guide-tag .icon {
   width: 10px;
   height: 10px;
@@ -4306,21 +4301,6 @@ details.sources small {
   animation: rise 200ms ease-out backwards;
 }
 
-.sticky-back {
-  flex-shrink: 0;
-  width: 34px;
-  height: 34px;
-  border: 1.5px solid var(--ink);
-  background: var(--paper-strong);
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.sticky-back:hover {
-  background: var(--signal);
-}
-
 .sticky-meta {
   display: flex;
   flex-direction: column;
@@ -4685,7 +4665,6 @@ details.sources small {
 .cover-upload:hover,
 .guide-link-modes button.active,
 .guide-search-use:hover:not(:disabled),
-.sticky-back:hover,
 .profile-menu-item:hover,
 .profile-menu-theme button.active,
 .auth-submit {

@@ -4,6 +4,7 @@ import { ClearButton } from "../clear-button";
 import {
   IconDotsVertical,
   IconGrid,
+  IconHome,
   IconPlus,
   IconX,
 } from "../icons";
@@ -26,6 +27,7 @@ export type GamesSidebarProps = {
   librarySearch: string;
   onDismissOverlay: () => void;
   onCloseSidebar: () => void;
+  onGoHome: () => void;
   onOpenSavedLibrary: () => void;
   onConnectSteam: () => void;
   onOpenSteamLibrary: () => void;
@@ -54,6 +56,7 @@ export function GamesSidebar({
   librarySearch,
   onDismissOverlay,
   onCloseSidebar,
+  onGoHome,
   onOpenSavedLibrary,
   onConnectSteam,
   onOpenSteamLibrary,
@@ -96,6 +99,9 @@ export function GamesSidebar({
           </button>
         </div>
         <div className="sidebar-actions">
+          <button type="button" className="sidebar-library-btn icon-inline" onClick={onGoHome}>
+            <IconHome /> Home
+          </button>
           <button type="button" className="sidebar-library-btn icon-inline" onClick={onOpenSavedLibrary}>
             <IconGrid /> Saved library
           </button>

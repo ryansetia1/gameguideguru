@@ -51,6 +51,14 @@ export function IconArrowLeft(props: IconProps) {
   );
 }
 
+export function IconHome(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path {...base} d="M4 11l8-6 8 6M6 10v9h12v-9" />
+    </Svg>
+  );
+}
+
 export function IconArrowUpRight(props: IconProps) {
   return (
     <Svg {...props}>
