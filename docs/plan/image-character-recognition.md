@@ -1,8 +1,12 @@
 # Image character recognition (prompt-only)
 
 **Status:** Experimental — **patut dicoba, riskan** (July 2026)  
-**Shipped:** Prompt text in `lib/prompt.js` (+ `imageResolvedSubject` wire in `app/api/solve/route.ts` → `summarize`)  
-**Runtime:** No new API, flag, or DB. Gemini already receives message images via Replicate `images`.
+**Shipped:** Prompt text in `lib/prompt.js` (+ `imageResolvedSubject` anchor wire and the
+section-D rewrite-history strip in `app/api/solve/route.ts`). Sections A–D validated live
+(trace `66f59c23`: Dry Bowser → new image → Baby Daisy, no inheritance, no apology).  
+**Runtime:** No new API, flag, or DB. Gemini already receives message images via Replicate `images`.  
+**Known ceiling (unfixed):** confident misID on obscure characters — prompt-only cannot fix it
+(see section D). Needs self-consistency voting, not yet shipped.
 
 ## What it does
 

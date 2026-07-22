@@ -377,7 +377,14 @@ do not sync to the cloud or use Storage uploads.
   patut dicoba, riskan; full revert steps there); when images are attached, rewrite
   output (`imageResolvedSubject` / `searchTopic`) is also injected as a soft visual
   anchor so summarize does not drift from a correct rewrite (same doc, section B);
-  section C adds history-poisoning guards + image-trust hedging on the anchor,
+  section C adds history-poisoning guards + image-trust hedging on the anchor;
+  section D (validated live, trace `66f59c23`) strips prior Guide (assistant) IDs
+  from the rewrite history on image turns (`app/api/solve/route.ts`) so an "ini"
+  follow-up re-reads the current image instead of inheriting a past character, plus
+  a silent-correction rule (`IMAGE_SILENT_CORRECTION`) so a re-read never narrates
+  an apology. Known ceiling: confident misID on obscure characters is NOT fixable
+  prompt-only (Pandemona returned 3 different confident wrong names across fresh
+  chats); only self-consistency voting would surface it — not yet shipped.
   `playerName` only on the first turn — follow-ups get a no-greeting rule to stop
   repeated "hello again" salutations),
   plus `REWRITE_INSTRUCTION` + `buildRewritePrompt({ question, history })` for
