@@ -462,13 +462,16 @@ export function GuideLinkField({
         return;
       }
 
-      if (payload.guideUrl) {
-        const next = [...value, payload.guideUrl];
-        onChange(next);
-        setUploadFile(null);
-        setUploadError("");
-        if (fileInputRef.current) fileInputRef.current.value = "";
+      if (!payload.indexed || !payload.guideUrl) {
+        setUploadError("Upload finished but the guide was not indexed. Try again.");
+        return;
       }
+
+      const next = [...value, payload.guideUrl];
+      onChange(next);
+      setUploadFile(null);
+      setUploadError("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
     } catch {
       setUploadError("Upload failed. Check your connection and try again.");
     } finally {

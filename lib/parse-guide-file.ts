@@ -1,3 +1,5 @@
+import "pdf-parse/worker";
+import { CanvasFactory } from "pdf-parse/worker";
 import { PDFParse } from "pdf-parse";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -35,7 +37,7 @@ export async function parseGuideFile(
   const fileType = ext as GuideFileType;
 
   if (fileType === "pdf") {
-    const parser = new PDFParse({ data: buffer });
+    const parser = new PDFParse({ data: buffer, CanvasFactory });
     try {
       const result = await parser.getText();
       const text = result.text.trim();

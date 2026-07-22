@@ -93,6 +93,15 @@ export async function POST(request: Request) {
       ctx: { game, platform, userId: userId.trim() },
     });
 
+    if (!result.indexed) {
+      const msg = "Could not index that guide. Try again in a moment.";
+      await logTraceEvent("upload_error", `Guide ingest failed: ${guideUrl}`, undefined, {
+        guideUrl,
+        textLength: parsed.text.length,
+      });
+      return NextResponse.json({ error: msg }, { status: 500 });
+    }
+
     await logTraceEvent("upload_complete", `Successfully indexed ${result.chunkCount} chunks.`, undefined, {
       indexed: result.indexed,
       chunkCount: result.chunkCount,

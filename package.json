@@ -14,6 +14,7 @@
     "backfill:chats:dry": "node scripts/backfill-chat-threads.mjs --dry-run"
   },
   "dependencies": {
+    "@napi-rs/canvas": "0.1.80",
     "@supabase/supabase-js": "^2.110.7",
     "next": "^16.2.10",
     "openai": "^6.48.0",
