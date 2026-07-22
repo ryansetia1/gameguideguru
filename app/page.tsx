@@ -1369,7 +1369,7 @@ export default function Home() {
     <main>
       <nav className="nav" aria-label="Brand">
         <div className="nav-left">
-          {(user || chats.length > 0) && (
+          {isMounted && (user || chats.length > 0) && (
             <button
               type="button"
               className="nav-icon-btn burger"

@@ -313,8 +313,15 @@ do not sync to the cloud or use Storage uploads.
   `system_instruction` + `prompt` separately with Gemini fields
   (`max_output_tokens`, `thinking_budget: 0`), polls prediction status to yield granular `status` events (e.g. "Starting AI engine") to the UI during generation, and parses the JSON
   `{ answer, highlights, spoilers, spoilerRisk }` via `lib/highlights.js#parseSummary`.
-  All three Gemini calls (`resolveQuestion`, `summarize`, `censorSpoilers`) share
-  a single `Replicate` SDK instance (`getReplicate()` singleton).
+  All Gemini calls (`resolveQuestion`, `summarize`, `censorSpoilers`) share a single
+  `Replicate` SDK instance (`getReplicate()` singleton). Preferred-guide **Phase C
+  rerank** lives in `lib/guide-rerank-cohere.ts` (`cohereRerankChunks`): a Cohere
+  `rerank-v3.5` cross-encoder that reorders the retrieved top-K and returns a
+  `relevant` verdict the RAG router trusts over raw cosine (calibration 2026-07-22:
+  cosine 9/10 rank-1 3/6 → Cohere 10/10 rank-1 6/6; a Gemini LLM-reranker was tried
+  and deleted for regressing to 8/10). Opt-in by `COHERE_API_KEY` presence and fully
+  fail-open — any Cohere error (trial expired / 429 / network) falls back to cosine
+  `GUIDE_HIT`, so it's safe to enable. See `docs/plan/rag-tuning-roadmap.md`.
   `/api/solve` calls `censorSpoilers` when spoilers are OFF and `spoilerRisk` is
   true (best-effort rewrite; fails open). `resolveQuestion({ question, history, forRag? })`
   does a small Gemini call: short web-search query (≤15 words) by default, or a
@@ -665,7 +672,9 @@ The following Tier 3 cleanup tasks were deliberately skipped to prioritize stabi
   `maxChars` / `REWRITE_RAG_INSTRUCTION` word limit). Do not remove the SQL
   `LIMIT` or send unbounded `guide_chunks` rows to `summarize`.
 - Every turn runs two sequential Gemini calls (`resolveQuestion` then
-  `summarize`). Web rewrite `max_output_tokens` ~200; preferred-guide RAG rewrite
+  `summarize`). A preferred-guide RAG turn adds **one Cohere rerank HTTP call only
+  when `COHERE_API_KEY` is set**; unset adds nothing and routes on cosine
+  `GUIDE_HIT`. Web rewrite `max_output_tokens` ~200; preferred-guide RAG rewrite
   ~400 (`forRag`). Too tight a cap returns empty even with thinking off.
 - `solve_logs.pipeline_type` now correctly records `"rag"` when preferred-guide
   RAG succeeds (`skipWebSearch`). Error-path `totalLatencyMs` uses `startedAt`
@@ -741,6 +750,12 @@ Server-only secrets (never expose via `NEXT_PUBLIC_`, never commit `.env.local`)
 - `SERPER_API_KEY` (optional; Serper.dev fallback when Tavily **Search** fails or
   is unconfigured — snippet-only, **does not** replace Tavily Extract for ingest).
 - `REPLICATE_MODEL` (optional, default `google/gemini-2.5-flash`).
+- `COHERE_API_KEY` (optional, server-only; its **presence** enables the Phase C
+  preferred-guide reranker — no other flag. Unset = route on cosine `GUIDE_HIT`.
+  Fully fail-open: trial-expired / 429 / network errors fall back to cosine. Trial
+  keys are free (10 req/min, non-commercial); swap in a paid key later with no code
+  change). `COHERE_RERANK_MODEL` (default `rerank-v3.5`), `COHERE_RELEVANCE_MIN`
+  (default `0.3`; top score below this routes to web fallback).
 - `SUMOPOD_API_KEY` (required for preferred-guide RAG).
 - `SUMOPOD_BASE_URL` (optional, default `https://ai.sumopod.com/v1`).
 - `EMBED_MODEL` (optional, default `text-embedding-3-large`; preferred-guide

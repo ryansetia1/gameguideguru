@@ -11,7 +11,8 @@
     "check": "node scripts/check.mjs",
     "backfill:chats": "node scripts/backfill-chat-threads.mjs",
     "backfill:chats:verify": "node scripts/backfill-chat-threads.mjs --verify",
-    "backfill:chats:dry": "node scripts/backfill-chat-threads.mjs --dry-run"
+    "backfill:chats:dry": "node scripts/backfill-chat-threads.mjs --dry-run",
+    "eval:rag": "node scripts/rag-calibrate.mjs"
   },
   "dependencies": {
     "@napi-rs/canvas": "0.1.80",

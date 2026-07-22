@@ -13,11 +13,21 @@ import {
   normalizeGuideUrlList,
 } from "@/lib/guide-urls.js";
 import type { SearchResult } from "@/lib/tavily";
+import { cohereRerankChunks } from "@/lib/guide-rerank-cohere";
 import { logTraceEvent } from "@/lib/trace";
 
 
-// ponytail: hand-tuned cosine threshold for Qwen3; tune in one place.
+// Cosine hit threshold for text-embedding-3-large @ 1024-dim (Sumopod).
+// Calibrated 2026-07-22 via `npm run eval:rag` (Suikoden guide, Indonesian
+// questions). In-guide tops clustered 0.28–0.42, non-game off-guide at 0.03–0.09,
+// but a same-domain off-guide ("beat Sephiroth?") hit 0.348 — inside the in-guide
+// band. A hard cosine cutoff tops out ~90% here; threshold is NOT the lever.
+// 0.35 kept as the best available split. Real fix = Phase C reranker + Phase D
+// hybrid BM25 (exact names like "Sylvina"/"Armor Shop" that embeddings miss).
+// See docs/plan/rag-tuning-roadmap.md.
 export const GUIDE_HIT = 0.35;
+// Kept at 5 (not lowered to 3): calibration showed the targeted paragraph often
+// ranks 2–3, so overfetch gives Gemini the right chunk until a reranker lands.
 const RETRIEVE_K = 5;
 
 let ragUnavailableLogged = false;
@@ -34,6 +44,12 @@ export type GuideRagResult = {
   hubWarning: boolean;
   indexedCount: number;
   totalGuides: number;
+  // All retrieved similarities (top-K), for calibration harness only. Populated
+  // when a match ran; undefined on ingest-miss/infra-miss short-circuits.
+  scores?: number[];
+  // Retrieved chunk texts (top-K), calibration harness only — lets it check
+  // whether the targeted paragraph landed anywhere in top-K, not just rank 1.
+  chunkTexts?: string[];
 };
 
 function hostLabel(guideUrl: string): string {
@@ -172,9 +188,31 @@ export async function retrieveFromPreferredGuides(input: {
     };
   }
 
+  // Phase C rerank (opt-in via COHERE_API_KEY presence): cosine recall@K is good but
+  // ordering + routing is not (calibration 2026-07-22 — cosine 9/10 rank-1 3/6;
+  // Cohere rerank-v3.5 10/10 rank-1 6/6). Reorder the retrieved chunks and trust the
+  // Cohere `relevant` verdict. Fully fail-open: any Cohere error (trial expired,
+  // 429 rate-limit, network) returns null and we fall back to the cosine GUIDE_HIT,
+  // so enabling it is safe. Set a paid COHERE_API_KEY later — no code change.
+  let rerankRelevant: boolean | null = null;
+  if (process.env.COHERE_API_KEY && matches.length > 1) {
+    const rr = await cohereRerankChunks({
+      question: input.query,
+      chunks: matches.map((m) => m.chunk_text),
+      signal: input.signal,
+    });
+    if (rr) {
+      // rerank_start/ok/error is traced inside cohereRerankChunks; the routing
+      // outcome (reranked + hit) is captured by rag_similarity_score below.
+      matches = rr.order.map((i) => matches[i]).filter(Boolean);
+      rerankRelevant = rr.relevant;
+    }
+  }
+
   const topSimilarity = matches[0]?.similarity ?? 0;
-  const hit = topSimilarity >= GUIDE_HIT;
-  void logTraceEvent("rag_similarity_score", `Top RAG similarity: ${topSimilarity.toFixed(3)} (Hit: ${hit})`, undefined, { topSimilarity, hit, threshold: GUIDE_HIT });
+  // Rerank verdict wins when it ran (semantic relevance); else cosine threshold.
+  const hit = rerankRelevant != null ? rerankRelevant : topSimilarity >= GUIDE_HIT;
+  void logTraceEvent("rag_similarity_score", `Top RAG similarity: ${topSimilarity.toFixed(3)} (Hit: ${hit}, reranked: ${rerankRelevant != null})`, undefined, { topSimilarity, hit, threshold: GUIDE_HIT, reranked: rerankRelevant != null });
 
   // Calibration: set RAG_DEBUG=1 to print the retrieval scores per query, so
   // GUIDE_HIT can be tuned to sit between "guide covers this" and "it doesn't".
@@ -204,5 +242,7 @@ export async function retrieveFromPreferredGuides(input: {
     hubWarning,
     indexedCount,
     totalGuides,
+    scores: matches.map((m) => m.similarity),
+    chunkTexts: matches.map((m) => m.chunk_text),
   };
 }

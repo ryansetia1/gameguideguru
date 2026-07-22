@@ -153,6 +153,37 @@ Condensed from industry playbooks and papers; not gospel — **evaluate on your 
 
 ---
 
+## Calibration results (2026-07-22)
+
+First real run via `npm run eval:rag` — Suikoden 1 single-page guide, 6 in-guide +
+4 off-guide, questions in casual Indonesian (real user distribution).
+
+| Signal | Result | Read |
+|--------|--------|------|
+| in-guide top-sim | 0.28–0.42 (median 0.39) | Low + compressed (cross-lingual: ID question vs EN guide) |
+| off-guide top-sim | 0.03–0.09, except one game-topic Q at **0.348** | Non-game separates cleanly; same-domain wrong-game does not |
+| `GUIDE_HIT` ceiling | ~90% at any single cutoff | Threshold is **not** the lever; overlap is structural |
+| Retrieval recall@5 | **6/6 in top-K** | Right paragraph is always retrieved |
+| Retrieval rank-1 | **3/6** | …just mis-ordered (misses at rank 2–4) |
+
+**Conclusion:** recall is solved (100% @ K=5); the failure is **ranking + routing**.
+This is the textbook cross-encoder rerank case:
+
+- **Phase C (rerank) is the fix, and likely sufficient.** Reranking the already-retrieved
+  top-K pushes the right chunk to rank 1 AND gives a relevance score that can reject the
+  same-domain wrong-game query (0.348) that a raw cosine cutoff can't.
+- **Phase D (hybrid BM25) downgraded.** Earlier hypothesis was that exact names
+  ("Sylvina", "Armor Shop") were missed by embeddings — the data disproves it: they're
+  in top-K (rank 3–4), just not rank 1. Rerank handles ranking; BM25 only worth it if a
+  later eval shows recall misses (paragraph absent from top-K).
+- **Phase E (parent–child) not indicated** — no "right section, wrong steps" symptom seen.
+
+**Caveats:** small sample (n=10), one guide, one language. Re-run on 2–3 guides before
+treating the `GUIDE_HIT` ceiling as final. Since recall@5 = 100%, a v1 reranker can
+score the existing top-5 — no need to raise the SQL `LIMIT` to 15–20 yet.
+
+---
+
 ## `GUIDE_HIT` calibration procedure
 
 Use before changing the constant or removing it.
@@ -184,31 +215,82 @@ Use before changing the constant or removing it.
 Use as a starting backlog; each phase should pass `npm run check` and include
 before/after notes from the calibration set.
 
-### Phase A — Measure (no behaviour change)
+### Phase A — Measure (no behaviour change) — HARNESS SHIPPED
 
-- [ ] Build a fixed eval set: 20–30 `(game, guide_url, question, expected: in-guide | off-guide)` rows.
-- [ ] Log `topSimilarity`, `scores[]`, `hit`, `pipelineType` per row with `RAG_DEBUG`.
-- [ ] Document baseline hit rate and answer quality (manual spot-check).
+Tooling landed (2026-07-22); the eval run itself still needs to be done by a
+maintainer with the guides ingested:
 
-### Phase B — Tune constants
+- [x] Dev-only probe `app/api/rag-eval/route.ts` — returns raw top-K similarity
+  scores for one `(guideUrls, query)` pair (404 in prod). Adds `scores?: number[]`
+  to `GuideRagResult` in `lib/guide-rag.ts`.
+- [x] Replay harness `scripts/rag-calibrate.mjs` (`npm run eval:rag`) — splits
+  in-guide vs off-guide clusters, recommends `GUIDE_HIT`, reports per-rank score
+  decay for `RETRIEVE_K`. Self-check: `node scripts/rag-calibrate.mjs --selftest`.
+- [x] Eval-set template `docs/plan/rag-eval-set.example.jsonl` (real set is
+  gitignored — may hold private guide URLs).
+- [ ] **Run it:** fill `docs/plan/rag-eval-set.jsonl` with 10+ in-guide + 10+
+  off-guide rows for guides you ingested, then `npm run eval:rag`.
 
-- [ ] Set `GUIDE_HIT` from Phase A clusters.
-- [ ] A/B `RETRIEVE_K` 3 vs 5 on eval set (quality + token cost).
-- [ ] Update `GUIDE_HIT` comment in `lib/guide-rag.ts` with calibration date and model.
+### Phase B — Tune constants (needs the Phase A run) — DONE
 
-### Phase C — Cross-encoder rerank (recommended upgrade)
+- [x] Ran calibration; `GUIDE_HIT` kept at 0.35 (data showed threshold is not the
+  lever — see Calibration results above).
+- [x] `RETRIEVE_K` kept at 5 (targeted paragraph often ranks 2–3; overfetch helps
+  until rerank lands).
+- [x] Updated the `GUIDE_HIT` + `RETRIEVE_K` comments in `lib/guide-rag.ts` with
+  the calibration date and reasoning.
 
-- [ ] Raise SQL/RPC retrieve limit (e.g. 15–20) within same `guide_url` filter.
-- [ ] Add reranker (Cohere Rerank API or self-hosted `ms-marco-MiniLM-L-6-v2`).
-- [ ] Replace or supplement `GUIDE_HIT` with reranker top-1 score + margin to #2.
-- [ ] Keep `RETRIEVE_K` sent to Gemini at 3–5 post-rerank.
+### Phase C — Rerank (DONE 2026-07-22: Cohere, opt-in)
 
-### Phase D — Hybrid retrieval (optional)
+Final state: **cosine is the default (free); Cohere rerank-v3.5 is the proven
+upgrade, gated on `COHERE_API_KEY` presence.** The Gemini LLM-reranker that was
+tried first is deleted — it regressed vs cosine.
+
+3-way A/B on the calibration set (`RAG_EVAL_DELAY_MS=6500` dodges the trial's
+10 req/min rate limit):
+
+| Provider | Routing accuracy | Retrieval rank-1 |
+|----------|------------------|------------------|
+| Cosine (baseline, default) | 9/10 | 3/6 |
+| Gemini LLM-rerank (deleted) | 8/10 | 3/6 |
+| **Cohere rerank-v3.5** | **10/10** | **6/6** |
+
+Cohere fixed both failure modes: every targeted paragraph moved to rank 1, and its
+`relevant` verdict caught the low-cosine in-guide (Valeria) AND rejected the
+same-domain wrong-game query (Sephiroth) without dropping any legit in-guide.
+`COHERE_RELEVANCE_MIN=0.3` separated cleanly. Gemini 2.5 Flash with
+`thinking_budget:0` was a poor reranker (verdict too strict, ordering ≈ cosine).
+
+**Wiring** (`lib/guide-rerank-cohere.ts` + `lib/guide-rag.ts`):
+
+- Enabled purely by `COHERE_API_KEY` being set — no `RERANK_PROVIDER` flag. Unset =
+  cosine. Matches "just swap the key" — set a paid key later, no code change.
+- Fully **fail-open**: any Cohere error (trial expired, 429 rate-limit, network)
+  returns null → cosine `GUIDE_HIT`. Safe to leave enabled on the trial key.
+- `COHERE_RELEVANCE_MIN` (default 0.3) routes low-relevance tops to web fallback;
+  `COHERE_RERANK_MODEL` (default `rerank-v3.5`).
+
+**Cost note:** trial keys are free but non-commercial + 10 req/min. Fine for
+dev/testing; for production, move to a paid Cohere key (1000 req/min) — swap
+`COHERE_API_KEY` only.
+
+Recall@5 was already 100%, so the reranker scores the existing top-5 — no SQL
+`LIMIT` bump to 15–20 needed. Jina/Voyage would drop in the same way (new adapter
+returning `RerankResult`, add a branch in the `guide-rag.ts` gate).
+
+### Phase D — Hybrid retrieval (DEFERRED — data does not justify yet)
+
+Calibration disproved the original motivation (exact names were NOT missed — they
+were in top-K, just mis-ranked, which rerank fixes). Revisit only if a later eval
+on more guides shows genuine recall misses (targeted paragraph absent from top-K).
 
 - [ ] Add BM25 (or Postgres `tsvector`) on `chunk_text` scoped to `guide_url`.
 - [ ] Merge vector + keyword hits (RRF or simple union) before rerank.
 
-### Phase E — Parent–child chunks (optional, larger)
+### Phase E — Parent–child chunks (DEFERRED — no symptom observed)
+
+No "right section, wrong steps" failures in calibration. Revisit if procedural
+answers start losing multi-step context across chunk boundaries.
 
 - [ ] Index small child chunks; store parent section text or parent chunk id.
 - [ ] Retrieve children, inject parent context into `buildPrompt` sources.

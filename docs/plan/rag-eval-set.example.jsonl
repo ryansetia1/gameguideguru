@@ -1,0 +1,6 @@
+{"game":"Elden Ring","platform":"PC","guideUrls":["https://www.example-guide.com/elden-ring/margit-boss"],"question":"How do I beat Margit the Fell Omen?","expected":"in-guide","expectContains":"use the Margit's Shackle"}
+{"game":"Elden Ring","platform":"PC","guideUrls":["https://www.example-guide.com/elden-ring/margit-boss"],"question":"What item makes the Margit fight easier?","expected":"in-guide","expectContains":"Margit's Shackle"}
+{"game":"Elden Ring","platform":"PC","guideUrls":["https://www.example-guide.com/elden-ring/margit-boss"],"question":"When does Margit switch to phase two?","expected":"in-guide","expectContains":"phase 2"}
+{"game":"Elden Ring","platform":"PC","guideUrls":["https://www.example-guide.com/elden-ring/margit-boss"],"question":"What is the best ramen in Tokyo?","expected":"off-guide"}
+{"game":"Elden Ring","platform":"PC","guideUrls":["https://www.example-guide.com/elden-ring/margit-boss"],"question":"How do I beat Sephiroth in Final Fantasy VII?","expected":"off-guide"}
+{"game":"Elden Ring","platform":"PC","guideUrls":["https://www.example-guide.com/elden-ring/margit-boss"],"question":"How do I fix a flat bike tire?","expected":"off-guide"}
