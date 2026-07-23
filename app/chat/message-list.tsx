@@ -1,9 +1,8 @@
-import type { RefObject } from "react";
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import {
   IconArrowUpRight,
   IconChevronLeft,
   IconChevronRight,
-  IconDiamond,
   IconPencil,
   IconPlus,
   IconRefresh,
@@ -25,6 +24,266 @@ import { isUploadedGuideUrl } from "@/lib/guide-urls.js";
 
 /** Stop nudging for a guide after this many answers; re-nudge naturally in a new game. */
 const NUDGE_MAX_ANSWERS = 10;
+
+/**
+ * The small "?" beside each answer. On tap it opens a quiet popover owning up to
+ * the accuracy limits (web + model knowledge can be off) and offering the two
+ * fixes: regenerate, or add a guide for source-backed answers. Kept off-screen
+ * until asked for, so it never competes with the answer itself.
+ */
+const ANSWER_INFO_COPY: Record<"guide" | "web" | "knowledge", string> = {
+  guide:
+    "This leans on your guide, but a stray detail can still slip through. Double-check anything critical.",
+  web: "This mixes what I know with a quick web search, so a detail here and there can be off.",
+  knowledge:
+    "This is straight from what I already know, no web search this round, so double-check the fine print.",
+};
+
+function AnswerInfo({
+  mode,
+  canAddGuide,
+  disabled,
+  onRetry,
+  onAddGuide,
+}: {
+  mode: "guide" | "web" | "knowledge";
+  canAddGuide: boolean;
+  disabled: boolean;
+  onRetry: () => void;
+  onAddGuide?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="answer-info" ref={wrapRef}>
+      <button
+        type="button"
+        className="answer-info-toggle"
+        aria-label="How accurate is this answer?"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={() => setOpen((value) => !value)}
+      >
+        ?
+      </button>
+      {open && (
+        <div className="answer-info-pop" role="dialog" aria-label="About this answer">
+          <p className="answer-info-copy">{ANSWER_INFO_COPY[mode]}</p>
+          <div className="answer-info-actions">
+            <button
+              type="button"
+              className="answer-info-btn"
+              onClick={() => {
+                setOpen(false);
+                onRetry();
+              }}
+              disabled={disabled}
+            >
+              <IconRefresh size={13} /> Try again
+            </button>
+            {canAddGuide && onAddGuide && (
+              <button
+                type="button"
+                className="answer-info-btn is-accent"
+                onClick={() => {
+                  setOpen(false);
+                  onAddGuide();
+                }}
+              >
+                <IconPlus size={13} /> Add a guide
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The bar at the foot of every answer. Left: what the answer was built from,
+ * with the "?" accuracy popover right beside it. Right: version arrows +
+ * regenerate. When the answer cites clickable sources, the label toggles the
+ * list open. Always rendered, so even a knowledge-only answer (no sources)
+ * still carries the "?" and a way to regenerate.
+ */
+function AnswerFoot({
+  message,
+  index,
+  canAddGuide,
+  disabled,
+  onRetry,
+  onAddGuide,
+  onNavigateVariant,
+}: {
+  message: Message;
+  index: number;
+  canAddGuide: boolean;
+  disabled: boolean;
+  onRetry: () => void;
+  onAddGuide?: () => void;
+  onNavigateVariant: (msgIndex: number, variantIndex: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const sources = message.sources;
+  const mode = answerModeInfo(message.pipelineType, sources);
+  const expandable = Boolean(
+    sources && sources.length > 0 && !isUploadOnlySources(sources),
+  );
+
+  let label: ReactNode;
+  if (expandable) {
+    label = (
+      <>
+        Sources ({sources!.length})
+        <span className="answer-foot-sub">
+          {" · "}
+          {pipelineSourceLabel(message.pipelineType, sources)}
+        </span>
+      </>
+    );
+  } else if (isUploadOnlySources(sources)) {
+    const uploadLabel = uploadedSourceGuideLabel(sources);
+    label = (
+      <>
+        Sources
+        {uploadLabel ? (
+          <span className="answer-foot-sub">
+            {" · "}
+            {uploadLabel}
+          </span>
+        ) : null}
+      </>
+    );
+  } else {
+    // Knowledge-only: no sources to cite, so name the provenance instead.
+    label = mode.label;
+  }
+
+  const variants =
+    messageShowsVariantNav(message) && message.variants ? message.variants : null;
+  const activeVariant = message.activeVariantIndex ?? 0;
+
+  return (
+    <div className="answer-foot">
+      <div className="answer-foot-bar">
+        {expandable ? (
+          <button
+            type="button"
+            className="answer-foot-label answer-foot-toggle"
+            aria-expanded={open}
+            onClick={() => setOpen((value) => !value)}
+          >
+            {label}
+            <span className="answer-foot-mark" aria-hidden="true">
+              {open ? "–" : "+"}
+            </span>
+          </button>
+        ) : (
+          <span className="answer-foot-label">{label}</span>
+        )}
+        <AnswerInfo
+          mode={mode.mode as "guide" | "web" | "knowledge"}
+          canAddGuide={canAddGuide}
+          disabled={disabled}
+          onRetry={onRetry}
+          onAddGuide={onAddGuide}
+        />
+        <div className="answer-foot-right">
+          {variants && (
+            <div className="variant-nav">
+              <button
+                type="button"
+                className="turn-action-icon variant-nav-btn"
+                aria-label="Previous version"
+                disabled={activeVariant === 0}
+                onClick={() => onNavigateVariant(index, activeVariant - 1)}
+              >
+                <IconChevronLeft size={14} />
+              </button>
+              <span>
+                {activeVariant + 1} / {variants.length}
+              </span>
+              <button
+                type="button"
+                className="turn-action-icon variant-nav-btn"
+                aria-label="Next version"
+                disabled={activeVariant === variants.length - 1}
+                onClick={() => onNavigateVariant(index, activeVariant + 1)}
+              >
+                <IconChevronRight size={14} />
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            className="turn-action turn-action-icon"
+            aria-label="Regenerate answer"
+            onClick={onRetry}
+            disabled={disabled}
+          >
+            <IconRefresh />
+          </button>
+        </div>
+      </div>
+      {expandable && open && (
+        <ol className="source-list">
+          {sources!.map((source, i) => {
+            const number = (
+              <span className="source-number">{String(i + 1).padStart(2, "0")}</span>
+            );
+            // Uploaded files have no real URL to open (upload://…), so render
+            // them as plain text, not a broken link.
+            if (isUploadedGuideUrl(source.url)) {
+              return (
+                <li key={`${source.url}-${i}`}>
+                  <div className="source-static-row">
+                    {number}
+                    <span>
+                      <strong>{source.title}</strong>
+                      <small>{uploadedSourceGuideLabel([source])}</small>
+                    </span>
+                  </div>
+                </li>
+              );
+            }
+            return (
+              <li key={`${source.url}-${i}`}>
+                <a href={source.url} target="_blank" rel="noreferrer">
+                  {number}
+                  <span>
+                    <strong>{source.title}</strong>
+                    <small>{sourceHostname(source.url)}</small>
+                  </span>
+                  <span className="source-arrow" aria-hidden="true">
+                    <IconArrowUpRight />
+                  </span>
+                </a>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </div>
+  );
+}
 
 export type MessageListProps = {
   messages: Message[];
@@ -145,98 +404,6 @@ export function MessageList({
             key={index}
             ref={index === lastGuideIndex ? lastGuideRef : undefined}
           >
-            <div className="guide-head">
-              <div className="guide-tag icon-inline">
-                <IconDiamond /> ANSWER
-
-                {messageShowsVariantNav(message) && message.variants && (
-                  <div
-                    className="variant-nav"
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "0.25rem",
-                      marginLeft: "1rem",
-                      color: "var(--text-muted)",
-                      fontSize: "0.85em",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      className="turn-action-icon"
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: "0.15rem",
-                        color:
-                          message.activeVariantIndex === 0
-                            ? "var(--text-muted-heavy)"
-                            : "var(--text-muted)",
-                        cursor: message.activeVariantIndex === 0 ? "default" : "pointer",
-                      }}
-                      disabled={message.activeVariantIndex === 0}
-                      onClick={() =>
-                        onNavigateVariant(index, (message.activeVariantIndex ?? 0) - 1)
-                      }
-                    >
-                      <IconChevronLeft size={14} />
-                    </button>
-                    <span>
-                      {(message.activeVariantIndex ?? 0) + 1} / {message.variants.length}
-                    </span>
-                    <button
-                      type="button"
-                      className="turn-action-icon"
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: "0.15rem",
-                        color:
-                          message.activeVariantIndex === message.variants.length - 1
-                            ? "var(--text-muted-heavy)"
-                            : "var(--text-muted)",
-                        cursor:
-                          message.activeVariantIndex === message.variants.length - 1
-                            ? "default"
-                            : "pointer",
-                      }}
-                      disabled={message.activeVariantIndex === message.variants.length - 1}
-                      onClick={() =>
-                        onNavigateVariant(index, (message.activeVariantIndex ?? 0) + 1)
-                      }
-                    >
-                      <IconChevronRight size={14} />
-                    </button>
-                  </div>
-                )}
-              </div>
-              {message.content !== WRITING_ANSWER_PLACEHOLDER &&
-                (() => {
-                  const mode = answerModeInfo(message.pipelineType, message.sources);
-                  return (
-                    <span
-                      className={`answer-mode-chip${mode.guideBacked ? " is-guide" : ""}`}
-                      title={
-                        mode.guideBacked
-                          ? "Grounded in your guide"
-                          : "Answered from the model's general knowledge"
-                      }
-                    >
-                      <span className="answer-mode-dot" aria-hidden="true" />
-                      {mode.label}
-                    </span>
-                  );
-                })()}
-              <button
-                type="button"
-                className="turn-action turn-action-icon"
-                aria-label="Regenerate answer"
-                onClick={() => void onRetry(index)}
-                disabled={loading}
-              >
-                <IconRefresh />
-              </button>
-            </div>
             <AnswerBody text={message.content} />
             {message.spoilers && spoilerMajor && message.spoilers.length > 0 && (
               <div className="spoiler-reveals">
@@ -309,70 +476,17 @@ export function MessageList({
                   )}
                 </div>
               )}
-            {isUploadOnlySources(message.sources) && (
-              <div className="sources sources-static" aria-label="Sources">
-                <p className="sources-static-label">
-                  Sources
-                  {(() => {
-                    const uploadLabel = uploadedSourceGuideLabel(message.sources);
-                    return uploadLabel ? <span> · {uploadLabel}</span> : null;
-                  })()}
-                </p>
-              </div>
+            {message.content !== WRITING_ANSWER_PLACEHOLDER && (
+              <AnswerFoot
+                message={message}
+                index={index}
+                canAddGuide={preferredUrlCount === 0 && !!onAddGuide}
+                disabled={loading}
+                onRetry={() => void onRetry(index)}
+                onAddGuide={onAddGuide}
+                onNavigateVariant={onNavigateVariant}
+              />
             )}
-            {message.sources &&
-              message.sources.length > 0 &&
-              !isUploadOnlySources(message.sources) && (
-                <details className="sources">
-                  <summary>
-                    Sources ({message.sources.length})
-                    {message.pipelineType && (
-                      <span style={{ fontWeight: "normal", color: "var(--text-muted)" }}>
-                        {" · "}
-                        {pipelineSourceLabel(message.pipelineType, message.sources)}
-                      </span>
-                    )}
-                  </summary>
-                  <ol>
-                    {message.sources.map((source, i) => {
-                      const number = (
-                        <span className="source-number">
-                          {String(i + 1).padStart(2, "0")}
-                        </span>
-                      );
-                      // Uploaded files have no real URL to open (upload://…), so
-                      // render them as plain text, not a broken link.
-                      if (isUploadedGuideUrl(source.url)) {
-                        return (
-                          <li key={`${source.url}-${i}`}>
-                            <div className="source-static-row">
-                              {number}
-                              <span>
-                                <strong>{source.title}</strong>
-                                <small>{uploadedSourceGuideLabel([source])}</small>
-                              </span>
-                            </div>
-                          </li>
-                        );
-                      }
-                      return (
-                        <li key={`${source.url}-${i}`}>
-                          <a href={source.url} target="_blank" rel="noreferrer">
-                            {number}
-                            <span>
-                              <strong>{source.title}</strong>
-                              <small>{sourceHostname(source.url)}</small>
-                            </span>
-                            <span className="source-arrow" aria-hidden="true">
-                              <IconArrowUpRight />
-                            </span>
-                          </a>
-                        </li>
-                      );
-                    })}
-                  </ol>
-                </details>
-              )}
           </article>
         ),
       )}

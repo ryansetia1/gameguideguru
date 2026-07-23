@@ -87,11 +87,6 @@
   height: 20px;
 }
 
-.guide-tag .icon {
-  width: 10px;
-  height: 10px;
-}
-
 .theme-toggle-menu .icon {
   width: 16px;
   height: 16px;
@@ -970,47 +965,238 @@ h1 {
   position: static;
 }
 
-.guide-head {
+/* The answer's footer band: no top control bar anymore. Left holds what the
+   answer was built from (PDF GUIDE / WEB SEARCH / AI KNOWLEDGE) with the "?"
+   beside it; right holds version arrows + regenerate. Matches the citation
+   band's tone (soft top rule + faint fill) so it reads as a quiet caption. */
+.answer-foot {
+  border-top: 1px solid var(--line);
+  background: #eeede6;
+}
+
+.answer-foot-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
-  border-bottom: 1px solid var(--line);
-  padding: 8px 12px 8px 16px;
+  gap: 8px 10px;
+  padding: 9px 18px;
 }
 
-/* Names each answer's source mode at a glance: accent dot = grounded in a guide,
-   muted dot = from the model's general knowledge / web. Pushed right, ahead of
-   the regenerate button; wraps under on very narrow screens via .guide-head. */
-.answer-mode-chip {
+.answer-foot-label {
+  font-family: var(--font-sans);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: inherit;
+}
+
+.answer-foot-sub {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* Label doubles as the expand toggle when there are clickable sources. */
+.answer-foot-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  padding: 1px 7px;
-  font-family: var(--font-sans);
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  white-space: nowrap;
+  gap: 8px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.answer-foot-toggle:hover {
+  opacity: 0.7;
+}
+
+.answer-foot-mark {
   color: var(--muted);
-  background: color-mix(in srgb, var(--muted) 8%, transparent);
-  border: 1px solid color-mix(in srgb, var(--muted) 20%, transparent);
 }
 
-.answer-mode-chip.is-guide {
-  color: var(--signal-dark);
-  background: color-mix(in srgb, var(--signal) 14%, transparent);
-  border-color: color-mix(in srgb, var(--signal) 40%, transparent);
+/* Version arrows + regenerate, pushed to the far right opposite the label. */
+.answer-foot-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 
-.answer-mode-dot {
-  width: 6px;
-  height: 6px;
-  flex-shrink: 0;
-  background: currentColor;
+.variant-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.variant-nav-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.variant-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Citation list revealed under the footer bar when the label toggle is open.
+   Mirrors details.sources ol (used by the guide card) without coupling to it. */
+.source-list {
+  margin: 0;
+  padding: 0 18px 14px;
+  list-style: none;
+}
+
+.source-list li + li {
+  border-top: 1px solid var(--line);
+}
+
+.source-list li a,
+.source-list li .source-static-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 24px;
+  gap: 9px;
+  align-items: center;
+  padding: 11px 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.source-list li a:hover strong {
+  text-decoration: underline;
+}
+
+.source-list strong,
+.source-list small {
+  display: block;
+}
+
+.source-list strong {
+  overflow: hidden;
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-list small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+/* The "?" affordance beside the answer + its on-demand accuracy popover. The
+   toggle is deliberately lighter than the regenerate button (hairline, not the
+   ink border) so it reads as a quiet aside. */
+.answer-info {
+  position: relative;
+  display: inline-flex;
+}
+
+.answer-info-toggle {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--muted);
+  background: var(--paper-strong);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    transform 120ms var(--ease-pop);
+}
+
+.answer-info-toggle:hover,
+.answer-info-toggle[aria-expanded="true"] {
+  color: var(--ink);
+  background: var(--signal);
+  border-color: var(--ink);
+}
+
+.answer-info-toggle:active {
+  transform: scale(0.93);
+}
+
+/* Opens upward: the "?" now lives in the footer at the bottom of the card, so
+   the popover rises over the answer instead of spilling into the next turn. */
+.answer-info-pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 5;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 40px));
+  padding: 12px;
+  background: var(--paper-strong);
+  border: 1.5px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  animation: rise 160ms var(--ease-pop) backwards;
+}
+
+.answer-info-copy {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-subtle);
+}
+
+.answer-info-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.answer-info-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 5px 9px;
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    transform 120ms var(--ease-pop);
+}
+
+.answer-info-btn:hover:not(:disabled) {
+  background: var(--signal);
+}
+
+.answer-info-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.answer-info-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.answer-info-btn.is-accent {
+  color: var(--on-signal);
+  background: var(--signal);
+}
+
+.answer-info-btn.is-accent:hover:not(:disabled) {
+  filter: brightness(0.96);
 }
 
 /* Thin inline nudge under the LATEST knowledge-only answer, only when the game
@@ -1146,21 +1332,6 @@ h1 {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
-}
-
-.guide-tag {
-  display: flex;
-  gap: 7px;
-  align-items: center;
-  padding: 4px 0;
-  font-family: var(--font-sans);
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-}
-
-.guide-tag span {
-  color: #008f66;
 }
 
 .answer {
@@ -1427,26 +1598,6 @@ details.sources.game-card-guides-hidden > summary::after {
 
 details.sources.game-card-guides-hidden[open] > summary::after {
   content: "▲";
-}
-
-.sources-static {
-  border-top: 1px solid var(--line);
-  background: #eeede6;
-}
-
-.sources-static-label {
-  margin: 0;
-  padding: 14px 18px;
-  font-family: var(--font-sans);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.sources-static-label span {
-  font-weight: 400;
-  color: var(--muted);
 }
 
 details.sources ol {
@@ -4794,13 +4945,14 @@ details.sources small {
     font-size: 1.08rem;
   }
 
-  .guide-tag,
+  .answer-foot-bar,
   details.sources > summary {
     padding-left: 28px;
     padding-right: 28px;
   }
 
-  details.sources ol {
+  details.sources ol,
+  .source-list {
     padding-left: 28px;
     padding-right: 28px;
   }
@@ -4897,7 +5049,7 @@ details.sources small {
 }
 
 :root[data-theme="dark"] details.sources,
-:root[data-theme="dark"] .sources-static,
+:root[data-theme="dark"] .answer-foot,
 :root[data-theme="dark"] .combo-group-label {
   background: #22282b;
 }
@@ -4978,7 +5130,7 @@ details.sources small {
   }
 
   :root:not([data-theme="light"]) details.sources,
-  :root:not([data-theme="light"]) .sources-static,
+  :root:not([data-theme="light"]) .answer-foot,
   :root:not([data-theme="light"]) .combo-group-label {
     background: #22282b;
   }
