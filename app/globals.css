@@ -970,6 +970,7 @@ h1 {
    beside it; right holds version arrows + regenerate. Matches the citation
    band's tone (soft top rule + faint fill) so it reads as a quiet caption. */
 .answer-foot {
+  position: relative;
   border-top: 1px solid var(--line);
   background: #eeede6;
 }
@@ -1142,6 +1143,18 @@ h1 {
   border: 1.5px solid var(--ink);
   box-shadow: 4px 4px 0 var(--ink);
   animation: rise 160ms var(--ease-pop) backwards;
+}
+
+@media (max-width: 600px) {
+  .answer-info {
+    position: static;
+  }
+  .answer-info-pop {
+    left: 18px;
+    right: 18px;
+    width: auto;
+    max-width: none;
+  }
 }
 
 .answer-info-copy {
