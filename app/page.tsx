@@ -33,7 +33,7 @@ import { compressImage } from "@/lib/image.js";
 import { type GuideBundleMeta } from "./guide-link-field";
 import { HltbRow } from "./hltb-row";
 import { type SteamGame } from "./steam-library";
-import { ProfileMenu } from "./profile-menu";
+import { ProfileMenu, type NavMenu } from "./profile-menu";
 import { Lightbox } from "./lightbox";
 import { tgdbPlatformToLabel } from "@/lib/platforms.js";
 import {
@@ -181,6 +181,7 @@ export default function Home() {
   // read from `messages` state, not storage).
   const [temporary, setTemporary] = useState(false);
   const [authOpen, setAuthOpen] = useState(false);
+  const [navMenu, setNavMenu] = useState<NavMenu>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [steamLibraryOpen, setSteamLibraryOpen] = useState(false);
@@ -265,6 +266,22 @@ export default function Home() {
   function dismissOverlay() {
     if (typeof window === "undefined") return;
     window.history.back();
+  }
+
+  function dismissNavMenu() {
+    if (!navMenu) return;
+    setNavMenu(null);
+    dismissOverlay();
+  }
+
+  function handleNavMenuChange(menu: NavMenu) {
+    if (menu === null) {
+      dismissNavMenu();
+      return;
+    }
+    const hadMenu = navMenu !== null;
+    setNavMenu(menu);
+    if (!hadMenu) pushOverlayHistory();
   }
 
   function closeNewGameForm() {
@@ -371,6 +388,10 @@ export default function Home() {
         setMenuOpenId(null);
         return;
       }
+      if (navMenu) {
+        setNavMenu(null);
+        return;
+      }
       if (authOpen) {
         setAuthOpen(false);
         return;
@@ -411,6 +432,7 @@ export default function Home() {
     steamLibraryOpen,
     messages.length,
     confirmFallbackModal,
+    navMenu,
     newGameOpen,
     editingGame,
   ]);
@@ -437,6 +459,7 @@ export default function Home() {
       !newGameOpen &&
       !editingGame &&
       !authOpen &&
+      !navMenu &&
       !sidebarOpen &&
       !libraryOpen &&
       !steamLibraryOpen;
@@ -452,6 +475,7 @@ export default function Home() {
     newGameOpen,
     editingGame,
     authOpen,
+    navMenu,
     sidebarOpen,
     libraryOpen,
     steamLibraryOpen,
@@ -663,7 +687,7 @@ export default function Home() {
     const EDGE = 24;
     const THRESHOLD = 60;
     const modalOpen =
-      authOpen || confirmState !== null || editingGame || editingIndex !== null;
+      authOpen || navMenu !== null || confirmState !== null || editingGame || editingIndex !== null;
     const overlayOpen = sidebarOpen || libraryOpen || steamLibraryOpen;
     let startX = 0;
     let startY = 0;
@@ -1529,7 +1553,10 @@ export default function Home() {
             supabaseReady={supabaseReady}
             spoilerMajor={globalSpoilerMajor}
             onSpoilerChange={updateGlobalSpoiler}
+            navMenu={navMenu}
+            onNavMenuChange={handleNavMenuChange}
             onSignIn={() => {
+              if (navMenu) dismissNavMenu();
               setAuthOpen(true);
               pushOverlayHistory();
             }}

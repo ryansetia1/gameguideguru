@@ -36,6 +36,8 @@ const THEME_OPTIONS: {
   { mode: "dark", label: "Dark", Icon: IconMoon },
 ];
 
+export type NavMenu = "profile" | "theme" | null;
+
 type Props = {
   user: User | null;
   supabaseReady: boolean;
@@ -43,6 +45,9 @@ type Props = {
   onSpoilerChange: (value: boolean) => void;
   onSignIn: () => void;
   onSignOut: () => void;
+  /** When set, menu open state is owned by the parent (for hardware-back sync). */
+  navMenu?: NavMenu;
+  onNavMenuChange?: (menu: NavMenu) => void;
 };
 
 async function persistThemeForUser(mode: ThemeMode) {
@@ -72,11 +77,22 @@ export function ProfileMenu({
   onSpoilerChange,
   onSignIn,
   onSignOut,
+  navMenu: navMenuProp,
+  onNavMenuChange,
 }: Props) {
-  const [open, setOpen] = useState(false);
-  const [themeOpen, setThemeOpen] = useState(false);
+  const [internalMenu, setInternalMenu] = useState<NavMenu>(null);
+  const navHistoryPushed = useRef(false);
+  const controlled = onNavMenuChange !== undefined;
+  const navMenu = controlled ? (navMenuProp ?? null) : internalMenu;
+  const profileOpen = navMenu === "profile";
+  const themeOpen = navMenu === "theme";
   const [themeMode, setThemeMode] = useState<ThemeMode>("system");
   const wrapRef = useRef<HTMLDivElement>(null);
+
+  function setNavMenu(menu: NavMenu) {
+    if (controlled) onNavMenuChange!(menu);
+    else setInternalMenu(menu);
+  }
 
   useEffect(() => {
     if (!user) {
@@ -116,22 +132,47 @@ export function ProfileMenu({
     }
   }, [onSpoilerChange, user]);
 
+  // ponytail: uncontrolled pages (/profile) manage their own history entry.
   useEffect(() => {
-    if (!open && !themeOpen) return;
+    if (controlled) return;
+    if (!internalMenu) {
+      navHistoryPushed.current = false;
+      return;
+    }
+    if (!navHistoryPushed.current) {
+      navHistoryPushed.current = true;
+      window.history.pushState({ gggOverlay: true }, "");
+    }
+  }, [controlled, internalMenu]);
+
+  useEffect(() => {
+    if (controlled || !internalMenu) return;
+    function onPopState() {
+      navHistoryPushed.current = false;
+      setInternalMenu(null);
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [controlled, internalMenu]);
+
+  useEffect(() => {
+    if (!navMenu) return;
     function onPointerDown(event: PointerEvent) {
-      if (!wrapRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-        setThemeOpen(false);
+      if (wrapRef.current?.contains(event.target as Node)) return;
+      if (!controlled && navHistoryPushed.current) {
+        window.history.back();
+        return;
       }
+      setNavMenu(null);
     }
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open, themeOpen]);
+  }, [controlled, navMenu, onNavMenuChange]);
 
   function pickTheme(next: ThemeMode) {
     setThemeMode(next);
     saveTheme(next);
-    setThemeOpen(false);
+    setNavMenu(null);
     if (user) void persistThemeForUser(next);
   }
 
@@ -144,7 +185,7 @@ export function ProfileMenu({
   }
 
   function handleSignOut() {
-    setOpen(false);
+    setNavMenu(null);
     onSignOut();
   }
 
@@ -163,10 +204,7 @@ export function ProfileMenu({
           aria-label="Theme"
           aria-expanded={themeOpen}
           aria-haspopup="menu"
-          onClick={() => {
-            setOpen(false);
-            setThemeOpen((value) => !value);
-          }}
+          onClick={() => setNavMenu(themeOpen ? null : "theme")}
         >
           <ThemeIcon />
         </button>
@@ -195,12 +233,9 @@ export function ProfileMenu({
             type="button"
             className="nav-icon-btn profile-menu-trigger"
             aria-label="Account menu"
-            aria-expanded={open}
+            aria-expanded={profileOpen}
             aria-haspopup="menu"
-            onClick={() => {
-              setThemeOpen(false);
-              setOpen((value) => !value);
-            }}
+            onClick={() => setNavMenu(profileOpen ? null : "profile")}
           >
             {avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -212,7 +247,7 @@ export function ProfileMenu({
             )}
           </button>
 
-          {open && (
+          {profileOpen && (
             <div className="profile-menu" role="menu">
               <div className="profile-menu-head">
                 <strong>{displayName || user.email || "Your account"}</strong>
@@ -223,7 +258,7 @@ export function ProfileMenu({
                 href="/profile"
                 className="profile-menu-item"
                 role="menuitem"
-                onClick={() => setOpen(false)}
+                onClick={() => setNavMenu(null)}
               >
                 Profile
               </Link>
@@ -233,7 +268,7 @@ export function ProfileMenu({
                   href="/admin"
                   className="profile-menu-item"
                   role="menuitem"
-                  onClick={() => setOpen(false)}
+                  onClick={() => setNavMenu(null)}
                 >
                   Dashboard
                 </Link>
