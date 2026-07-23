@@ -164,10 +164,18 @@ export function IconSystem(props: IconProps) {
   );
 }
 
+const chevronThin = {
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.5,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+};
+
 export function IconChevronDown(props: IconProps) {
   return (
     <Svg {...props}>
-      <path {...base} d="M6 9l6 6 6-6" />
+      <path {...chevronThin} d="M7 10l5 5 5-5" />
     </Svg>
   );
 }

@@ -1,6 +1,7 @@
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import {
   IconArrowUpRight,
+  IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
   IconPencil,
@@ -119,10 +120,8 @@ function AnswerInfo({
 
 /**
  * The bar at the foot of every answer. Left: what the answer was built from,
- * with the "?" accuracy popover right beside it. Right: version arrows +
- * regenerate. When the answer cites clickable sources, the label toggles the
- * list open. Always rendered, so even a knowledge-only answer (no sources)
- * still carries the "?" and a way to regenerate.
+ * Left: provenance label, "?", and sources chevron when cited (bar expands sources).
+ * Right: version arrows and regenerate. The bar is one expand hit-target except buttons.
  */
 function AnswerFoot({
   message,
@@ -180,33 +179,36 @@ function AnswerFoot({
   const variants =
     messageShowsVariantNav(message) && message.variants ? message.variants : null;
   const activeVariant = message.activeVariantIndex ?? 0;
+  const toggleSources = () => setOpen((value) => !value);
 
   return (
     <div className="answer-foot">
-      <div className="answer-foot-bar">
+      <div
+        className={`answer-foot-bar${expandable ? " is-expandable" : ""}`}
+        onClick={expandable ? toggleSources : undefined}
+      >
+        <span className="answer-foot-label">{label}</span>
+        <div
+          className="answer-foot-interactive"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <AnswerInfo
+            mode={mode.mode as "guide" | "web" | "knowledge"}
+            canAddGuide={canAddGuide}
+            disabled={disabled}
+            onRetry={onRetry}
+            onAddGuide={onAddGuide}
+          />
+        </div>
         {expandable ? (
-          <button
-            type="button"
-            className="answer-foot-label answer-foot-toggle"
-            aria-expanded={open}
-            onClick={() => setOpen((value) => !value)}
-          >
-            {label}
-            <span className="answer-foot-mark" aria-hidden="true">
-              {open ? "–" : "+"}
-            </span>
-          </button>
-        ) : (
-          <span className="answer-foot-label">{label}</span>
-        )}
-        <AnswerInfo
-          mode={mode.mode as "guide" | "web" | "knowledge"}
-          canAddGuide={canAddGuide}
-          disabled={disabled}
-          onRetry={onRetry}
-          onAddGuide={onAddGuide}
-        />
-        <div className="answer-foot-right">
+          <span className={`chevron-toggle${open ? " is-open" : ""}`} aria-hidden>
+            <IconChevronDown size={14} />
+          </span>
+        ) : null}
+        <div
+          className="answer-foot-right"
+          onClick={(event) => event.stopPropagation()}
+        >
           {variants && (
             <div className="variant-nav">
               <button
@@ -214,7 +216,10 @@ function AnswerFoot({
                 className="turn-action-icon variant-nav-btn"
                 aria-label="Previous version"
                 disabled={activeVariant === 0}
-                onClick={() => onNavigateVariant(index, activeVariant - 1)}
+                onClick={(event) => {
+                  event.currentTarget.blur();
+                  onNavigateVariant(index, activeVariant - 1);
+                }}
               >
                 <IconChevronLeft size={14} />
               </button>
@@ -226,7 +231,10 @@ function AnswerFoot({
                 className="turn-action-icon variant-nav-btn"
                 aria-label="Next version"
                 disabled={activeVariant === variants.length - 1}
-                onClick={() => onNavigateVariant(index, activeVariant + 1)}
+                onClick={(event) => {
+                  event.currentTarget.blur();
+                  onNavigateVariant(index, activeVariant + 1);
+                }}
               >
                 <IconChevronRight size={14} />
               </button>
@@ -402,6 +410,7 @@ export function MessageList({
           <article
             className="turn guide"
             key={index}
+            id={`msg-guide-${index}`}
             ref={index === lastGuideIndex ? lastGuideRef : undefined}
           >
             <AnswerBody text={message.content} />

@@ -188,20 +188,21 @@ export function useChatTurn(deps: ChatTurnDeps) {
 
   function onNavigateVariant(msgIndex: number, variantIndex: number) {
     const d = depsRef.current;
+    const msg = d.messages[msgIndex];
+    if (
+      !msg ||
+      msg.role !== "assistant" ||
+      !msg.variants ||
+      variantIndex < 0 ||
+      variantIndex >= msg.variants.length
+    ) {
+      return;
+    }
+
+    d.variantScrollTargetRef.current = msgIndex;
+    const variant = msg.variants[variantIndex]!;
     d.setMessages((prev) => {
       const next = [...prev];
-      const msg = next[msgIndex];
-      if (
-        !msg ||
-        msg.role !== "assistant" ||
-        !msg.variants ||
-        variantIndex < 0 ||
-        variantIndex >= msg.variants.length
-      ) {
-        return next;
-      }
-
-      const variant = msg.variants[variantIndex];
       next[msgIndex] = {
         ...msg,
         content: variant.content,

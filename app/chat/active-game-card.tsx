@@ -6,6 +6,7 @@ import { HltbRow } from "../hltb-row";
 import {
   IconAlert,
   IconArrowUpRight,
+  IconChevronDown,
   IconDotsVertical,
   IconIncognito,
   IconPlus,
@@ -455,6 +456,11 @@ export function ActiveGameCard({
                 <IconX size={10} /> Failed
               </span>
             )}
+            {isCollapsible ? (
+              <span className="chevron-toggle" aria-hidden>
+                <IconChevronDown size={14} />
+              </span>
+            ) : null}
           </summary>
 
           <div

@@ -53,6 +53,7 @@ export type ChatTurnDeps = {
     React.SetStateAction<{ blob?: Blob; preview: string; isExisting?: boolean }[]>
   >;
   activeChatIdRef: RefObject<string | null>;
+  variantScrollTargetRef: RefObject<number | null>;
   backgroundMessagesRef: RefObject<Record<string, Message[]>>;
   backgroundLoadingRef: RefObject<Record<string, boolean>>;
   backgroundStatusRef: RefObject<Record<string, string | null>>;

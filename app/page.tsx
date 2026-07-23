@@ -62,6 +62,7 @@ import {
 } from "@/lib/chat-session.js";
 import {
   shouldShowScrollFabForBubble,
+  smoothScrollIntoView,
   windowScrollMetrics,
 } from "@/lib/chat-scroll.js";
 
@@ -217,6 +218,7 @@ export default function Home() {
   const lastGuideRef = useRef<HTMLElement>(null);
   const topRef = useRef<HTMLElement>(null);
   const jumpRef = useRef(false);
+  const variantScrollTargetRef = useRef<number | null>(null);
   const chatHistoryPushed = useRef(false);
   const sessionHydratedRef = useRef(false);
   const onSignedOutRef = useRef<() => void>(() => {});
@@ -408,7 +410,16 @@ export default function Home() {
       });
       return;
     }
-    lastUserRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const variantTarget = variantScrollTargetRef.current;
+    if (variantTarget != null) {
+      variantScrollTargetRef.current = null;
+      smoothScrollIntoView(document.getElementById(`msg-guide-${variantTarget}`), {
+        behavior: "smooth",
+        block: "nearest",
+      });
+      return;
+    }
+    smoothScrollIntoView(lastUserRef.current, { behavior: "smooth", block: "start" });
   }, [messages, loading]);
 
   useEffect(() => {
@@ -1345,6 +1356,7 @@ export default function Home() {
     setInput,
     setPendingImages,
     activeChatIdRef,
+    variantScrollTargetRef,
     backgroundMessagesRef,
     backgroundLoadingRef,
     backgroundStatusRef,

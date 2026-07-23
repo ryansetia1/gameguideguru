@@ -981,6 +981,20 @@ h1 {
   flex-wrap: wrap;
   gap: 8px 10px;
   padding: 9px 18px;
+  position: relative;
+}
+
+.answer-foot-bar.is-expandable {
+  cursor: pointer;
+}
+
+.answer-foot-bar.is-expandable:hover {
+  background: color-mix(in srgb, var(--paper) 55%, transparent);
+}
+
+/* display:contents keeps the popover anchored to the full foot bar on mobile. */
+.answer-foot-interactive {
+  display: contents;
 }
 
 .answer-foot-label {
@@ -997,24 +1011,21 @@ h1 {
   color: var(--muted);
 }
 
-/* Label doubles as the expand toggle when there are clickable sources. */
-.answer-foot-toggle {
+/* Thin chevron toggle (answer foot, game-card guides). */
+.chevron-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: opacity 120ms ease;
-}
-
-.answer-foot-toggle:hover {
-  opacity: 0.7;
-}
-
-.answer-foot-mark {
+  justify-content: center;
   color: var(--muted);
+}
+
+.chevron-toggle .icon {
+  transition: transform 120ms ease;
+}
+
+.chevron-toggle.is-open .icon,
+details[open] > summary .chevron-toggle .icon {
+  transform: rotate(180deg);
 }
 
 /* Version arrows + regenerate, pushed to the far right opposite the label. */
@@ -1137,6 +1148,7 @@ h1 {
   left: 0;
   z-index: 5;
   width: max-content;
+  min-width: min(240px, calc(100vw - 40px));
   max-width: min(280px, calc(100vw - 40px));
   padding: 12px;
   background: var(--paper-strong);
@@ -1153,6 +1165,7 @@ h1 {
     left: 18px;
     right: 18px;
     width: auto;
+    min-width: 0;
     max-width: none;
   }
 }
@@ -1327,6 +1340,7 @@ h1 {
 .turn.guide {
   align-self: flex-start;
   width: 100%;
+  scroll-margin-top: 72px;
   /* Soft --line, not ink: the reading area shouldn't be a hard frame in either
      theme (--line resolves per theme). Interactive controls keep their ink border. */
   border: 1.5px solid var(--line);
@@ -1604,13 +1618,7 @@ details.sources[open] > summary::after {
 }
 
 details.sources.game-card-guides-hidden > summary::after {
-  content: "▼";
-  font-size: 0.7em;
-  transform: translateY(2px);
-}
-
-details.sources.game-card-guides-hidden[open] > summary::after {
-  content: "▲";
+  content: none;
 }
 
 details.sources ol {
