@@ -5842,6 +5842,110 @@ details.sources small {
   line-height: 1.35;
 }
 
+.player-memory-subblock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.player-memory-subblock-head--tight {
+  margin-top: 8px;
+  margin-bottom: 4px;
+}
+
+.player-memory-prefs-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.player-memory-pref-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.player-memory-pref-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-subtle);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.player-memory-pref-select,
+.player-memory-note-input {
+  width: 100%;
+  min-height: 40px;
+  border: 1.5px solid var(--line);
+  background: var(--paper-strong);
+  color: var(--ink);
+  padding: 8px 10px;
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.player-memory-pref-select:focus-visible,
+.player-memory-note-input:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 1px;
+}
+
+.player-memory-note-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 6px 8px;
+}
+
+.player-memory-progress-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px 0;
+}
+
+.player-memory-edited-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border: 1px solid var(--signal);
+  color: var(--signal);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.player-memory-text-btn {
+  flex: none;
+  border: none;
+  background: none;
+  color: var(--signal);
+  padding: 4px 0;
+  font-family: var(--font-sans);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.player-memory-empty {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: 0.78rem;
+}
+
 .player-memory-list--traits .player-memory-note {
   padding: 4px 0;
 }
@@ -5861,6 +5965,11 @@ details.sources small {
   border-bottom: 1px solid var(--line);
   font-size: 0.82rem;
   line-height: 1.35;
+}
+
+.player-memory-note .player-memory-edited-badge {
+  flex: none;
+  align-self: center;
 }
 
 .player-memory-note:last-child {

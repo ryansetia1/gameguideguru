@@ -12,6 +12,12 @@ import {
   tierFromMessageCount,
   type PlayerMemoryTier,
 } from "@/lib/player-memory.js";
+import {
+  mergeGameRowAfterSummarize,
+  mergeStyleAfterSummarize,
+  readStyleRecord,
+  writeStyleRecord,
+} from "@/lib/player-memory-pins.js";
 import { summarizePlayerMemory } from "@/lib/player-memory-summarize";
 import { getTraceId, logTraceEvent } from "@/lib/trace";
 
@@ -271,19 +277,20 @@ export async function refreshPlayerMemory(
     return { ok: true, skipped: "no_new_messages" };
   }
 
+  const { style: existingStyle, userPins } = readStyleRecord(state.style);
   const existingGames = await loadAllPlayerGameMemory(supabase, userId);
 
   await logTraceEvent("memory_summarize_start", "Summarizing player memory", undefined, {
     userId,
     deltaMessageCount: messages.length,
     existingGameCount: existingGames.length,
-    existingStyleNoteCount: (coercePlayerStyle(state.style).notes ?? []).length,
+    existingStyleNoteCount: (existingStyle.notes ?? []).length,
   });
 
   const summary = await summarizePlayerMemory({
     userId,
     traceId: getTraceId(),
-    existingStyle: coercePlayerStyle(state.style),
+    existingStyle,
     existingGames,
     deltaMessages: messages,
   });
@@ -296,13 +303,15 @@ export async function refreshPlayerMemory(
     return { ok: false, error: "Could not update memory." };
   }
 
+  const mergedStyle = mergeStyleAfterSummarize(existingStyle, userPins, summary.style);
+
   const now = new Date().toISOString();
   const tier = coercePlayerMemoryTier(state.tier, state.message_count);
 
   const { error: stateError } = await supabase
     .from("player_memory_state")
     .update({
-      style: summary.style,
+      style: writeStyleRecord(mergedStyle, userPins),
       tier,
       last_summarized_at: now,
       ...(options.manual ? { last_manual_refresh_at: now } : {}),
@@ -322,18 +331,30 @@ export async function refreshPlayerMemory(
   for (const game of summary.games) {
     const gameKey = normGameKey(game.gameKey);
     if (!gameKey) continue;
+    const platform = game.platform?.slice(0, 40) ?? "";
+    const existingRow = existingGames.find(
+      (row) => row.game_key === gameKey && row.platform === platform,
+    );
+    const mergedRow = existingRow
+      ? mergeGameRowAfterSummarize(existingRow, game, userPins)
+      : {
+          game_key: gameKey,
+          platform,
+          progress: game.progress?.slice(0, 200) ?? null,
+          notes: game.notes ?? [],
+        };
     await supabase.from("player_game_memory").upsert({
       user_id: userId,
-      game_key: gameKey,
-      platform: game.platform?.slice(0, 40) ?? "",
-      progress: game.progress?.slice(0, 200) ?? null,
-      notes: game.notes ?? [],
+      game_key: mergedRow.game_key,
+      platform: mergedRow.platform,
+      progress: mergedRow.progress,
+      notes: mergedRow.notes,
       updated_at: now,
     });
     gamesUpdated += 1;
   }
 
-  const styleNoteCount = (summary.style.notes ?? []).length;
+  const styleNoteCount = (mergedStyle.notes ?? []).length;
   await logTraceEvent("memory_save_complete", "Saved player memory cards", undefined, {
     userId,
     gamesUpdated,

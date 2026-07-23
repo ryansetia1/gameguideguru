@@ -9,12 +9,27 @@ import {
   enablePlayerMemory,
   MEMORY_DRAFT_THRESHOLD,
   MEMORY_FULL_THRESHOLD,
+  MEMORY_GAME_NOTE_CAP,
+  MEMORY_STYLE_NOTE_CAP,
   MEMORY_TOGGLE_HINT,
   MEMORY_TOGGLE_LABEL,
   memoryRefreshCooldownRemainingMs,
-  styleBulletsForPrompt,
 } from "@/lib/player-memory.js";
+import {
+  gameMemoryPinKey,
+  isGameNotePinned,
+  isGameProgressPinned,
+  isStyleFieldPinned,
+  isStyleNotePinned,
+  readStyleRecord,
+  STYLE_FIELD_KEYS,
+  STYLE_FIELD_OPTIONS,
+  writeStyleRecord,
+} from "@/lib/player-memory-pins.js";
+import type { PlayerStyleUserPins } from "@/lib/player-memory-pins.js";
 import { getSupabase } from "@/lib/supabase";
+
+type PlayerStyleShape = ReturnType<typeof coercePlayerStyle>;
 
 type MemoryState = {
   message_count: number;
@@ -34,6 +49,13 @@ type GameMemoryRow = {
 type Props = {
   session: Session | null;
   onToast?: (message: string) => void;
+};
+
+const STYLE_FIELD_LABELS: Record<(typeof STYLE_FIELD_KEYS)[number], string> = {
+  answerLength: "Answer length",
+  tone: "Tone",
+  language: "Language",
+  detailLevel: "Detail",
 };
 
 async function apiFetch(session: Session, path: string, init?: RequestInit) {
@@ -68,6 +90,10 @@ function memoryUpdateMeta(lastSummarized: string | null, cooldownMs: number) {
   return parts.join(" · ");
 }
 
+function EditedBadge() {
+  return <span className="player-memory-edited-badge">Edited by you</span>;
+}
+
 function PlayerMemorySkeleton() {
   return (
     <div
@@ -94,6 +120,44 @@ function PlayerMemorySkeleton() {
 
 function formatGameKey(key: string) {
   return key.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function EditableNoteRow({
+  value,
+  pinned,
+  onSave,
+  onRemove,
+}: {
+  value: string;
+  pinned: boolean;
+  onSave: (next: string) => void;
+  onRemove: () => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  return (
+    <li className="player-memory-note">
+      <input
+        type="text"
+        className="player-memory-note-input"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          const trimmed = draft.replace(/\s+/g, " ").trim();
+          if (trimmed && trimmed !== value) onSave(trimmed);
+          else if (!trimmed) onRemove();
+          else setDraft(value);
+        }}
+      />
+      {pinned ? <EditedBadge /> : null}
+      <button type="button" className="player-memory-remove" onClick={onRemove} aria-label="Remove note">
+        ×
+      </button>
+    </li>
+  );
 }
 
 export function PlayerMemorySection({ session, onToast }: Props) {
@@ -149,6 +213,26 @@ export function PlayerMemorySection({ session, onToast }: Props) {
     void load();
   }, [load]);
 
+  const persistStyle = useCallback(
+    async (nextStyle: PlayerStyleShape, nextPins: PlayerStyleUserPins) => {
+      if (!session || !state) return false;
+      const supabase = getSupabase();
+      if (!supabase) return false;
+      const payload = writeStyleRecord(nextStyle, nextPins);
+      const { error: updateError } = await supabase
+        .from("player_memory_state")
+        .update({ style: payload, updated_at: new Date().toISOString() })
+        .eq("user_id", session.user.id);
+      if (updateError) {
+        setError(updateError.message);
+        return false;
+      }
+      setState({ ...state, style: payload });
+      return true;
+    },
+    [session, state],
+  );
+
   async function setMemoryEnabled(next: boolean) {
     const supabase = getSupabase();
     if (!session || !supabase) return;
@@ -198,25 +282,134 @@ export function PlayerMemorySection({ session, onToast }: Props) {
     }
   }
 
-  async function removeStyleNote(index: number) {
-    if (!session || !state) return;
-    const style = coercePlayerStyle(state.style);
+  async function saveStyleField(
+    field: (typeof STYLE_FIELD_KEYS)[number],
+    value: string,
+    style: PlayerStyleShape,
+    userPins: PlayerStyleUserPins,
+  ) {
+    const nextStyle = { ...style };
+    if (value) nextStyle[field] = value as PlayerStyleShape[typeof field];
+    else delete nextStyle[field];
+    const fields = new Set(userPins.fields ?? []);
+    fields.add(field);
+    await persistStyle(nextStyle, { ...userPins, fields: [...fields] });
+  }
+
+  async function saveStyleNote(
+    index: number,
+    text: string,
+    style: PlayerStyleShape,
+    userPins: PlayerStyleUserPins,
+  ) {
+    const notes = [...(style.notes ?? [])];
+    notes[index] = text;
+    const notePins = [...(userPins.notes ?? [])];
+    while (notePins.length < notes.length) notePins.push(false);
+    notePins[index] = true;
+    await persistStyle({ ...style, notes }, { ...userPins, notes: notePins });
+  }
+
+  async function removeStyleNote(
+    index: number,
+    style: PlayerStyleShape,
+    userPins: PlayerStyleUserPins,
+  ) {
     const notes = [...(style.notes ?? [])];
     notes.splice(index, 1);
+    const notePins = [...(userPins.notes ?? [])];
+    notePins.splice(index, 1);
+    await persistStyle({ ...style, notes }, { ...userPins, notes: notePins });
+  }
+
+  async function addStyleNote(style: PlayerStyleShape, userPins: PlayerStyleUserPins) {
+    const notes = style.notes ?? [];
+    if (notes.length >= MEMORY_STYLE_NOTE_CAP) return;
+    const text = window.prompt("Add a note about how you like answers")?.replace(/\s+/g, " ").trim();
+    if (!text) return;
+    const nextNotes = [...notes, text].slice(0, MEMORY_STYLE_NOTE_CAP);
+    const notePins = [...(userPins.notes ?? []), true].slice(0, MEMORY_STYLE_NOTE_CAP);
+    await persistStyle({ ...style, notes: nextNotes }, { ...userPins, notes: notePins });
+  }
+
+  async function saveGameProgress(
+    gameKey: string,
+    platform: string,
+    progress: string,
+    userPins: PlayerStyleUserPins,
+    style: PlayerStyleShape,
+  ) {
+    if (!session) return;
     const supabase = getSupabase();
     if (!supabase) return;
+    const trimmed = progress.replace(/\s+/g, " ").trim().slice(0, 200);
     const { error: updateError } = await supabase
-      .from("player_memory_state")
-      .update({ style: { ...style, notes }, updated_at: new Date().toISOString() })
-      .eq("user_id", session.user.id);
+      .from("player_game_memory")
+      .update({ progress: trimmed || null, updated_at: new Date().toISOString() })
+      .eq("user_id", session.user.id)
+      .eq("game_key", gameKey)
+      .eq("platform", platform);
     if (updateError) {
       setError(updateError.message);
       return;
     }
-    setState({ ...state, style: { ...style, notes } });
+    const key = gameMemoryPinKey(gameKey, platform);
+    const gamesPins = { ...(userPins.games ?? {}) };
+    gamesPins[key] = { ...gamesPins[key], progress: true };
+    await persistStyle(style, { ...userPins, games: gamesPins });
+    setGames((prev) =>
+      prev.map((row) =>
+        row.game_key === gameKey && row.platform === platform
+          ? { ...row, progress: trimmed || null }
+          : row,
+      ),
+    );
   }
 
-  async function removeGameNote(gameKey: string, platform: string, index: number) {
+  async function saveGameNote(
+    gameKey: string,
+    platform: string,
+    index: number,
+    text: string,
+    userPins: PlayerStyleUserPins,
+    style: PlayerStyleShape,
+  ) {
+    if (!session) return;
+    const row = games.find((g) => g.game_key === gameKey && g.platform === platform);
+    if (!row) return;
+    const notes = [...(row.notes ?? [])];
+    notes[index] = text;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const { error: updateError } = await supabase
+      .from("player_game_memory")
+      .update({ notes, updated_at: new Date().toISOString() })
+      .eq("user_id", session.user.id)
+      .eq("game_key", gameKey)
+      .eq("platform", platform);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    const key = gameMemoryPinKey(gameKey, platform);
+    const gamesPins = { ...(userPins.games ?? {}) };
+    const notePins = [...(gamesPins[key]?.notes ?? [])];
+    while (notePins.length < notes.length) notePins.push(false);
+    notePins[index] = true;
+    gamesPins[key] = { ...gamesPins[key], notes: notePins };
+    await persistStyle(style, { ...userPins, games: gamesPins });
+    setGames((prev) =>
+      prev.map((g) => (g.game_key === gameKey && g.platform === platform ? { ...g, notes } : g)),
+    );
+  }
+
+  async function removeGameNote(
+    gameKey: string,
+    platform: string,
+    index: number,
+    userPins: PlayerStyleUserPins,
+    style: PlayerStyleShape,
+  ) {
     if (!session) return;
     const row = games.find((g) => g.game_key === gameKey && g.platform === platform);
     if (!row) return;
@@ -234,10 +427,52 @@ export function PlayerMemorySection({ session, onToast }: Props) {
       setError(updateError.message);
       return;
     }
+    const key = gameMemoryPinKey(gameKey, platform);
+    const gamesPins = { ...(userPins.games ?? {}) };
+    const notePins = [...(gamesPins[key]?.notes ?? [])];
+    notePins.splice(index, 1);
+    if (notePins.some(Boolean) || gamesPins[key]?.progress) {
+      gamesPins[key] = { ...gamesPins[key], notes: notePins };
+    } else {
+      delete gamesPins[key];
+    }
+    await persistStyle(style, { ...userPins, games: gamesPins });
     setGames((prev) =>
-      prev.map((g) =>
-        g.game_key === gameKey && g.platform === platform ? { ...g, notes } : g,
-      ),
+      prev.map((g) => (g.game_key === gameKey && g.platform === platform ? { ...g, notes } : g)),
+    );
+  }
+
+  async function addGameNote(
+    gameKey: string,
+    platform: string,
+    userPins: PlayerStyleUserPins,
+    style: PlayerStyleShape,
+  ) {
+    const row = games.find((g) => g.game_key === gameKey && g.platform === platform);
+    if (!row || (row.notes?.length ?? 0) >= MEMORY_GAME_NOTE_CAP) return;
+    const text = window.prompt("Add a note for this game")?.replace(/\s+/g, " ").trim();
+    if (!text) return;
+    const notes = [...(row.notes ?? []), text].slice(0, MEMORY_GAME_NOTE_CAP);
+    if (!session) return;
+    const supabase = getSupabase();
+    if (!supabase) return;
+    const { error: updateError } = await supabase
+      .from("player_game_memory")
+      .update({ notes, updated_at: new Date().toISOString() })
+      .eq("user_id", session.user.id)
+      .eq("game_key", gameKey)
+      .eq("platform", platform);
+    if (updateError) {
+      setError(updateError.message);
+      return;
+    }
+    const key = gameMemoryPinKey(gameKey, platform);
+    const gamesPins = { ...(userPins.games ?? {}) };
+    const notePins = [...(gamesPins[key]?.notes ?? []), true].slice(0, MEMORY_GAME_NOTE_CAP);
+    gamesPins[key] = { ...gamesPins[key], notes: notePins };
+    await persistStyle(style, { ...userPins, games: gamesPins });
+    setGames((prev) =>
+      prev.map((g) => (g.game_key === gameKey && g.platform === platform ? { ...g, notes } : g)),
     );
   }
 
@@ -265,20 +500,18 @@ export function PlayerMemorySection({ session, onToast }: Props) {
 
   const count = state?.message_count ?? 0;
   const tier = state?.tier ?? "collecting";
-  const style = coercePlayerStyle(state?.style);
+  const { style, userPins } = readStyleRecord(state?.style);
   const customNotes = style.notes ?? [];
-  const inferredBullets = styleBulletsForPrompt({ ...style, notes: [] });
-  const hasInferredTraits = inferredBullets.length > 0;
-  const hasCustomNotes = customNotes.length > 0;
   const cooldownMs = memoryRefreshCooldownRemainingMs(state?.last_manual_refresh_at ?? null);
   const canRefresh = enabled && count >= MEMORY_DRAFT_THRESHOLD && cooldownMs === 0;
   const progressPct = Math.min(100, Math.round((count / MEMORY_FULL_THRESHOLD) * 100));
   const draftLabel = tier === "draft" ? " (draft)" : "";
-  const showCards = enabled && count >= MEMORY_DRAFT_THRESHOLD;
-  const hasStyle = hasInferredTraits || hasCustomNotes;
-  const hasGames = games.some((row) => (row.notes?.length ?? 0) > 0);
-  const hasScrollContent = showCards && (hasStyle || hasGames);
+  const showMemoryEditor = enabled && count >= MEMORY_DRAFT_THRESHOLD;
+  const hasGames = games.some(
+    (row) => (row.notes?.length ?? 0) > 0 || Boolean(row.progress?.trim()),
+  );
   const updateMeta = memoryUpdateMeta(state?.last_summarized_at ?? null, cooldownMs);
+  const canAddStyleNote = customNotes.length < MEMORY_STYLE_NOTE_CAP;
 
   return (
     <div className="field player-memory-section">
@@ -319,61 +552,83 @@ export function PlayerMemorySection({ session, onToast }: Props) {
         </p>
       )}
 
-      {hasScrollContent && (
+      {showMemoryEditor && (
         <div className="player-memory-scroll" aria-label="Learned style and game notes">
-          {hasStyle && (
-            <section className="player-memory-block">
-              <h2 className="player-memory-block-title">Play style{draftLabel}</h2>
+          <section className="player-memory-block">
+            <h2 className="player-memory-block-title">Play style{draftLabel}</h2>
 
-              {hasInferredTraits && (
-                <div className="player-memory-subblock">
-                  <h3 className="player-memory-subblock-title">Answer preferences</h3>
-                  <p className="player-memory-block-hint">
-                    Auto-detected from your chats. Refreshes when you tap Update now.
-                  </p>
-                  <ul className="player-memory-list player-memory-list--traits">
-                    {inferredBullets.map((line) => (
-                      <li key={line} className="player-memory-note player-memory-note--static">
-                        <span>{line}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+            <div className="player-memory-subblock">
+              <h3 className="player-memory-subblock-title">Answer preferences</h3>
+              <p className="player-memory-block-hint">
+                Set these yourself or let Update now refresh from chats. Your edits stay put.
+              </p>
+              <div className="player-memory-prefs-grid">
+                {STYLE_FIELD_KEYS.map((field) => (
+                  <label key={field} className="player-memory-pref-field">
+                    <span className="player-memory-pref-label">
+                      {STYLE_FIELD_LABELS[field]}
+                      {isStyleFieldPinned(userPins, field) ? <EditedBadge /> : null}
+                    </span>
+                    <select
+                      className="player-memory-pref-select"
+                      value={style[field] ?? ""}
+                      onChange={(event) =>
+                        void saveStyleField(field, event.target.value, style, userPins)
+                      }
+                    >
+                      {STYLE_FIELD_OPTIONS[field].map((option) => (
+                        <option key={option.value || "unset"} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+            </div>
 
-              {hasCustomNotes && (
-                <div
-                  className={`player-memory-subblock${hasInferredTraits ? " player-memory-subblock--separated" : ""}`}
-                >
-                  <h3 className="player-memory-subblock-title">Learned notes</h3>
-                  <p className="player-memory-block-hint">Tap × to remove anything wrong or outdated.</p>
-                  <ul className="player-memory-list">
-                    {customNotes.map((line, index) => (
-                      <li key={`${line}-${index}`} className="player-memory-note">
-                        <span>{line}</span>
-                        <button
-                          type="button"
-                          className="player-memory-remove"
-                          onClick={() => void removeStyleNote(index)}
-                          aria-label="Remove note"
-                        >
-                          ×
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+            <div className="player-memory-subblock player-memory-subblock--separated">
+              <div className="player-memory-subblock-head">
+                <h3 className="player-memory-subblock-title">Learned notes</h3>
+                {canAddStyleNote ? (
+                  <button
+                    type="button"
+                    className="player-memory-text-btn"
+                    onClick={() => void addStyleNote(style, userPins)}
+                  >
+                    Add note
+                  </button>
+                ) : null}
+              </div>
+              <p className="player-memory-block-hint">
+                Edit inline or remove with ×. Your edits stay put on Update now.
+              </p>
+              {customNotes.length > 0 ? (
+                <ul className="player-memory-list">
+                  {customNotes.map((line, index) => (
+                    <EditableNoteRow
+                      key={`${line}-${index}`}
+                      value={line}
+                      pinned={isStyleNotePinned(userPins, index)}
+                      onSave={(next) => void saveStyleNote(index, next, style, userPins)}
+                      onRemove={() => void removeStyleNote(index, style, userPins)}
+                    />
+                  ))}
+                </ul>
+              ) : (
+                <p className="player-memory-empty">No notes yet.</p>
               )}
-            </section>
-          )}
+            </div>
+          </section>
 
           {hasGames && (
             <section className="player-memory-block">
               <h2 className="player-memory-block-title">Game notes{draftLabel}</h2>
               {games.map((row) => {
                 const notes = row.notes ?? [];
-                if (!notes.length) return null;
                 const title = `${formatGameKey(row.game_key)}${row.platform ? ` · ${row.platform}` : ""}`;
+                const progressPinned = isGameProgressPinned(userPins, row.game_key, row.platform);
+                if (!notes.length && !row.progress?.trim()) return null;
                 return (
                   <details key={`${row.game_key}:${row.platform}`} className="player-memory-game">
                     <summary className="player-memory-game-summary" aria-label={`${title}, tap to view notes`}>
@@ -391,22 +646,74 @@ export function PlayerMemorySection({ session, onToast }: Props) {
                         {notes.length}
                       </span>
                     </summary>
-                    {row.progress && <p className="player-memory-game-progress">{row.progress}</p>}
-                    <ul className="player-memory-list">
-                      {notes.map((note, index) => (
-                        <li key={`${note}-${index}`} className="player-memory-note">
-                          <span>{note}</span>
-                          <button
-                            type="button"
-                            className="player-memory-remove"
-                            onClick={() => void removeGameNote(row.game_key, row.platform, index)}
-                            aria-label="Remove note"
-                          >
-                            ×
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                    <label className="player-memory-progress-field">
+                      <span className="player-memory-pref-label">
+                        Progress
+                        {progressPinned ? <EditedBadge /> : null}
+                      </span>
+                      <input
+                        type="text"
+                        className="player-memory-note-input"
+                        defaultValue={row.progress ?? ""}
+                        placeholder="e.g. Chapter 2"
+                        onBlur={(event) => {
+                          const next = event.target.value.replace(/\s+/g, " ").trim();
+                          if (next !== (row.progress ?? "").trim()) {
+                            void saveGameProgress(
+                              row.game_key,
+                              row.platform,
+                              next,
+                              userPins,
+                              style,
+                            );
+                          }
+                        }}
+                      />
+                    </label>
+                    <div className="player-memory-subblock-head player-memory-subblock-head--tight">
+                      <span className="player-memory-pref-label">Notes</span>
+                      {notes.length < MEMORY_GAME_NOTE_CAP ? (
+                        <button
+                          type="button"
+                          className="player-memory-text-btn"
+                          onClick={() => void addGameNote(row.game_key, row.platform, userPins, style)}
+                        >
+                          Add note
+                        </button>
+                      ) : null}
+                    </div>
+                    {notes.length > 0 ? (
+                      <ul className="player-memory-list">
+                        {notes.map((note, index) => (
+                          <EditableNoteRow
+                            key={`${note}-${index}`}
+                            value={note}
+                            pinned={isGameNotePinned(userPins, row.game_key, row.platform, index)}
+                            onSave={(next) =>
+                              void saveGameNote(
+                                row.game_key,
+                                row.platform,
+                                index,
+                                next,
+                                userPins,
+                                style,
+                              )
+                            }
+                            onRemove={() =>
+                              void removeGameNote(
+                                row.game_key,
+                                row.platform,
+                                index,
+                                userPins,
+                                style,
+                              )
+                            }
+                          />
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="player-memory-empty">No notes for this game yet.</p>
+                    )}
                   </details>
                 );
               })}

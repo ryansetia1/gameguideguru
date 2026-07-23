@@ -160,6 +160,12 @@ import {
   normGameKey,
   tierFromMessageCount,
 } from "../lib/player-memory.js";
+import {
+  demoPlayerMemoryPins,
+  mergeStyleAfterSummarize,
+  readStyleRecord,
+  writeStyleRecord,
+} from "../lib/player-memory-pins.js";
 
 // System instruction carries the persona + safety rules.
 assert.match(SYSTEM_INSTRUCTION, /untrusted data/);
@@ -1592,5 +1598,19 @@ assert.match(
   /Player style \(learned from past chats\)/,
 );
 assert.equal(memoryRefreshCooldownRemainingMs("2026-01-01T00:00:00.000Z", Date.parse("2026-01-01T00:30:00.000Z")), 0);
+assert.equal(demoPlayerMemoryPins(), true);
+const pinFixture = readStyleRecord({
+  answerLength: "short",
+  userPins: { fields: ["answerLength"], notes: [true] },
+});
+assert.equal(pinFixture.style.answerLength, "short");
+assert.equal(pinFixture.userPins.fields?.[0], "answerLength");
+const mergedPins = mergeStyleAfterSummarize(
+  pinFixture.style,
+  pinFixture.userPins,
+  { answerLength: "detailed", tone: "casual", notes: ["New"] },
+);
+assert.equal(mergedPins.answerLength, "short");
+assert.equal(writeStyleRecord(mergedPins, pinFixture.userPins).userPins.fields[0], "answerLength");
 
 console.log("Self-check passed.");

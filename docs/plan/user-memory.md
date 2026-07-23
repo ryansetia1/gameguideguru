@@ -303,7 +303,9 @@ saved message is a user turn in a non-temporary chat.
 
 - Full chat RAG for ad-hoc "remember when I asked about X" retrieval
 - Weekly full re-summarize for drift correction
-- `pinned` bullets that summarize cannot overwrite
+- ~~`pinned` bullets that summarize cannot overwrite~~ **Shipped (July 2026):** `style.userPins` in
+  `player_memory_state` + merge in `refreshPlayerMemory`; profile UI edits preferences, notes,
+  and per-game progress/notes with **Edited by you** badges.
 - Anon localStorage mirror (unlikely — conflicts with account benefit story)
 - Retry / regenerate rate as a slow style signal — see [answer-satisfaction-signals.md](./answer-satisfaction-signals.md)
 
