@@ -1,4 +1,4 @@
-import { formatUsd, type ApiCostSummary } from "./admin-api-cost.ts";
+import { formatUsd, type ApiCostSummary } from "./admin-api-cost";
 
 const idrFormatter = new Intl.NumberFormat("id-ID", {
   style: "currency",

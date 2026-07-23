@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 const TABS = [
   { href: "/admin", label: "Activity", exact: true },
-  { href: "/admin/traces", label: "Live traces" },
+  { href: "/admin/traces", label: "Live traces", exact: false },
 ] as const;
 
 export function AdminTabs() {

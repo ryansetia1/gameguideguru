@@ -1,6 +1,6 @@
 import type { TraceEventRow } from "./admin-traces";
-import { buildApiSpend, type ApiSpendSummary } from "./admin-api-spend.ts";
-import { buildApiCost, type ApiCostSummary } from "./admin-api-cost.ts";
+import { buildApiSpend, type ApiSpendSummary } from "./admin-api-spend";
+import { buildApiCost, type ApiCostSummary } from "./admin-api-cost";
 
 export type PipelineSourceRow = {
   title: string;

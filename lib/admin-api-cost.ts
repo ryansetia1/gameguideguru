@@ -1,4 +1,4 @@
-import { buildApiSpend } from "./admin-api-spend.ts";
+import { buildApiSpend } from "./admin-api-spend";
 import type { ApiSpendKey, ApiSpendSummary } from "./admin-api-spend";
 import type { TraceEventRow } from "./admin-traces";
 

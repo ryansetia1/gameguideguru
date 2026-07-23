@@ -8,7 +8,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 import {
   dateRangeBounds,
@@ -41,7 +43,7 @@ type DateRange = { from: string; to: string };
 
 type AdminDataContextValue = {
   live: boolean;
-  setLive: (value: boolean) => void;
+  setLive: Dispatch<SetStateAction<boolean>>;
   activityRows: ActivityRow[];
   activityLoading: boolean;
   activityError: string | null;

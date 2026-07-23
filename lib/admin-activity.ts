@@ -162,6 +162,8 @@ function enrichRow(
       game: row.game,
       platform: row.platform,
       question: row.question ?? row.summary,
+      pipeline_type:
+        typeof row.technical?.pipeline_type === "string" ? row.technical.pipeline_type : null,
       status: row.status === "error" ? "error" : "success",
       total_latency_ms: row.latencyMs,
     };
