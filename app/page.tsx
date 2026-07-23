@@ -223,8 +223,6 @@ export default function Home() {
   const variantScrollTargetRef = useRef<number | null>(null);
   const chatHistoryPushed = useRef(false);
   const newGameHistoryPushed = useRef(false);
-  const closingNewGameFormRef = useRef(false);
-  const homeRootPushed = useRef(false);
   const homeExitPromptAt = useRef(0);
   const HOME_EXIT_BACK_MS = 2000;
   const sessionHydratedRef = useRef(false);
@@ -270,10 +268,10 @@ export default function Home() {
   }
 
   function closeNewGameForm() {
-    setNewGameOpen(false);
-    if (!newGameHistoryPushed.current) return;
-    newGameHistoryPushed.current = false;
-    closingNewGameFormRef.current = true;
+    if (!newGameHistoryPushed.current) {
+      setNewGameOpen(false);
+      return;
+    }
     dismissOverlay();
   }
 
@@ -356,10 +354,6 @@ export default function Home() {
 
   useEffect(() => {
     function onPopState() {
-      if (closingNewGameFormRef.current) {
-        closingNewGameFormRef.current = false;
-        return;
-      }
       if (confirmFallbackModal) {
         confirmFallbackModal.onCancel();
         return;
@@ -374,6 +368,7 @@ export default function Home() {
       }
       if (sidebarOpen) {
         setSidebarOpen(false);
+        setMenuOpenId(null);
         return;
       }
       if (authOpen) {
@@ -388,28 +383,23 @@ export default function Home() {
       // No overlay open: a back press from a game thread returns to the home page.
       if (messages.length > 0) {
         chatHistoryPushed.current = false;
-        homeRootPushed.current = false;
         homeExitPromptAt.current = 0;
         newGame();
         return;
       }
-      // Quick-home idle: first back warns; second back within 2s leaves the app.
-      const onQuickHomeIdle =
-        chats.length > 0 && !game.trim() && !newGameOpen && !editingGame;
-      if (!onQuickHomeIdle) return;
+      // Home idle: first back warns; second back within 2s leaves the app.
+      if (editingGame) return;
 
       if (
         homeExitPromptAt.current > 0 &&
         Date.now() - homeExitPromptAt.current < HOME_EXIT_BACK_MS
       ) {
         homeExitPromptAt.current = 0;
-        homeRootPushed.current = false;
         return;
       }
 
       homeExitPromptAt.current = Date.now();
       setToast("Press back again to leave");
-      homeRootPushed.current = true;
       window.history.pushState({ gggHomeRoot: true }, "");
     }
     window.addEventListener("popstate", onPopState);
@@ -422,8 +412,6 @@ export default function Home() {
     messages.length,
     confirmFallbackModal,
     newGameOpen,
-    chats.length,
-    game,
     editingGame,
   ]);
 
@@ -439,32 +427,28 @@ export default function Home() {
     }
   }, [messages.length]);
 
-  // Arm hardware back on quick-home idle so the first press shows a leave hint
-  // instead of exiting the PWA immediately.
+  // Arm hardware back on home idle so the first press shows a leave hint instead
+  // of exiting the PWA immediately. Only seed when the stack top has no guard
+  // entry yet (overlay/chat close already leaves gggHomeRoot underneath).
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const shouldGuard =
-      chats.length > 0 &&
+    const arm =
       messages.length === 0 &&
-      !game.trim() &&
       !newGameOpen &&
       !editingGame &&
       !authOpen &&
       !sidebarOpen &&
       !libraryOpen &&
       !steamLibraryOpen;
-    if (shouldGuard && !homeRootPushed.current) {
-      homeRootPushed.current = true;
-      window.history.pushState({ gggHomeRoot: true }, "");
-    }
-    if (!shouldGuard) {
-      homeRootPushed.current = false;
+    if (!arm) {
       if (messages.length > 0 || newGameOpen) homeExitPromptAt.current = 0;
+      return;
     }
+    const top = window.history.state as { gggHomeRoot?: boolean; gggOverlay?: boolean; gggChat?: boolean } | null;
+    if (top?.gggHomeRoot || top?.gggOverlay || top?.gggChat) return;
+    window.history.pushState({ gggHomeRoot: true }, "");
   }, [
-    chats.length,
     messages.length,
-    game,
     newGameOpen,
     editingGame,
     authOpen,
@@ -1493,10 +1477,11 @@ export default function Home() {
   //   the hero and reveals the setup form below the carousel (push-up motion).
   const homeMode = !started && !editingGame;
   const hasRecent = homeMode && chats.length > 0;
-  const showCarousel = isMounted && hasRecent && (newGameOpen || !hasGame);
+  const showCarousel = isMounted && hasRecent && !started;
   const quickIdle = showCarousel && !newGameOpen;
   const showHero = isMounted && homeMode;
-  const showSetupForm = (isMounted && homeMode && !quickIdle) || (started && editingGame);
+  const showSetupForm =
+    (isMounted && homeMode && (!hasRecent || newGameOpen)) || (started && editingGame);
   const QUICK_LIMIT = 7;
   const recentGames = chats.slice(0, QUICK_LIMIT);
   const moreGamesCount = chats.length - recentGames.length;
@@ -1573,8 +1558,7 @@ export default function Home() {
         librarySearch={librarySearch}
         onDismissOverlay={dismissOverlay}
         onCloseSidebar={() => {
-          setSidebarOpen(false);
-          setMenuOpenId(null);
+          if (!sidebarOpen) return;
           dismissOverlay();
         }}
         onGoHome={() => {

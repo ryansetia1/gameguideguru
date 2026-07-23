@@ -76,10 +76,7 @@ export function GamesSidebar({
     <>
       <div
         className={`sidebar-backdrop${sidebarOpen ? " open" : ""}`}
-        onClick={() => {
-          onCloseSidebar();
-          onDismissOverlay();
-        }}
+        onClick={onCloseSidebar}
         aria-hidden="true"
       />
       <aside
