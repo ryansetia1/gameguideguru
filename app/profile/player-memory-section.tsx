@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   coercePlayerStyle,
+  disablePlayerMemory,
+  enablePlayerMemory,
   MEMORY_DRAFT_THRESHOLD,
   MEMORY_FULL_THRESHOLD,
   MEMORY_TOGGLE_HINT,
@@ -65,7 +67,8 @@ export function PlayerMemorySection({ session, onToast }: Props) {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    if (!session) {
+    const supabase = getSupabase();
+    if (!session || !supabase) {
       setEnabled(false);
       setState(null);
       setGames([]);
@@ -75,17 +78,28 @@ export function PlayerMemorySection({ session, onToast }: Props) {
     setLoading(true);
     setError("");
     try {
-      const res = await apiFetch(session, "/api/player-memory");
-      const body = (await res.json()) as {
-        enabled?: boolean;
-        state?: MemoryState | null;
-        games?: GameMemoryRow[];
-        error?: string;
-      };
-      if (!res.ok) throw new Error(body.error || "Could not load memory.");
-      setEnabled(Boolean(body.enabled));
-      setState(body.state ?? null);
-      setGames(body.games ?? []);
+      const { data: stateRow, error: stateError } = await supabase
+        .from("player_memory_state")
+        .select("message_count, tier, style, last_summarized_at, last_manual_refresh_at")
+        .maybeSingle();
+      if (stateError) throw stateError;
+
+      if (!stateRow) {
+        setEnabled(false);
+        setState(null);
+        setGames([]);
+        return;
+      }
+
+      const { data: gameRows, error: gamesError } = await supabase
+        .from("player_game_memory")
+        .select("game_key, platform, progress, notes")
+        .order("updated_at", { ascending: false });
+      if (gamesError) throw gamesError;
+
+      setEnabled(true);
+      setState(stateRow as MemoryState);
+      setGames((gameRows as GameMemoryRow[]) ?? []);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not load memory.");
     } finally {
@@ -98,23 +112,23 @@ export function PlayerMemorySection({ session, onToast }: Props) {
   }, [load]);
 
   async function setMemoryEnabled(next: boolean) {
-    if (!session) return;
+    const supabase = getSupabase();
+    if (!session || !supabase) return;
     if (!next) {
       const ok = window.confirm("Turn off and clear what we've learned?");
       if (!ok) return;
     }
     setError("");
     try {
-      const res = await apiFetch(session, "/api/player-memory", {
-        method: "PATCH",
-        body: JSON.stringify({ enabled: next }),
-      });
-      const body = (await res.json()) as { error?: string; state?: MemoryState | null };
-      if (!res.ok) throw new Error(body.error || "Could not update setting.");
+      if (next) {
+        await enablePlayerMemory(supabase, session.user.id);
+        onToast?.("Learning your style. Ask a few questions to get started.");
+      } else {
+        await disablePlayerMemory(supabase, session.user.id);
+        setGames([]);
+      }
       setEnabled(next);
-      setState(body.state ?? null);
-      if (!next) setGames([]);
-      if (next) onToast?.("Learning your style. Ask a few questions to get started.");
+      await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not update setting.");
     }

@@ -118,41 +118,6 @@ export async function loadAllPlayerGameMemory(
   return data as PlayerGameMemoryRow[];
 }
 
-export async function setPlayerMemoryEnabled(
-  supabase: SupabaseClient,
-  user: User,
-  enabled: boolean,
-) {
-  if (enabled) {
-    const now = new Date().toISOString();
-    const { error: metaError } = await supabase.auth.updateUser({
-      data: { player_memory_enabled: true },
-    });
-    if (metaError) throw metaError;
-
-    const { error: stateError } = await supabase.from("player_memory_state").upsert({
-      user_id: user.id,
-      message_count: 0,
-      tier: "collecting",
-      style: {},
-      enabled_at: now,
-      last_summarized_at: null,
-      last_manual_refresh_at: null,
-      updated_at: now,
-    });
-    if (stateError) throw stateError;
-    return;
-  }
-
-  const { error: metaError } = await supabase.auth.updateUser({
-    data: { player_memory_enabled: false },
-  });
-  if (metaError) throw metaError;
-
-  await supabase.from("player_game_memory").delete().eq("user_id", user.id);
-  await supabase.from("player_memory_state").delete().eq("user_id", user.id);
-}
-
 export async function clearPlayerMemoryCards(supabase: SupabaseClient, userId: string) {
   const now = new Date().toISOString();
   await supabase.from("player_game_memory").delete().eq("user_id", userId);
