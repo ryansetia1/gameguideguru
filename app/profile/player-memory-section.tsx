@@ -47,11 +47,49 @@ async function apiFetch(session: Session, path: string, init?: RequestInit) {
   });
 }
 
-function formatRelativeTime(iso: string | null) {
+function formatMemoryUpdated(iso: string | null) {
   if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function memoryUpdateMeta(lastSummarized: string | null, cooldownMs: number) {
+  const updated = formatMemoryUpdated(lastSummarized);
+  if (!updated && cooldownMs <= 0) return "";
+  const parts: string[] = [];
+  if (updated) parts.push(`Updated ${updated}`);
+  if (cooldownMs > 0) parts.push(`try again in ${Math.ceil(cooldownMs / 60_000)} min`);
+  return parts.join(" · ");
+}
+
+function PlayerMemorySkeleton() {
+  return (
+    <div
+      className="field player-memory-section"
+      aria-busy="true"
+      aria-label="Loading style memory"
+    >
+      <span className="player-memory-skeleton player-memory-skeleton-label" aria-hidden />
+      <div className="player-memory-skeleton player-memory-skeleton-toggle" aria-hidden />
+      <div className="player-memory-skeleton player-memory-skeleton-hint" aria-hidden />
+      <div className="player-memory-scroll player-memory-skeleton-scroll" aria-hidden>
+        <div className="player-memory-skeleton player-memory-skeleton-line" />
+        <div className="player-memory-skeleton player-memory-skeleton-line player-memory-skeleton-line--b" />
+        <div className="player-memory-skeleton player-memory-skeleton-line player-memory-skeleton-line--c" />
+        <div className="player-memory-skeleton player-memory-skeleton-line player-memory-skeleton-line--d" />
+      </div>
+      <div className="player-memory-action-row player-memory-skeleton-actions" aria-hidden>
+        <div className="player-memory-skeleton player-memory-skeleton-btn" />
+        <div className="player-memory-skeleton player-memory-skeleton-btn" />
+      </div>
+    </div>
+  );
 }
 
 function formatGameKey(key: string) {
@@ -222,21 +260,25 @@ export function PlayerMemorySection({ session, onToast }: Props) {
     onToast?.("Style memory cleared.");
   }
 
-  if (!session || loading) return null;
+  if (!session) return null;
+  if (loading) return <PlayerMemorySkeleton />;
 
   const count = state?.message_count ?? 0;
   const tier = state?.tier ?? "collecting";
   const style = coercePlayerStyle(state?.style);
   const customNotes = style.notes ?? [];
   const inferredBullets = styleBulletsForPrompt({ ...style, notes: [] });
+  const hasInferredTraits = inferredBullets.length > 0;
+  const hasCustomNotes = customNotes.length > 0;
   const cooldownMs = memoryRefreshCooldownRemainingMs(state?.last_manual_refresh_at ?? null);
   const canRefresh = enabled && count >= MEMORY_DRAFT_THRESHOLD && cooldownMs === 0;
   const progressPct = Math.min(100, Math.round((count / MEMORY_FULL_THRESHOLD) * 100));
   const draftLabel = tier === "draft" ? " (draft)" : "";
   const showCards = enabled && count >= MEMORY_DRAFT_THRESHOLD;
-  const hasStyle = inferredBullets.length > 0 || customNotes.length > 0;
+  const hasStyle = hasInferredTraits || hasCustomNotes;
   const hasGames = games.some((row) => (row.notes?.length ?? 0) > 0);
   const hasScrollContent = showCards && (hasStyle || hasGames);
+  const updateMeta = memoryUpdateMeta(state?.last_summarized_at ?? null, cooldownMs);
 
   return (
     <div className="field player-memory-section">
@@ -282,26 +324,46 @@ export function PlayerMemorySection({ session, onToast }: Props) {
           {hasStyle && (
             <section className="player-memory-block">
               <h2 className="player-memory-block-title">Play style{draftLabel}</h2>
-              <ul className="player-memory-list">
-                {inferredBullets.map((line) => (
-                  <li key={line} className="player-memory-note player-memory-note--static">
-                    <span>{line}</span>
-                  </li>
-                ))}
-                {customNotes.map((line, index) => (
-                  <li key={`${line}-${index}`} className="player-memory-note">
-                    <span>{line}</span>
-                    <button
-                      type="button"
-                      className="player-memory-remove"
-                      onClick={() => void removeStyleNote(index)}
-                      aria-label="Remove note"
-                    >
-                      ×
-                    </button>
-                  </li>
-                ))}
-              </ul>
+
+              {hasInferredTraits && (
+                <div className="player-memory-subblock">
+                  <h3 className="player-memory-subblock-title">Answer preferences</h3>
+                  <p className="player-memory-block-hint">
+                    Auto-detected from your chats. Refreshes when you tap Update now.
+                  </p>
+                  <ul className="player-memory-list player-memory-list--traits">
+                    {inferredBullets.map((line) => (
+                      <li key={line} className="player-memory-note player-memory-note--static">
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {hasCustomNotes && (
+                <div
+                  className={`player-memory-subblock${hasInferredTraits ? " player-memory-subblock--separated" : ""}`}
+                >
+                  <h3 className="player-memory-subblock-title">Learned notes</h3>
+                  <p className="player-memory-block-hint">Tap × to remove anything wrong or outdated.</p>
+                  <ul className="player-memory-list">
+                    {customNotes.map((line, index) => (
+                      <li key={`${line}-${index}`} className="player-memory-note">
+                        <span>{line}</span>
+                        <button
+                          type="button"
+                          className="player-memory-remove"
+                          onClick={() => void removeStyleNote(index)}
+                          aria-label="Remove note"
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </section>
           )}
 
@@ -370,19 +432,10 @@ export function PlayerMemorySection({ session, onToast }: Props) {
               </button>
             </div>
           )}
+          {updateMeta ? <p className="player-memory-meta">{updateMeta}</p> : null}
           {count < MEMORY_DRAFT_THRESHOLD && (
             <p className="profile-hint player-memory-hint">
               Needs {MEMORY_DRAFT_THRESHOLD} questions first ({count}/{MEMORY_DRAFT_THRESHOLD})
-            </p>
-          )}
-          {cooldownMs > 0 && (
-            <p className="profile-hint player-memory-hint">
-              Updated recently. Try again in {Math.ceil(cooldownMs / 60_000)} min.
-            </p>
-          )}
-          {state?.last_summarized_at && (
-            <p className="profile-hint player-memory-hint">
-              Last updated: {formatRelativeTime(state.last_summarized_at)}
             </p>
           )}
         </div>

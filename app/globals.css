@@ -5820,6 +5820,32 @@ details.sources small {
   text-transform: uppercase;
 }
 
+.player-memory-subblock--separated {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1.5px solid var(--ink);
+}
+
+.player-memory-subblock-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.player-memory-block-hint {
+  margin: 4px 0 8px;
+  color: var(--text-subtle);
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.player-memory-list--traits .player-memory-note {
+  padding: 4px 0;
+}
+
 .player-memory-list {
   margin: 0;
   padding: 0;
@@ -5959,8 +5985,74 @@ details.sources small {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
+  gap: 6px;
   margin-top: 16px;
+}
+
+.player-memory-meta {
+  margin: 0;
+  width: 100%;
+  color: var(--text-subtle);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.player-memory-skeleton {
+  background: var(--line);
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  animation: skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.player-memory-skeleton-label {
+  display: block;
+  height: 10px;
+  width: 96px;
+}
+
+.player-memory-skeleton-toggle {
+  height: 44px;
+  width: 100%;
+}
+
+.player-memory-skeleton-hint {
+  height: 12px;
+  width: 70%;
+  margin-top: 6px;
+}
+
+.player-memory-skeleton-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: none;
+  margin-top: 12px;
+}
+
+.player-memory-skeleton-line {
+  height: 14px;
+  width: 100%;
+}
+
+.player-memory-skeleton-line--b {
+  width: 92%;
+}
+
+.player-memory-skeleton-line--c {
+  width: 78%;
+}
+
+.player-memory-skeleton-line--d {
+  width: 86%;
+}
+
+.player-memory-skeleton-actions {
+  margin-top: 12px;
+}
+
+.player-memory-skeleton-btn {
+  flex: 1;
+  min-width: 120px;
+  min-height: 36px;
 }
 
 .player-memory-action-row {
