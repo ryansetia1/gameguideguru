@@ -2150,9 +2150,6 @@ details.sources small {
 }
 
 .sidebar-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   padding: 16px 14px;
   border-bottom: 1.5px solid var(--ink);
   font-family: var(--font-sans);
@@ -2162,7 +2159,21 @@ details.sources small {
   text-transform: uppercase;
 }
 
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 6px 0 0;
+  border-bottom: 1.5px solid var(--ink);
+}
+
 .sidebar-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
   border: none;
   background: transparent;
   color: var(--ink);
@@ -2174,17 +2185,18 @@ details.sources small {
 .sidebar-home {
   display: flex;
   align-items: center;
+  flex: 1;
   gap: 10px;
-  width: 100%;
   min-height: 48px;
-  padding: 12px 14px;
+  padding: 12px 8px 12px 14px;
   border: none;
-  border-bottom: 1.5px solid var(--ink);
   background: transparent;
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 0.88rem;
-  font-weight: 600;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   text-align: left;
   cursor: pointer;
   transition: background 120ms ease;
