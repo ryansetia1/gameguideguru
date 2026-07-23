@@ -8,6 +8,7 @@ import { guideIngestHint, guideIngestHintFromResponse } from "@/lib/guide-hints.
 import { isActiveGamefaqsBundle, normalizeGuideUrlList } from "@/lib/guide-urls.js";
 import type { GuideBundleMeta } from "../guide-link-field";
 import type { ChatTurnDeps } from "./chat-turn-deps";
+import { displayNameFromMetadata } from "@/lib/profile.js";
 
 export type GuideIngestTurnParams = {
   deps: ChatTurnDeps;
@@ -90,6 +91,7 @@ export async function runGuideIngestForTurn({
           game: deps.game,
           platform: deps.platform,
           userId: deps.user?.id ?? null,
+          playerName: deps.user ? displayNameFromMetadata(deps.user.user_metadata) : "",
           bundlePrefs: buildBundlePrefsBody(guideUrls, deps.guideBundleMeta),
         }),
       });

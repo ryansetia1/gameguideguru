@@ -209,7 +209,9 @@ export async function executeChatTurn({
         preferredUrls: guideUrls,
         images,
         spoilerPrefs: d.spoilerPrefs,
-        playerName: d.user ? displayNameFromMetadata(d.user.user_metadata) : "",
+        playerName: d.user
+          ? displayNameFromMetadata(d.user.user_metadata) || d.user.email?.split("@")[0] || ""
+          : "",
         userId: d.user?.id ?? null,
         bundlePrefs: buildBundlePrefsBody(guideUrls, d.guideBundleMeta),
         retryContext,

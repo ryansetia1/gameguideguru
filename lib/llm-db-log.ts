@@ -1,4 +1,5 @@
 import { getServerClient } from "@/lib/supabase-server";
+import { getTraceId } from "@/lib/trace";
 
 // Log when Supabase vars are set. Set LLM_DB_LOG=0 to disable (e.g. local tests).
 const ENABLED = process.env.LLM_DB_LOG !== "0";
@@ -16,6 +17,7 @@ export type LlmDbLogEntry = {
   game?: string;
   platform?: string;
   userId?: string | null;
+  traceId?: string | null;
 };
 
 function coerceInt(value: number | null | undefined): number | null {
@@ -32,6 +34,7 @@ export async function logLlmCallToDb(entry: LlmDbLogEntry): Promise<void> {
     const { error } = await supabase.from("llm_calls").insert({
       kind: entry.kind,
       model: entry.model.slice(0, 120),
+      trace_id: entry.traceId ?? getTraceId() ?? null,
       system_instruction: entry.system.slice(0, 100_000),
       prompt: entry.prompt.slice(0, 100_000),
       response: entry.response.slice(0, 100_000),

@@ -19,6 +19,8 @@ export function logEmbedCall(input: {
   textCount: number;
   durationMs: number;
   sampleText?: string;
+  totalChars?: number;
+  inputTokens?: number | null;
   cached?: boolean;
   meta?: EmbedLogMeta;
 }): void {
@@ -29,6 +31,8 @@ export function logEmbedCall(input: {
     guideUrl: meta.guideUrl ?? null,
     bundleKey: meta.bundleKey ?? null,
     cached: Boolean(input.cached),
+    inputTokens: input.inputTokens ?? null,
+    totalChars: input.totalChars ?? null,
     sample: input.sampleText?.slice(0, 400) ?? "",
   });
 
@@ -41,7 +45,10 @@ export function logEmbedCall(input: {
       vectors: input.textCount,
       dim: 1024,
       cached: Boolean(input.cached),
+      inputTokens: input.inputTokens ?? null,
     }),
+    inputTokens: input.inputTokens ?? (input.cached ? 0 : null),
+    outputTokens: 0,
     durationMs: input.durationMs,
     game: meta.game,
     platform: meta.platform,

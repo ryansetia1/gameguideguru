@@ -31,6 +31,21 @@ import {
 } from "../lib/voice.js";
 import { warmUpMicrophone } from "../lib/voice-meter.js";
 import { buildGuideDiscoveryQuery } from "../lib/guide-search.js";
+import { extractSnippetsFromSummarizePrompt } from "../lib/admin-pipeline.ts";
+import {
+  buildApiSpend,
+  countApiSpendFromLlm,
+  countApiSpendFromTrace,
+} from "../lib/admin-api-spend.ts";
+import { buildApiCost, buildTraceApiCost, formatUsd } from "../lib/admin-api-cost.ts";
+import { compactTraceEvents, isReplicateInProgress } from "../lib/admin-traces.ts";
+import {
+  buildTraceEventCostMap,
+  costFromSingleLlmCall,
+  isReplicateSucceededEvent,
+} from "../lib/admin-trace-event-cost.ts";
+import { formatAdminMoney, formatIdr, usdToIdrAmount } from "../lib/admin-fx.ts";
+import { dateRangeForPreset } from "../lib/admin-date-range.ts";
 import { chunkGuide } from "../lib/chunk-guide.js";
 import { guideIngestHint, guideIngestHintFromResponse } from "../lib/guide-hints.js";
 import {
@@ -1403,5 +1418,146 @@ assert.equal(
   true,
 );
 assert.equal(answerModeInfo("web", undefined).label, "Web search");
+
+const summarizeFixture = buildPrompt({
+  game: "Clair Obscur",
+  platform: "PS5",
+  question: "Does Gustave die?",
+  sources: [
+    { title: "Act 1 Guide", url: "https://example.com/a", content: "Gustave survives the sanctuary.", score: 0.9 },
+    { title: "Act 2 Guide", url: "https://example.com/b", content: "Verso takes over after Act 1.", score: 0.8, preferred: true },
+  ],
+});
+const extractedSnippets = extractSnippetsFromSummarizePrompt(summarizeFixture);
+assert.equal(extractedSnippets.web.length, 1);
+assert.match(extractedSnippets.web[0].preview, /Gustave survives/);
+assert.equal(extractedSnippets.preferred.length, 1);
+assert.match(extractedSnippets.preferred[0].preview, /Verso takes over/);
+
+const traceSpendFixture = [
+  { event_type: "tavily_search_start" },
+  { event_type: "tavily_search_start" },
+  { event_type: "tavily_extract_start" },
+  { event_type: "rag_rerank_start" },
+  { event_type: "embed_query_start" },
+  { event_type: "embed_query_end" },
+];
+assert.equal(countApiSpendFromTrace(traceSpendFixture).tavily, 3);
+assert.equal(countApiSpendFromTrace(traceSpendFixture).cohere, 1);
+assert.equal(countApiSpendFromTrace(traceSpendFixture).sumopod_embed, 1);
+assert.equal(
+  countApiSpendFromLlm([
+    { kind: "rewrite" },
+    { kind: "summarize" },
+    { kind: "censor" },
+    { kind: "embed_query" },
+  ]).replicate,
+  3,
+);
+assert.equal(countApiSpendFromLlm([{ kind: "embed_index" }, { kind: "embed_query" }]).sumopod_embed, 2);
+const spendSummary = buildApiSpend(traceSpendFixture, [
+  { kind: "rewrite" },
+  { kind: "summarize" },
+  { kind: "summarize" },
+]);
+assert.equal(spendSummary?.counts.tavily, 3);
+assert.equal(spendSummary?.counts.replicate, 3);
+assert.equal(spendSummary?.counts.cohere, 1);
+assert.equal(spendSummary?.counts.sumopod_embed, 1);
+assert.equal(spendSummary?.total, 8);
+
+const costSummary = buildApiCost(spendSummary, [
+  { kind: "rewrite", input_tokens: 1000, output_tokens: 100 },
+  { kind: "summarize", input_tokens: 2000, output_tokens: 500 },
+  { kind: "summarize", input_tokens: 3000, output_tokens: 800 },
+  {
+    kind: "embed_query",
+    prompt: JSON.stringify({ purpose: "rag_query", textCount: 1, inputTokens: 120, cached: false }),
+  },
+]);
+assert.ok(costSummary && costSummary.knownTotalUsd > 0);
+assert.equal(costSummary.lines.find((line) => line.key === "replicate")?.costUsd != null, true);
+assert.equal(costSummary.lines.find((line) => line.key === "sumopod_embed")?.costUsd != null, true);
+
+const traceCost = buildTraceApiCost(
+  [{ trace_id: "t1", created_at: "2026-01-01T00:00:00Z", event_type: "embed_texts_start", message: "x" }],
+  [{ kind: "summarize", input_tokens: 1000, output_tokens: 500 }],
+);
+assert.ok(traceCost && traceCost.knownTotalUsd > 0);
+
+const compactedReplicate = compactTraceEvents([
+  { trace_id: "t1", created_at: "2026-01-01T00:00:01Z", event_type: "replicate_status", message: "status: starting", metadata: { status: "starting" } },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:02Z", event_type: "replicate_status", message: "status: processing", metadata: { status: "processing" } },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:03Z", event_type: "replicate_status", message: "status: succeeded", metadata: { status: "succeeded" } },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:04Z", event_type: "generation_complete", message: "done" },
+]);
+assert.equal(compactedReplicate.length, 1);
+assert.equal(compactedReplicate[0].event_type, "llm_phase");
+assert.equal(compactedReplicate[0].metadata?.phaseType, "summarize");
+
+const compactedRewrite = compactTraceEvents([
+  { trace_id: "t1", created_at: "2026-01-01T00:00:00Z", event_type: "solve_start", message: "Started solve generation", metadata: { game: "Test" } },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:01Z", event_type: "replicate_status", message: "status: succeeded", metadata: { status: "succeeded" } },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:02Z", event_type: "rewrite_complete", message: "Resolved question into search topic", latency_ms: 4410, metadata: { searchTopic: "foo" } },
+]);
+assert.equal(compactedRewrite.length, 1);
+assert.equal(compactedRewrite[0].event_type, "llm_phase");
+assert.equal(compactedRewrite[0].metadata?.phaseType, "rewrite");
+assert.equal(compactedRewrite[0].latency_ms, 4410);
+
+const compactedForCost = compactedRewrite;
+const eventCosts = buildTraceEventCostMap(
+  compactedForCost,
+  [{ kind: "rewrite", input_tokens: 1000, output_tokens: 500, created_at: "2026-01-01T00:00:02Z" }],
+);
+assert.equal(eventCosts.has(0), true);
+assert.equal(isReplicateSucceededEvent(compactedRewrite[0]), true);
+assert.ok(costFromSingleLlmCall({ kind: "rewrite", input_tokens: 1000, output_tokens: 500 }) > 0);
+assert.equal(isReplicateSucceededEvent({ trace_id: "t1", created_at: "", event_type: "replicate_status", message: "processing", metadata: { status: "processing" } }), false);
+
+const compactedTavily = compactTraceEvents([
+  { trace_id: "t1", created_at: "2026-01-01T00:00:00Z", event_type: "web_search_start", message: "Starting tiered web search" },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:01Z", event_type: "tavily_search_start", message: "Tavily Search: foo", metadata: { query: "foo" } },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:02Z", event_type: "tavily_search_end", message: "Tavily Search Complete", latency_ms: 1200, metadata: { status: 200 } },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:03Z", event_type: "web_search_complete", message: "Finished tiered web search", latency_ms: 2000, metadata: { sourceCount: 3 } },
+]);
+assert.equal(compactedTavily.length, 1);
+assert.equal(compactedTavily[0].metadata?.phaseType, "web_search");
+
+const compactedRag = compactTraceEvents([
+  { trace_id: "t1", created_at: "2026-01-01T00:00:00Z", event_type: "embed_query_start", message: "Embedding query" },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:01Z", event_type: "embed_texts_start", message: "Embedding 1 text(s)" },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:02Z", event_type: "embed_texts_end", message: "Embedding complete", latency_ms: 500, metadata: { kind: "embed_query" } },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:03Z", event_type: "embed_query_end", message: "Embed query complete", latency_ms: 600 },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:04Z", event_type: "rag_db_check", message: "Checked DB for RAG chunks", latency_ms: 40, metadata: { matchCount: 5 } },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:05Z", event_type: "rag_rerank_start", message: "Reranking 5 chunks via Cohere", metadata: { provider: "cohere" } },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:06Z", event_type: "rag_rerank_ok", message: "Cohere rerank done", latency_ms: 300, metadata: { topScore: 0.8, relevant: true } },
+  { trace_id: "t1", created_at: "2026-01-01T00:00:07Z", event_type: "rag_similarity_score", message: "Top RAG similarity: 0.800 (Hit: true)", metadata: { hit: true } },
+]);
+assert.equal(compactedRag.length, 4);
+assert.equal(compactedRag[0].metadata?.phaseType, "rag_embed");
+assert.equal(compactedRag[1].metadata?.phaseType, "rag_retrieve");
+assert.equal(compactedRag[2].metadata?.phaseType, "cohere_rerank");
+assert.equal(isReplicateInProgress(compactedRag[2]), false);
+assert.equal(
+  isReplicateInProgress(
+    compactTraceEvents([
+      { trace_id: "t1", created_at: "2026-01-01T00:00:00Z", event_type: "rag_rerank_start", message: "Reranking" },
+    ])[0],
+  ),
+  false,
+);
+assert.equal(compactedRag[3].metadata?.phaseType, "rag_retrieve");
+
+const fixedNow = new Date("2026-07-23T15:00:00");
+assert.equal(dateRangeForPreset("today", fixedNow).from, "2026-07-23");
+assert.equal(dateRangeForPreset("year", fixedNow).from, "2026-01-01");
+assert.equal(dateRangeForPreset("quarter", fixedNow).from, "2026-07-01");
+assert.equal(dateRangeForPreset("half", fixedNow).from, "2026-07-01");
+assert.equal(formatUsd(0.0042), "$0.004");
+assert.equal(formatUsd(1.2), "$1.200");
+assert.equal(usdToIdrAmount(0.004, 16000), 64);
+assert.equal(formatAdminMoney(0.004, 16000), formatIdr(64));
+assert.equal(formatAdminMoney(0.004, null), "$0.004");
 
 console.log("Self-check passed.");

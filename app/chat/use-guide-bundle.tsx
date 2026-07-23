@@ -17,6 +17,7 @@ import {
   mergedBundlePrefs,
 } from "@/lib/guide-card-ui.js";
 import { isActiveGamefaqsBundle, isGamefaqsBundleUrl, isUploadedGuideUrl } from "@/lib/guide-urls.js";
+import { displayNameFromMetadata } from "@/lib/profile.js";
 import { getSupabase } from "@/lib/supabase";
 import type { GuideBundleMeta } from "../guide-link-field";
 
@@ -325,6 +326,7 @@ export function useGuideBundle({
             game,
             platform,
             userId: user?.id ?? null,
+            playerName: user ? displayNameFromMetadata(user.user_metadata) : "",
             bundlePrefs: buildBundlePrefsBody([url], guideBundleMeta),
           }),
         });

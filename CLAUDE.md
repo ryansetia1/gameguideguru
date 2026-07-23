@@ -895,11 +895,7 @@ Sound human, not like AI. Specifically avoid these tells:
   "effortless", "elevate", "unlock", "level up", "supercharge", "delve", "robust".
 - Don't over-hedge or over-explain. Say the thing once.
 
-- Admin Trace Dashboard: Created `/admin` route to monitor backend execution via `X-Trace-Id` tracking.
-
-- Added `AutoRefresh` to Admin Dashboard for secure, background polling every 3 seconds.
-
-- Refactored `/admin` route into a Realtime Client Component authenticated directly via Supabase for `ryansetiawan.works@gmail.com` only.
+- Admin dashboard: `/admin` Activity tab (chat/ingest rows with LLM prompts, web search snippets, Cohere rerank, API call counts + **IDR cost estimates at today's USD/IDR rate** via `GET /api/admin/fx-rate` / Frankfurter) plus `/admin/traces` **Live traces** tab (flat live feed + grouped timelines, processing traces open by default). Real-time via Supabase on `solve_logs`, `ingest_logs`, `trace_events`, `llm_calls`. API spend labels: Tavily, Replicate, Cohere, **Sumopod embed** (future: Sumopod resolve/summarize keys reserved). Apply `db/admin-logs-policies.sql`.
 
 ## Trace Audit Fixes (July 2026)
 

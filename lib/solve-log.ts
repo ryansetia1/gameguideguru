@@ -3,8 +3,37 @@ import { getServerClient } from "@/lib/supabase-server";
 // Log when Supabase vars are set. Set LLM_DB_LOG=0 to disable (e.g. local tests).
 const ENABLED = process.env.LLM_DB_LOG !== "0";
 
+export type SolveLogSource = {
+  title: string;
+  url: string;
+  score?: number;
+  preview?: string;
+  preferred?: boolean;
+};
+
+/** Crawled snippet + metadata for admin `solve_logs.sources` (client SSE stays title+url only). */
+export function sourcesForSolveLog(
+  sources: Array<{ title: string; url: string; content?: string; score?: number; preferred?: boolean }>,
+): SolveLogSource[] {
+  const seen = new Set<string>();
+  return sources.flatMap((source) => {
+    if (seen.has(source.url)) return [];
+    seen.add(source.url);
+    return [
+      {
+        title: source.title.replace(/\s*\(section \d+\)\s*$/i, ""),
+        url: source.url,
+        score: source.score,
+        preview: (source.content ?? "").slice(0, 800),
+        ...(source.preferred ? { preferred: true } : {}),
+      },
+    ];
+  });
+}
+
 export type SolveJourneyEntry = {
   userId?: string | null;
+  playerName?: string | null;
   game?: string | null;
   platform?: string | null;
   question: string;
@@ -17,7 +46,8 @@ export type SolveJourneyEntry = {
   status: "success" | "error";
   errorMessage?: string;
   answer?: string;
-  sources?: any[];
+  sources?: SolveLogSource[];
+  traceId?: string | null;
 };
 
 function coerceInt(value: number | null | undefined): number | null {
@@ -33,6 +63,7 @@ export async function logSolveJourneyToDb(entry: SolveJourneyEntry): Promise<voi
   try {
     const { error } = await supabase.from("solve_logs").insert({
       user_id: entry.userId ?? null,
+      player_name: entry.playerName?.slice(0, 32) ?? null,
       game: entry.game?.slice(0, 120) ?? null,
       platform: entry.platform?.slice(0, 80) ?? null,
       question: entry.question.slice(0, 5000),
@@ -46,6 +77,7 @@ export async function logSolveJourneyToDb(entry: SolveJourneyEntry): Promise<voi
       error_message: entry.errorMessage?.slice(0, 5000) ?? null,
       answer: entry.answer?.slice(0, 50000) ?? null,
       sources: entry.sources ?? [],
+      trace_id: entry.traceId ?? null,
     });
     if (error) {
       console.error("Failed to insert solve log:", error);
@@ -57,6 +89,8 @@ export async function logSolveJourneyToDb(entry: SolveJourneyEntry): Promise<voi
 
 export type IngestJourneyEntry = {
   userId?: string | null;
+  playerName?: string | null;
+  traceId?: string | null;
   game?: string | null;
   platform?: string | null;
   url: string;
@@ -76,6 +110,8 @@ export async function logIngestJourneyToDb(entry: IngestJourneyEntry): Promise<v
   try {
     const { error } = await supabase.from("ingest_logs").insert({
       user_id: entry.userId ?? null,
+      player_name: entry.playerName?.slice(0, 32) ?? null,
+      trace_id: entry.traceId ?? null,
       game: entry.game?.slice(0, 120) ?? null,
       platform: entry.platform?.slice(0, 80) ?? null,
       url: entry.url.slice(0, 500),

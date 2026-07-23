@@ -69,7 +69,7 @@ async function runEmbedBatch(
   client: OpenAI,
   model: string,
   texts: string[],
-): Promise<number[][]> {
+): Promise<{ embeddings: number[][]; totalTokens: number | null }> {
   const response = await client.embeddings.create({
     model,
     input: texts,
@@ -85,7 +85,10 @@ async function runEmbedBatch(
       `Embed model returned ${embeddings.length} vectors for ${texts.length} texts`,
     );
   }
-  return embeddings;
+  return {
+    embeddings,
+    totalTokens: typeof response.usage?.total_tokens === "number" ? response.usage.total_tokens : null,
+  };
 }
 
 /**
@@ -111,18 +114,30 @@ export async function embedTexts(
   void logTraceEvent("embed_texts_start", `Embedding ${cleaned.length} text(s) via ${model}`, undefined, { kind, textCount: cleaned.length, model });
   const started = Date.now();
   const out: number[][] = [];
+  let inputTokens = 0;
+  let hasTokenUsage = false;
+  const totalChars = cleaned.reduce((sum, text) => sum + text.length, 0);
 
   for (let i = 0; i < cleaned.length; i += BATCH_SIZE) {
     if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
     const batch = cleaned.slice(i, i + BATCH_SIZE);
     try {
-      out.push(...(await runEmbedBatch(client, model, batch)));
+      const result = await runEmbedBatch(client, model, batch);
+      out.push(...result.embeddings);
+      if (result.totalTokens != null) {
+        inputTokens += result.totalTokens;
+        hasTokenUsage = true;
+      }
     } catch (batchError) {
       // If batch fails, fall back to bounded concurrency singles.
       console.error("Batch embed failed, falling back to singles:", batchError);
       const singles = await mapPool(batch, CONCURRENCY, async (text) => {
-        const [vec] = await runEmbedBatch(client, model, [text]);
-        return vec;
+        const result = await runEmbedBatch(client, model, [text]);
+        if (result.totalTokens != null) {
+          inputTokens += result.totalTokens;
+          hasTokenUsage = true;
+        }
+        return result.embeddings[0];
       });
       out.push(...singles);
     }
@@ -132,13 +147,19 @@ export async function embedTexts(
   }
 
   const durationMs = Date.now() - started;
-  void logTraceEvent("embed_texts_end", `Embedding complete: ${cleaned.length} text(s) in ${durationMs}ms`, durationMs, { kind, textCount: cleaned.length });
+  void logTraceEvent("embed_texts_end", `Embedding complete: ${cleaned.length} text(s) in ${durationMs}ms`, durationMs, {
+    kind,
+    textCount: cleaned.length,
+    inputTokens: hasTokenUsage ? inputTokens : undefined,
+  });
 
   logEmbedCall({
     kind,
     textCount: cleaned.length,
     durationMs,
     sampleText: cleaned[0],
+    totalChars,
+    inputTokens: hasTokenUsage ? inputTokens : null,
     meta: logMeta,
   });
 
@@ -162,6 +183,8 @@ export async function embedQuery(
       textCount: 1,
       durationMs: 0,
       sampleText: query,
+      totalChars: query.length,
+      inputTokens: 0,
       cached: true,
       meta: logMeta,
     });

@@ -16,7 +16,7 @@ import { retrieveFromPreferredGuides } from "@/lib/guide-rag";
 import { coerceSpoilerPrefs } from "@/lib/spoiler-prefs";
 import { coerceDisplayName } from "@/lib/profile.js";
 import { searchGuides, type SearchResult } from "@/lib/tavily";
-import { logSolveJourneyToDb, type SolveJourneyEntry } from "@/lib/solve-log";
+import { logSolveJourneyToDb, sourcesForSolveLog, type SolveJourneyEntry } from "@/lib/solve-log";
 import { runWithTrace, logTraceEvent } from "@/lib/trace";
 
 export const runtime = "nodejs";
@@ -175,7 +175,13 @@ export async function POST(request: Request) {
 
       const backgroundTask = runWithTrace(traceId, async () => {
         const startedAt = Date.now();
-        await logTraceEvent("solve_start", "Started solve generation", undefined, { question, game, platform });
+        await logTraceEvent("solve_start", "Started solve generation", undefined, {
+          question,
+          game,
+          platform,
+          userId,
+          playerName,
+        });
         try {
           let sources: SearchResult[] = [];
           let guideHint: string | undefined;
@@ -302,7 +308,26 @@ export async function POST(request: Request) {
           guideHint
         });
 
-        await logTraceEvent("retrieval_complete", "Finished gathering sources", retrievalLatencyMs, { sourceCount: sources.length, pipelineType });
+        await logTraceEvent("retrieval_complete", "Finished gathering sources", retrievalLatencyMs, {
+          sourceCount: sources.length,
+          pipelineType,
+          webSources: sources
+            .filter((s) => !s.preferred)
+            .map((s) => ({
+              title: s.title,
+              url: s.url,
+              score: s.score,
+              preview: s.content?.slice(0, 600) ?? "",
+            })),
+          ragChunks: sources
+            .filter((s) => s.preferred)
+            .map((s) => ({
+              title: s.title,
+              url: s.url,
+              similarity: s.score,
+              preview: s.content?.slice(0, 600) ?? "",
+            })),
+        });
 
         sendEvent("status", { text: "Reading and building answer..." });
         const generationStart = Date.now();
@@ -353,14 +378,9 @@ export async function POST(request: Request) {
         await logTraceEvent("generation_complete", `Answer generated in ${generationLatencyMs}ms`, generationLatencyMs, { pipelineType, sourceCount: sources.length });
         finalAnswer = answer;
         // Dedupe by URL so multiple RAG chunks from the same page don't render as
-        // "(section 1)"/"(section 2)" links that all open the exact same URL. We
-        // have no real per-section anchors, so the section suffix is dropped too.
-        const seenSourceUrls = new Set<string>();
-        finalSources = sources.flatMap(({ title, url }) => {
-          if (seenSourceUrls.has(url)) return [];
-          seenSourceUrls.add(url);
-          return [{ title: title.replace(/\s*\(section \d+\)\s*$/i, ""), url }];
-        });
+        // "(section 1)"/"(section 2)" links that all open the exact same URL.
+        const adminLogSources = sourcesForSolveLog(sources);
+        finalSources = adminLogSources.map(({ title, url }) => ({ title, url }));
 
         sendEvent("result", {
           answer,
@@ -435,6 +455,8 @@ export async function POST(request: Request) {
         // Non-blocking log
         logSolveJourneyToDb({
           userId,
+          playerName,
+          traceId,
           game,
           platform,
           question,
@@ -446,7 +468,7 @@ export async function POST(request: Request) {
           totalLatencyMs: Date.now() - startedAt,
           status: "success",
           answer: finalAnswer,
-          sources: finalSources,
+          sources: adminLogSources,
         }).catch(console.error);
       } catch (error) {
         console.error("Guide generation failed:", error);
@@ -463,6 +485,8 @@ export async function POST(request: Request) {
         // Non-blocking log
         logSolveJourneyToDb({
           userId,
+          playerName,
+          traceId,
           game,
           platform,
           question,

@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { logLlmCallToDb, type LlmDbLogEntry } from "@/lib/llm-db-log";
+import { getTraceId } from "@/lib/trace";
 
 // Best-effort log of each model call (file + optional Supabase). Never blocks answers.
 const FILE_ENABLED =
@@ -24,6 +25,7 @@ export type LlmLogEntry = {
   game?: string;
   platform?: string;
   userId?: string | null;
+  traceId?: string | null;
 };
 
 export function logLlmCall(entry: LlmLogEntry): void {
@@ -67,6 +69,7 @@ export function logLlmCall(entry: LlmLogEntry): void {
     game: entry.game,
     platform: entry.platform,
     userId: entry.userId,
+    traceId: entry.traceId ?? getTraceId() ?? null,
   };
   void logLlmCallToDb(dbEntry);
 }

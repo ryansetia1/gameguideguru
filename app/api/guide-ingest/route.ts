@@ -73,7 +73,9 @@ export async function POST(request: Request) {
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(record.userId)
       ? record.userId
       : null;
-  const ingestCtx = { game, platform, userId };
+  const playerName =
+    typeof record.playerName === "string" ? record.playerName.replace(/\s+/g, " ").trim().slice(0, 32) : "";
+  const ingestCtx = { game, platform, userId, playerName: playerName || undefined };
   const bundlePrefs = coerceBundlePrefsFromBody(record.bundlePrefs);
 
   if (!urls.length) {
@@ -93,7 +95,12 @@ export async function POST(request: Request) {
   const traceId = request.headers.get("X-Trace-Id") || crypto.randomUUID();
 
   return runWithTrace(traceId, async () => {
-    await logTraceEvent("ingest_start", `Starting guide ingest for ${urls.length} URLs`);
+    await logTraceEvent("ingest_start", `Starting guide ingest for ${urls.length} URLs`, undefined, {
+      game,
+      platform,
+      userId,
+      playerName: playerName || undefined,
+    });
     const results: Array<Record<string, unknown>> = [];
     let anyHubWarning = false;
     let anyError = false;
@@ -112,6 +119,8 @@ export async function POST(request: Request) {
 
         void logIngestJourneyToDb({
           userId: ingestCtx.userId,
+          playerName: ingestCtx.playerName,
+          traceId,
           game: ingestCtx.game,
           platform: ingestCtx.platform,
           url,
@@ -127,6 +136,8 @@ export async function POST(request: Request) {
         results.push({ url, indexed: false, error: msg });
         void logIngestJourneyToDb({
           userId: ingestCtx.userId,
+          playerName: ingestCtx.playerName,
+          traceId,
           game: ingestCtx.game,
           platform: ingestCtx.platform,
           url,
