@@ -19,6 +19,7 @@ export type PendingImage = {
 export type ComposerShellProps = {
   started: boolean;
   temporary: boolean;
+  spoilerMajor: boolean;
   inlineEdit: boolean;
   dragActive: boolean;
   composerLocked: boolean;
@@ -42,6 +43,7 @@ export type ComposerShellProps = {
   onRemovePendingImage: (index: number) => void;
   onOpenLightbox: (images: string[], index: number) => void;
   onToggleTemporary: () => void;
+  onToggleSpoiler: () => void;
   onVoiceListeningChange: (listening: boolean) => void;
   onVoiceTranscript: (text: string) => void;
   onStopGeneration: () => void;
@@ -51,6 +53,7 @@ export type ComposerShellProps = {
 export function ComposerShell({
   started,
   temporary,
+  spoilerMajor,
   inlineEdit,
   dragActive,
   composerLocked,
@@ -74,6 +77,7 @@ export function ComposerShell({
   onRemovePendingImage,
   onOpenLightbox,
   onToggleTemporary,
+  onToggleSpoiler,
   onVoiceListeningChange,
   onVoiceTranscript,
   onStopGeneration,
@@ -81,7 +85,7 @@ export function ComposerShell({
 }: ComposerShellProps) {
   return (
     <form
-      className={`composer${started || preferredUrlCount > 0 ? " docked" : ""}${inlineEdit ? " inline-edit" : ""}${temporary ? " temporary" : ""}${dragActive ? " drag-active" : ""}`}
+      className={`composer${started || preferredUrlCount > 0 ? " docked" : ""}${inlineEdit ? " inline-edit" : ""}${temporary ? " temporary" : ""}${spoilerMajor ? " spoilers-on" : ""}${dragActive ? " drag-active" : ""}`}
       onSubmit={onSubmit}
       onDragOver={
         coverEnabled && !composerLocked
@@ -223,6 +227,8 @@ export function ComposerShell({
             voiceSupported={voiceSupported}
             temporary={temporary}
             onToggleTemporary={() => void onToggleTemporary()}
+            spoilerMajor={spoilerMajor}
+            onToggleSpoiler={() => onToggleSpoiler()}
             onListeningChange={onVoiceListeningChange}
             onTranscript={onVoiceTranscript}
             onSelectImages={(files) => void onSelectImages(files)}

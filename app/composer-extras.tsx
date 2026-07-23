@@ -3,6 +3,7 @@
 import type { User } from "@supabase/supabase-js";
 import { useEffect, useRef, useState } from "react";
 
+import { SPOILER_TOGGLE_LABEL } from "@/lib/spoiler-prefs.js";
 import { VOICE_LANGUAGES } from "@/lib/voice.js";
 import { IconArrowLeft, IconPlus, IconStop } from "./icons";
 import { useVoiceInput } from "./voice-input";
@@ -17,6 +18,8 @@ type Props = {
   voiceSupported?: boolean;
   temporary?: boolean;
   onToggleTemporary?: () => void;
+  spoilerMajor?: boolean;
+  onToggleSpoiler?: () => void;
   onTranscript: (text: string) => void;
   onListeningChange?: (listening: boolean) => void;
   onSelectImages: (files: FileList | null) => void;
@@ -35,6 +38,8 @@ export function ComposerExtras({
   voiceSupported,
   temporary,
   onToggleTemporary,
+  spoilerMajor = false,
+  onToggleSpoiler,
   onTranscript,
   onListeningChange,
   onSelectImages,
@@ -154,6 +159,24 @@ export function ComposerExtras({
                 Temporary chat
                 <span className={`composer-extras-state${temporary ? " on" : ""}`}>
                   {temporary ? "On" : "Off"}
+                </span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="composer-extras-toggle"
+                aria-pressed={spoilerMajor}
+                onClick={() => {
+                  onToggleSpoiler?.();
+                  setMenuOpen(false);
+                  setMenuView("main");
+                }}
+              >
+                {SPOILER_TOGGLE_LABEL}
+                <span
+                  className={`composer-extras-state spoiler-on${spoilerMajor ? " on" : ""}`}
+                >
+                  {spoilerMajor ? "On" : "Off"}
                 </span>
               </button>
             </>

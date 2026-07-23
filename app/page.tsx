@@ -42,6 +42,8 @@ import {
   loadGlobalSpoilerPrefs,
   saveGameSpoilerPrefs,
   saveGlobalSpoilerPrefs,
+  SPOILER_MODE_OFF_TITLE,
+  SPOILER_MODE_ON_LABEL,
   spoilerMajorFromUserMetadata,
 } from "@/lib/spoiler-prefs.js";
 import { getSupabase, type Chat } from "@/lib/supabase";
@@ -692,6 +694,22 @@ export default function Home() {
     },
     [game],
   );
+
+  const turnOffSpoilers = useCallback(() => {
+    if (gameSpoilerMajor) {
+      updateGameSpoiler(false);
+    } else if (globalSpoilerMajor) {
+      updateGlobalSpoiler(false);
+    }
+  }, [gameSpoilerMajor, globalSpoilerMajor, updateGameSpoiler, updateGlobalSpoiler]);
+
+  const toggleEffectiveSpoiler = useCallback(() => {
+    if (spoilerPrefs.major) {
+      turnOffSpoilers();
+    } else {
+      updateGameSpoiler(true);
+    }
+  }, [spoilerPrefs.major, turnOffSpoilers, updateGameSpoiler]);
 
   useEffect(() => {
     if (editingIndex === null) return;
@@ -1542,6 +1560,26 @@ export default function Home() {
                   variant="inline"
                   sep={Boolean(displayPlatform(platform, cover) || releaseYear)}
                 />
+                {spoilerPrefs.major && (
+                  <>
+                    <span className="meta-dot" aria-hidden>
+                      ·
+                    </span>
+                    <button
+                      type="button"
+                      className="meta-chunk meta-chunk-spoilers"
+                      title={SPOILER_MODE_OFF_TITLE}
+                      aria-label={SPOILER_MODE_OFF_TITLE}
+                      disabled={loading}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        turnOffSpoilers();
+                      }}
+                    >
+                      {SPOILER_MODE_ON_LABEL}
+                    </button>
+                  </>
+                )}
               </small>
             )}
           </div>
@@ -1730,6 +1768,7 @@ export default function Home() {
         <ComposerShell
           started={started}
           temporary={temporary}
+          spoilerMajor={spoilerPrefs.major}
           inlineEdit={editingIndex !== null}
           dragActive={dragActive}
           composerLocked={composerLocked}
@@ -1753,6 +1792,7 @@ export default function Home() {
           onRemovePendingImage={removePendingImage}
           onOpenLightbox={(images, index) => setLightboxState({ images, index })}
           onToggleTemporary={() => void toggleTemporary()}
+          onToggleSpoiler={toggleEffectiveSpoiler}
           onVoiceListeningChange={setVoiceListening}
           onVoiceTranscript={(text) =>
             setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text))

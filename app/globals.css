@@ -2868,6 +2868,11 @@ details.sources small {
   border-style: dashed;
 }
 
+/* Major spoilers on: left accent only — no extra composer chrome on mobile. */
+.composer.spoilers-on .composer-inner {
+  border-left: 3px solid var(--danger);
+}
+
 /* Dim, borderless incognito glyph left of "+": marks temp mode and, on tap,
    turns it off. */
 .composer-temp-flag {
@@ -3006,6 +3011,10 @@ details.sources small {
 
 .composer-extras-state.on {
   color: var(--ink);
+}
+
+.composer-extras-state.spoiler-on.on {
+  color: var(--danger);
 }
 
 @keyframes mic-pulse {
@@ -4677,6 +4686,29 @@ details.sources small {
 
 .hltb-chunk {
   text-transform: none;
+}
+
+.meta-chunk-spoilers {
+  padding: 10px 2px;
+  margin: -10px -2px;
+  border: none;
+  background: none;
+  color: var(--danger);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: 700;
+  line-height: inherit;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.meta-chunk-spoilers:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.meta-chunk-spoilers:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Examples header + dismiss */

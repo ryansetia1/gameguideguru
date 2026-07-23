@@ -472,7 +472,7 @@ export function ActiveGameCard({
           </div>
         </details>
       </div>
-      <div className="game-card-spoiler spoiler-panel">
+      <div className="opt-spoiler-row game-card-spoiler">
         <SpoilerToggle prefs={{ major: gameSpoilerMajor }} onChange={onGameSpoilerChange} compact />
       </div>
     </section>
