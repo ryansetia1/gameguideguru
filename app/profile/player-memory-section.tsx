@@ -237,13 +237,6 @@ export function PlayerMemorySection({ session, onToast }: Props) {
   return (
     <div className="field player-memory-section">
       <span className="field-label">{MEMORY_TOGGLE_LABEL}</span>
-      <p className="field-hint">
-        {enabled
-          ? count < MEMORY_FULL_THRESHOLD
-            ? `${count} of ${MEMORY_FULL_THRESHOLD} questions logged.`
-            : "Style memory active. Updates daily."
-          : MEMORY_TOGGLE_HINT}
-      </p>
       <div className="opt-memory-row">
         <label className="memory-toggle">
           <input
@@ -255,6 +248,13 @@ export function PlayerMemorySection({ session, onToast }: Props) {
           <span>{enabled ? "On" : "Off"}</span>
         </label>
       </div>
+      <p className="field-hint">
+        {enabled
+          ? count < MEMORY_FULL_THRESHOLD
+            ? `${count} of ${MEMORY_FULL_THRESHOLD} questions logged.`
+            : "Style memory active. Updates daily."
+          : MEMORY_TOGGLE_HINT}
+      </p>
 
       {enabled && count < MEMORY_FULL_THRESHOLD && (
         <div className="player-memory-progress" aria-hidden="true">
