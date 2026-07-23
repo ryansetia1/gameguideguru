@@ -87,7 +87,6 @@ export function ProfileMenu({
   const router = useRouter();
   const [internalMenu, setInternalMenu] = useState<NavMenu>(null);
   const navHistoryPushed = useRef(false);
-  const navPopSuppressRef = useRef(false);
   const controlled = onNavMenuChange !== undefined;
   const navMenu = controlled ? (navMenuProp ?? null) : internalMenu;
   const profileOpen = navMenu === "profile";
@@ -161,10 +160,6 @@ export function ProfileMenu({
   useEffect(() => {
     if (controlled || !internalMenu) return;
     function onPopState() {
-      if (navPopSuppressRef.current) {
-        navPopSuppressRef.current = false;
-        return;
-      }
       navHistoryPushed.current = false;
       setInternalMenu(null);
     }
@@ -179,8 +174,13 @@ export function ProfileMenu({
       setInternalMenu(null);
       if (navHistoryPushed.current) {
         navHistoryPushed.current = false;
-        navPopSuppressRef.current = true;
-        window.history.back();
+        const state = window.history.state as { gggOverlay?: boolean; gggHomeRoot?: boolean } | null;
+        if (state?.gggOverlay) {
+          const next = { ...state };
+          delete next.gggOverlay;
+          if (!next.gggHomeRoot) next.gggHomeRoot = true;
+          window.history.replaceState(next, "");
+        }
       }
     }
     router.push(href);

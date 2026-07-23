@@ -184,7 +184,6 @@ export default function Home() {
   const [navMenu, setNavMenu] = useState<NavMenu>(null);
   const navMenuRef = useRef<NavMenu>(null);
   const navMenuHistoryPushed = useRef(false);
-  const navMenuSuppressPopRef = useRef(false);
   navMenuRef.current = navMenu;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -267,6 +266,17 @@ export default function Home() {
     window.history.pushState({ gggOverlay: true }, "");
   }
 
+  /** Strip overlay marker in-place (no popstate); safe before router.push. */
+  function stripNavMenuOverlay() {
+    if (typeof window === "undefined") return;
+    const state = window.history.state as { gggOverlay?: boolean; gggHomeRoot?: boolean } | null;
+    if (!state?.gggOverlay) return;
+    const next = { ...state };
+    delete next.gggOverlay;
+    if (!next.gggHomeRoot) next.gggHomeRoot = true;
+    window.history.replaceState(next, "");
+  }
+
   function dismissOverlay() {
     if (typeof window === "undefined") return;
     window.history.back();
@@ -284,13 +294,12 @@ export default function Home() {
     dismissOverlay();
   }
 
-  /** Close menu before client navigation; pops overlay without blocking router.push. */
+  /** Close menu before client navigation; strip overlay without history.back(). */
   function closeNavMenuForNav() {
     setNavMenu(null);
     if (!navMenuHistoryPushed.current) return;
     navMenuHistoryPushed.current = false;
-    navMenuSuppressPopRef.current = true;
-    dismissOverlay();
+    stripNavMenuOverlay();
   }
 
   function handleNavMenuChange(menu: NavMenu) {
@@ -393,10 +402,6 @@ export default function Home() {
 
   useEffect(() => {
     function onPopState() {
-      if (navMenuSuppressPopRef.current) {
-        navMenuSuppressPopRef.current = false;
-        return;
-      }
       if (confirmFallbackModal) {
         confirmFallbackModal.onCancel();
         return;
