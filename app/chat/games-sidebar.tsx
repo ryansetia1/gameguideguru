@@ -84,9 +84,12 @@ export function GamesSidebar({
       />
       <aside
         className={`sidebar${sidebarOpen ? " open" : ""}`}
-        aria-label="Your games"
+        aria-label="Game navigation"
         aria-hidden={!sidebarOpen}
       >
+        <button type="button" className="sidebar-home icon-inline" onClick={onGoHome}>
+          <IconHome /> Home
+        </button>
         <div className="sidebar-head">
           <span>Your games</span>
           <button
@@ -99,9 +102,6 @@ export function GamesSidebar({
           </button>
         </div>
         <div className="sidebar-actions">
-          <button type="button" className="sidebar-library-btn icon-inline" onClick={onGoHome}>
-            <IconHome /> Home
-          </button>
           <button type="button" className="sidebar-library-btn icon-inline" onClick={onOpenSavedLibrary}>
             <IconGrid /> Saved library
           </button>
