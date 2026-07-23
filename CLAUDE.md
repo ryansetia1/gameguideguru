@@ -855,6 +855,9 @@ large chat or persistence work:
   5 user messages = draft soft inject, 10 = full, `/profile` UI + **Update now**,
   disable wipes memory; cron `GET /api/cron/player-memory` (needs `CRON_SECRET` +
   `SUPABASE_SERVICE_ROLE_KEY`).
+- [`docs/plan/answer-satisfaction-signals.md`](docs/plan/answer-satisfaction-signals.md):
+  **Future experiment:** retry / thumbs-down as answer-quality signals — Phase A
+  regenerate-aware prompt first, explicit feedback second, opt-in memory aggregate last.
 
 ## Working conventions
 

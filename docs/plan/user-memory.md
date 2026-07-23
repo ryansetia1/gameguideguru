@@ -305,6 +305,7 @@ saved message is a user turn in a non-temporary chat.
 - Weekly full re-summarize for drift correction
 - `pinned` bullets that summarize cannot overwrite
 - Anon localStorage mirror (unlikely — conflicts with account benefit story)
+- Retry / regenerate rate as a slow style signal — see [answer-satisfaction-signals.md](./answer-satisfaction-signals.md)
 
 ## References
 
