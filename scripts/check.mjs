@@ -1415,6 +1415,16 @@ assert.ok(auditBad.issues.some((issue) => issue.startsWith("turn_count")));
 
 assert.equal(sourceHostname("https://www.example.com/path"), "example.com");
 assert.equal(pipelineSourceLabel("rag", undefined), "Your guide");
+assert.equal(pipelineSourceLabel("fallback_web", [{ title: "Wiki", url: "https://example.com/a" }]), "Web search");
+assert.equal(pipelineSourceLabel("web", [{ title: "Wiki", url: "https://example.com/a" }]), "Web search");
+assert.equal(
+  pipelineSourceLabel("rag", [{ title: "steamcommunity.com", url: "https://steamcommunity.com/x" }]),
+  "Your guide",
+);
+assert.equal(
+  pipelineSourceLabel("fallback_web", [{ title: "Risk of Rain wiki", url: "https://wiki.gg/risk-of-rain" }]),
+  "Web search",
+);
 
 // answerModeInfo: the answer-card mode chip / inline upsell gate.
 assert.equal(answerModeInfo("rag", undefined).guideBacked, true);

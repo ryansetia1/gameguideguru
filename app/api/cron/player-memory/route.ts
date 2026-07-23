@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { createServiceSupabase, refreshPlayerMemory } from "@/lib/player-memory-server";
 import { MEMORY_DRAFT_THRESHOLD } from "@/lib/player-memory.js";
+import { runWithTrace } from "@/lib/trace";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -39,7 +40,10 @@ export async function GET(request: Request) {
   for (const row of data ?? []) {
     const userId = typeof row.user_id === "string" ? row.user_id : "";
     if (!userId) continue;
-    const result = await refreshPlayerMemory(supabase, userId, { manual: false });
+    const traceId = crypto.randomUUID();
+    const result = await runWithTrace(traceId, () =>
+      refreshPlayerMemory(supabase, userId, { manual: false, trigger: "cron" }),
+    );
     if (!result.ok) {
       failed += 1;
       continue;

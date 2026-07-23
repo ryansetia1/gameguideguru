@@ -13,6 +13,7 @@ import {
   type PlayerMemoryTier,
 } from "@/lib/player-memory.js";
 import { summarizePlayerMemory } from "@/lib/player-memory-summarize";
+import { getTraceId, logTraceEvent } from "@/lib/trace";
 
 export type PlayerMemoryStateRow = {
   user_id: string;
@@ -173,20 +174,46 @@ export async function bumpPlayerMemoryCount(
 export async function refreshPlayerMemory(
   supabase: SupabaseClient,
   userId: string,
-  options: { manual?: boolean; force?: boolean } = {},
+  options: { manual?: boolean; force?: boolean; trigger?: string } = {},
 ): Promise<
   | { ok: true; skipped?: string }
   | { ok: false; error: string; status?: number }
 > {
+  const startedAt = Date.now();
+  const trigger = options.trigger ?? (options.manual ? "manual" : "cron");
+
+  await logTraceEvent("memory_refresh_start", "Player memory refresh started", undefined, {
+    userId,
+    manual: options.manual ?? false,
+    force: options.force ?? false,
+    trigger,
+  });
+
   const state = await loadPlayerMemoryState(supabase, userId);
-  if (!state) return { ok: false, error: "Memory is not enabled.", status: 400 };
+  if (!state) {
+    await logTraceEvent("memory_refresh_error", "Memory is not enabled", Date.now() - startedAt, {
+      userId,
+      reason: "not_enabled",
+    });
+    return { ok: false, error: "Memory is not enabled.", status: 400 };
+  }
   if (state.message_count < MEMORY_DRAFT_THRESHOLD) {
+    await logTraceEvent("memory_refresh_skipped", "Not enough questions yet", Date.now() - startedAt, {
+      userId,
+      reason: "below_threshold",
+      messageCount: state.message_count,
+    });
     return { ok: false, error: "Needs more questions first.", status: 400 };
   }
 
   if (options.manual && !options.force) {
     const remaining = memoryRefreshCooldownRemainingMs(state.last_manual_refresh_at);
     if (remaining > 0) {
+      await logTraceEvent("memory_refresh_skipped", "Manual refresh on cooldown", Date.now() - startedAt, {
+        userId,
+        reason: "cooldown",
+        remainingMs: remaining,
+      });
       return {
         ok: false,
         error: `Try again in ${Math.ceil(remaining / 60_000)} min.`,
@@ -204,6 +231,10 @@ export async function refreshPlayerMemory(
     .order("updated_at", { ascending: true });
 
   if (chatsError) {
+    await logTraceEvent("memory_refresh_error", "Could not load chats", Date.now() - startedAt, {
+      userId,
+      reason: "chats_load_failed",
+    });
     return { ok: false, error: "Could not load chats." };
   }
 
@@ -217,19 +248,51 @@ export async function refreshPlayerMemory(
       .order("updated_at", { ascending: true });
     messages = extractUserMessagesFromChats(allChats ?? [], state.enabled_at);
   }
+
+  await logTraceEvent(
+    "memory_load_chats",
+    `Loaded ${chats?.length ?? 0} chats, ${messages.length} messages to summarize`,
+    Date.now() - startedAt,
+    {
+      userId,
+      chatCount: chats?.length ?? 0,
+      deltaMessageCount: messages.length,
+      since,
+      tier: state.tier,
+      messageCount: state.message_count,
+    },
+  );
+
   if (!messages.length && state.last_summarized_at) {
+    await logTraceEvent("memory_refresh_skipped", "No new messages since last summarize", Date.now() - startedAt, {
+      userId,
+      reason: "no_new_messages",
+    });
     return { ok: true, skipped: "no_new_messages" };
   }
 
   const existingGames = await loadAllPlayerGameMemory(supabase, userId);
+
+  await logTraceEvent("memory_summarize_start", "Summarizing player memory", undefined, {
+    userId,
+    deltaMessageCount: messages.length,
+    existingGameCount: existingGames.length,
+    existingStyleNoteCount: (coercePlayerStyle(state.style).notes ?? []).length,
+  });
+
   const summary = await summarizePlayerMemory({
     userId,
+    traceId: getTraceId(),
     existingStyle: coercePlayerStyle(state.style),
     existingGames,
     deltaMessages: messages,
   });
 
   if (!summary) {
+    await logTraceEvent("memory_refresh_error", "Summarize returned no result", Date.now() - startedAt, {
+      userId,
+      reason: "summarize_failed",
+    });
     return { ok: false, error: "Could not update memory." };
   }
 
@@ -248,9 +311,14 @@ export async function refreshPlayerMemory(
     .eq("user_id", userId);
 
   if (stateError) {
+    await logTraceEvent("memory_refresh_error", "Could not save memory state", Date.now() - startedAt, {
+      userId,
+      reason: "state_save_failed",
+    });
     return { ok: false, error: "Could not save memory." };
   }
 
+  let gamesUpdated = 0;
   for (const game of summary.games) {
     const gameKey = normGameKey(game.gameKey);
     if (!gameKey) continue;
@@ -262,7 +330,25 @@ export async function refreshPlayerMemory(
       notes: game.notes ?? [],
       updated_at: now,
     });
+    gamesUpdated += 1;
   }
+
+  const styleNoteCount = (summary.style.notes ?? []).length;
+  await logTraceEvent("memory_save_complete", "Saved player memory cards", undefined, {
+    userId,
+    gamesUpdated,
+    styleNoteCount,
+    tier,
+  });
+
+  await logTraceEvent("memory_refresh_complete", "Player memory refresh finished", Date.now() - startedAt, {
+    userId,
+    trigger,
+    gamesUpdated,
+    styleNoteCount,
+    tier,
+    deltaMessageCount: messages.length,
+  });
 
   return { ok: true };
 }

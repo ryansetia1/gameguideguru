@@ -20,7 +20,7 @@ export type ApiSpendSummary = {
   total: number;
 };
 
-const REPLICATE_KINDS = new Set(["rewrite", "summarize", "censor"]);
+const REPLICATE_KINDS = new Set(["rewrite", "summarize", "censor", "memory_summarize"]);
 
 const SPEND_LABELS: Record<ApiSpendKey, string> = {
   tavily: "Tavily",

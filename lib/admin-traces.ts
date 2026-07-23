@@ -17,7 +17,7 @@ export type GroupedTrace = {
   game?: string;
   platform?: string;
   question?: string;
-  category: "Chat" | "Upload" | "Checking" | "Ingest";
+  category: "Chat" | "Upload" | "Checking" | "Ingest" | "Memory";
   status: "Finished" | "New" | "Processing";
   statusColor: string;
   userName?: string;
@@ -317,12 +317,55 @@ function mergeReplicatePhases(events: TraceEventRow[]): TraceEventRow[] {
   return out;
 }
 
+function compactMemorySummarize(events: TraceEventRow[]): TraceEventRow[] {
+  const out: TraceEventRow[] = [];
+  let i = 0;
+
+  while (i < events.length) {
+    const event = events[i]!;
+    if (event.event_type !== "memory_summarize_start" && event.event_type !== "memory_llm_start") {
+      out.push(event);
+      i++;
+      continue;
+    }
+
+    const block: TraceEventRow[] = [event];
+    i++;
+    while (
+      i < events.length &&
+      events[i]!.event_type !== "memory_summarize_complete" &&
+      events[i]!.event_type !== "memory_summarize_error"
+    ) {
+      block.push(events[i]!);
+      i++;
+    }
+
+    const tail = events[i];
+    if (tail?.event_type === "memory_summarize_complete" || tail?.event_type === "memory_summarize_error") {
+      block.push(tail);
+      i++;
+    }
+
+    out.push(
+      buildPhaseRow(
+        block,
+        { phaseType: "memory_summarize", label: "Memory summarize" },
+        tail?.event_type === "memory_summarize_complete",
+        "trace_phase",
+      ),
+    );
+  }
+
+  return out;
+}
+
 /** Collapse replicate polls, merge LLM phases, then compact Tavily/RAG/rerank steps. */
 export function compactTraceEvents(events: TraceEventRow[]): TraceEventRow[] {
   const llmCompact = mergeReplicatePhases(compactReplicateStatus(events));
   const paired = compactTracePairs(llmCompact);
   const web = mergeWebSearchBlock(paired);
-  return compactRagRetrieve(web);
+  const rag = compactRagRetrieve(web);
+  return compactMemorySummarize(rag);
 }
 
 /** Per-trace compact, then newest-first for the live feed. */
@@ -401,6 +444,7 @@ export function groupTraceEvents(traces: TraceEventRow[]): GroupedTrace[] {
     const uploadStart = events.find((e) => e.event_type === "upload_start");
     const discoveryStart = events.find((e) => e.event_type === "discovery_start");
     const ingestStart = events.find((e) => e.event_type === "ingest_start");
+    const memoryStart = events.find((e) => e.event_type === "memory_refresh_start");
 
     const game =
       metaString(solveStart?.metadata, "game") ||
@@ -411,15 +455,20 @@ export function groupTraceEvents(traces: TraceEventRow[]): GroupedTrace[] {
       metaString(solveStart?.metadata, "question") ||
       (uploadStart?.metadata?.filename ? `Uploading: ${uploadStart.metadata.filename}` : undefined) ||
       (discoveryStart?.metadata?.url ? `Checking: ${discoveryStart.metadata.url}` : undefined) ||
-      (ingestStart ? "Ingesting guides" : undefined);
+      (ingestStart ? "Ingesting guides" : undefined) ||
+      (memoryStart
+        ? `Memory refresh (${metaString(memoryStart.metadata, "trigger") ?? "auto"})`
+        : undefined);
 
-    const category: GroupedTrace["category"] = uploadStart
-      ? "Upload"
-      : discoveryStart
-        ? "Checking"
-        : ingestStart
-          ? "Ingest"
-          : "Chat";
+    const category: GroupedTrace["category"] = memoryStart
+      ? "Memory"
+      : uploadStart
+        ? "Upload"
+        : discoveryStart
+          ? "Checking"
+          : ingestStart
+            ? "Ingest"
+            : "Chat";
 
     const isFinished = events.some(
       (e) =>
@@ -431,7 +480,10 @@ export function groupTraceEvents(traces: TraceEventRow[]): GroupedTrace[] {
         e.event_type === "discovery_complete" ||
         e.event_type === "discovery_error" ||
         e.event_type === "ingest_url_complete" ||
-        e.event_type === "ingest_url_error",
+        e.event_type === "ingest_url_error" ||
+        e.event_type === "memory_refresh_complete" ||
+        e.event_type === "memory_refresh_skipped" ||
+        e.event_type === "memory_refresh_error",
     );
     const isNew = !isFinished && events.length <= 3;
     const status: GroupedTrace["status"] = isFinished ? "Finished" : isNew ? "New" : "Processing";
@@ -459,7 +511,8 @@ export function groupTraceEvents(traces: TraceEventRow[]): GroupedTrace[] {
       userId:
         metaString(solveStart?.metadata, "userId") ||
         metaString(uploadStart?.metadata, "userId") ||
-        metaString(ingestStart?.metadata, "userId"),
+        metaString(ingestStart?.metadata, "userId") ||
+        metaString(memoryStart?.metadata, "userId"),
       pipelineType,
     };
   });

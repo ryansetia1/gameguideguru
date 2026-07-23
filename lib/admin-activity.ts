@@ -8,7 +8,7 @@ import {
   traceStartMs,
 } from "@/lib/admin-link";
 
-export type ActivityType = "chat" | "guide_ingest" | "guide_check" | "guide_upload";
+export type ActivityType = "chat" | "guide_ingest" | "guide_check" | "guide_upload" | "player_memory";
 
 export type ActivityStatus = "success" | "error" | "processing";
 
@@ -116,7 +116,7 @@ function pipelineService(pipeline: string | null | undefined): string {
 }
 
 export function providerFromLlmCalls(calls: LlmCallRow[]): string {
-  const priority = ["summarize", "rewrite", "censor", "embed_index", "embed_query"];
+  const priority = ["summarize", "memory_summarize", "rewrite", "censor", "embed_index", "embed_query"];
   for (const kind of priority) {
     const hit = calls.find((call) => call.kind === kind && call.model);
     if (hit) return hit.model;
@@ -269,6 +269,7 @@ export function ingestLogToActivity(row: IngestLogRow): ActivityRow {
 function traceCategoryToType(category: GroupedTrace["category"]): ActivityType | null {
   if (category === "Checking") return "guide_check";
   if (category === "Upload") return "guide_upload";
+  if (category === "Memory") return "player_memory";
   return null;
 }
 
@@ -283,8 +284,14 @@ export function traceToActivity(trace: GroupedTrace): ActivityRow | null {
         : "success"
       : "processing";
 
-  const provider = type === "guide_check" ? "Tavily" : "Tavily Extract";
-  const service = type === "guide_check" ? "Guide bundle check" : "Guide file upload";
+  const provider =
+    type === "guide_check" ? "Tavily" : type === "player_memory" ? "Replicate" : "Tavily Extract";
+  const service =
+    type === "guide_check"
+      ? "Guide bundle check"
+      : type === "player_memory"
+        ? "Player memory"
+        : "Guide file upload";
 
   return {
     id: `trace:${trace.traceId}`,
@@ -305,7 +312,11 @@ export function traceToActivity(trace: GroupedTrace): ActivityRow | null {
     technical: {
       event_count: trace.rawEventCount,
       category: trace.category,
-      pipeline_type: trace.pipelineType,
+      pipeline_type: trace.category === "Memory" ? "memory" : trace.pipelineType,
+      generation_latency_ms:
+        trace.events.find((e) => e.event_type === "memory_summarize_complete")?.latency_ms ??
+        trace.events.find((e) => e.event_type === "memory_refresh_complete")?.latency_ms ??
+        null,
     },
   };
 }
@@ -359,12 +370,14 @@ export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   guide_ingest: "Guide ingest",
   guide_check: "Guide check",
   guide_upload: "Guide upload",
+  player_memory: "Player memory",
 };
 
 export const LLM_KIND_LABELS: Record<string, string> = {
   rewrite: "Query rewrite",
   summarize: "Answer generation",
   censor: "Spoiler censor",
+  memory_summarize: "Memory summarize",
   embed_index: "Guide embed (index)",
   embed_query: "Guide embed (query)",
 };

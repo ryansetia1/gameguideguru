@@ -27,6 +27,7 @@ const TYPE_OPTIONS: Array<{ value: "all" | ActivityType; label: string }> = [
   { value: "guide_ingest", label: "Guide ingest" },
   { value: "guide_check", label: "Guide check" },
   { value: "guide_upload", label: "Guide upload" },
+  { value: "player_memory", label: "Player memory" },
 ];
 
 export default function AdminActivityPage() {

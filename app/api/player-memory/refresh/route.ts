@@ -7,6 +7,7 @@ import {
   loadPlayerMemoryState,
   refreshPlayerMemory,
 } from "@/lib/player-memory-server";
+import { runWithTrace } from "@/lib/trace";
 
 export const runtime = "nodejs";
 
@@ -22,11 +23,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const result = await refreshPlayerMemory(supabase, auth.user.id, { manual: true });
+  const traceId = crypto.randomUUID();
+  const result = await runWithTrace(traceId, () =>
+    refreshPlayerMemory(supabase, auth.user.id, { manual: true, trigger: "profile_update" }),
+  );
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status ?? 500 });
   }
 
   const state = await loadPlayerMemoryState(supabase, auth.user.id);
-  return NextResponse.json({ ok: true, skipped: result.skipped ?? null, state });
+  return NextResponse.json({ ok: true, skipped: result.skipped ?? null, state, traceId });
 }

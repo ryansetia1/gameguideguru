@@ -1,6 +1,7 @@
 import Replicate from "replicate";
 
 import { logLlmCall } from "@/lib/llm-log";
+import { getTraceId, logTraceEvent } from "@/lib/trace";
 import {
   coercePlayerStyle,
   MEMORY_GAME_NOTE_CAP,
@@ -58,6 +59,7 @@ type ExistingGameRow = {
 
 type SummarizeInput = {
   userId: string;
+  traceId?: string;
   existingStyle: PlayerStyleShape;
   existingGames: ExistingGameRow[];
   deltaMessages: DeltaMessage[];
@@ -191,10 +193,25 @@ export async function summarizePlayerMemory(
   input: SummarizeInput,
 ): Promise<MemorySummaryResult | null> {
   const prompt = buildSummarizePrompt(input);
-  const result = await runMemoryModel(prompt, input.userId);
-  if (!result?.output) return null;
-
   const model = resolveModel() ?? "unknown";
+
+  await logTraceEvent("memory_llm_start", "Memory summarize LLM call", undefined, {
+    userId: input.userId,
+    model,
+    deltaMessageCount: input.deltaMessages.length,
+    promptChars: prompt.length,
+    systemChars: MEMORY_SUMMARIZE_INSTRUCTION.length,
+  });
+
+  const result = await runMemoryModel(prompt, input.userId);
+  if (!result?.output) {
+    await logTraceEvent("memory_summarize_error", "Memory summarize returned empty", result?.durationMs, {
+      userId: input.userId,
+      model,
+    });
+    return null;
+  }
+
   logLlmCall({
     kind: "memory_summarize",
     model,
@@ -206,6 +223,17 @@ export async function summarizePlayerMemory(
     inputTokens: result.inputTokens,
     outputTokens: result.outputTokens,
     userId: input.userId,
+    traceId: input.traceId ?? getTraceId() ?? null,
+  });
+
+  await logTraceEvent("memory_summarize_complete", "Memory summarize LLM finished", result.durationMs, {
+    userId: input.userId,
+    model,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+    predictTimeMs: result.predictTimeMs,
+    promptChars: prompt.length,
+    responseChars: result.output.length,
   });
 
   return parseMemorySummary(result.output);

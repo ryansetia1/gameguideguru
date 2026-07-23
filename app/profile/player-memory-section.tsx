@@ -36,11 +36,7 @@ type Props = {
   onToast?: (message: string) => void;
 };
 
-async function apiFetch(
-  session: Session,
-  path: string,
-  init?: RequestInit,
-) {
+async function apiFetch(session: Session, path: string, init?: RequestInit) {
   return fetch(path, {
     ...init,
     headers: {
@@ -56,6 +52,10 @@ function formatRelativeTime(iso: string | null) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function formatGameKey(key: string) {
+  return key.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 export function PlayerMemorySection({ session, onToast }: Props) {
@@ -233,6 +233,10 @@ export function PlayerMemorySection({ session, onToast }: Props) {
   const canRefresh = enabled && count >= MEMORY_DRAFT_THRESHOLD && cooldownMs === 0;
   const progressPct = Math.min(100, Math.round((count / MEMORY_FULL_THRESHOLD) * 100));
   const draftLabel = tier === "draft" ? " (draft)" : "";
+  const showCards = enabled && count >= MEMORY_DRAFT_THRESHOLD;
+  const hasStyle = inferredBullets.length > 0 || customNotes.length > 0;
+  const hasGames = games.some((row) => (row.notes?.length ?? 0) > 0);
+  const hasScrollContent = showCards && (hasStyle || hasGames);
 
   return (
     <div className="field player-memory-section">
@@ -248,7 +252,7 @@ export function PlayerMemorySection({ session, onToast }: Props) {
           <span>{enabled ? "On" : "Off"}</span>
         </label>
       </div>
-      <p className="field-hint">
+      <p className="field-hint player-memory-hint">
         {enabled
           ? count < MEMORY_FULL_THRESHOLD
             ? `${count} of ${MEMORY_FULL_THRESHOLD} questions logged.`
@@ -268,100 +272,118 @@ export function PlayerMemorySection({ session, onToast }: Props) {
       )}
 
       {enabled && count < MEMORY_DRAFT_THRESHOLD && (
-        <p className="profile-hint">
+        <p className="profile-hint player-memory-hint">
           Still learning. This kicks in after {MEMORY_FULL_THRESHOLD} questions across your chats.
         </p>
       )}
 
-      {enabled && count >= MEMORY_DRAFT_THRESHOLD && (inferredBullets.length > 0 || customNotes.length > 0) && (
-        <div className="player-memory-card">
-          <h2 className="player-memory-card-title">Your play style{draftLabel}</h2>
-          {inferredBullets.length > 0 && (
-            <ul className="player-memory-list">
-              {inferredBullets.map((line) => (
-                <li key={line} className="player-memory-row">
-                  <span>{line}</span>
-                </li>
-              ))}
-            </ul>
+      {hasScrollContent && (
+        <div className="player-memory-scroll" aria-label="Learned style and game notes">
+          {hasStyle && (
+            <section className="player-memory-block">
+              <h2 className="player-memory-block-title">Play style{draftLabel}</h2>
+              <ul className="player-memory-list">
+                {inferredBullets.map((line) => (
+                  <li key={line} className="player-memory-note player-memory-note--static">
+                    <span>{line}</span>
+                  </li>
+                ))}
+                {customNotes.map((line, index) => (
+                  <li key={`${line}-${index}`} className="player-memory-note">
+                    <span>{line}</span>
+                    <button
+                      type="button"
+                      className="player-memory-remove"
+                      onClick={() => void removeStyleNote(index)}
+                      aria-label="Remove note"
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
-          {customNotes.length > 0 && (
-            <ul className="player-memory-list">
-              {customNotes.map((line, index) => (
-                <li key={`${line}-${index}`} className="player-memory-row">
-                  <span>{line}</span>
-                  <button
-                    type="button"
-                    className="player-memory-remove"
-                    onClick={() => void removeStyleNote(index)}
-                  >
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
 
-      {enabled && games.length > 0 && (
-        <div className="player-memory-card">
-          <h2 className="player-memory-card-title">Game notes{draftLabel}</h2>
-          {games.map((row) => (
-            <div key={`${row.game_key}:${row.platform}`} className="player-memory-game">
-              <p className="player-memory-game-title">
-                {row.game_key.replace(/\b\w/g, (char) => char.toUpperCase())}
-                {row.platform ? ` · ${row.platform}` : ""}
-              </p>
-              {row.progress && <p className="profile-hint">{row.progress}</p>}
-              {row.notes?.length > 0 && (
-                <ul className="player-memory-list">
-                  {row.notes.map((note, index) => (
-                    <li key={`${note}-${index}`} className="player-memory-row">
-                      <span>{note}</span>
-                      <button
-                        type="button"
-                        className="player-memory-remove"
-                        onClick={() => void removeGameNote(row.game_key, row.platform, index)}
-                      >
-                        Remove
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
+          {hasGames && (
+            <section className="player-memory-block">
+              <h2 className="player-memory-block-title">Game notes{draftLabel}</h2>
+              {games.map((row) => {
+                const notes = row.notes ?? [];
+                if (!notes.length) return null;
+                const title = `${formatGameKey(row.game_key)}${row.platform ? ` · ${row.platform}` : ""}`;
+                return (
+                  <details key={`${row.game_key}:${row.platform}`} className="player-memory-game">
+                    <summary className="player-memory-game-summary" aria-label={`${title}, tap to view notes`}>
+                      <span className="player-memory-game-summary-leading" aria-hidden="true" />
+                      <span className="player-memory-game-summary-body">
+                        <span className="player-memory-game-title">{title}</span>
+                        <span className="player-memory-game-expand-hint player-memory-game-expand-hint--closed">
+                          Tap to view notes
+                        </span>
+                        <span className="player-memory-game-expand-hint player-memory-game-expand-hint--open">
+                          Tap to hide notes
+                        </span>
+                      </span>
+                      <span className="player-memory-game-count" aria-label={`${notes.length} notes`}>
+                        {notes.length}
+                      </span>
+                    </summary>
+                    {row.progress && <p className="player-memory-game-progress">{row.progress}</p>}
+                    <ul className="player-memory-list">
+                      {notes.map((note, index) => (
+                        <li key={`${note}-${index}`} className="player-memory-note">
+                          <span>{note}</span>
+                          <button
+                            type="button"
+                            className="player-memory-remove"
+                            onClick={() => void removeGameNote(row.game_key, row.platform, index)}
+                            aria-label="Remove note"
+                          >
+                            ×
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                );
+              })}
+            </section>
+          )}
         </div>
       )}
 
       {enabled && (
         <div className="player-memory-actions">
-          <button
-            type="button"
-            className="nav-button"
-            disabled={count < MEMORY_DRAFT_THRESHOLD || !canRefresh || refreshing}
-            onClick={() => void refreshNow()}
-          >
-            {refreshing ? "Updating…" : "Update now"}
-          </button>
+          {count >= MEMORY_DRAFT_THRESHOLD && (
+            <div className="player-memory-action-row">
+              <button type="button" className="player-memory-clear-btn" onClick={() => void clearCards()}>
+                Clear style memory
+              </button>
+              <button
+                type="button"
+                className="nav-button"
+                disabled={!canRefresh || refreshing}
+                onClick={() => void refreshNow()}
+              >
+                {refreshing ? "Updating…" : "Update now"}
+              </button>
+            </div>
+          )}
           {count < MEMORY_DRAFT_THRESHOLD && (
-            <p className="profile-hint">
+            <p className="profile-hint player-memory-hint">
               Needs {MEMORY_DRAFT_THRESHOLD} questions first ({count}/{MEMORY_DRAFT_THRESHOLD})
             </p>
           )}
           {cooldownMs > 0 && (
-            <p className="profile-hint">
+            <p className="profile-hint player-memory-hint">
               Updated recently. Try again in {Math.ceil(cooldownMs / 60_000)} min.
             </p>
           )}
           {state?.last_summarized_at && (
-            <p className="profile-hint">Last updated: {formatRelativeTime(state.last_summarized_at)}</p>
-          )}
-          {count >= MEMORY_DRAFT_THRESHOLD && (
-            <button type="button" className="player-memory-clear" onClick={() => void clearCards()}>
-              Clear style memory
-            </button>
+            <p className="profile-hint player-memory-hint">
+              Last updated: {formatRelativeTime(state.last_summarized_at)}
+            </p>
           )}
         </div>
       )}

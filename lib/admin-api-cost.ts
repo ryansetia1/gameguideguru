@@ -99,7 +99,7 @@ function costFromReplicateCalls(calls: LlmCallCostInput[]): {
   tokenNote?: string;
 } {
   const replicateCalls = calls.filter((call) =>
-    ["rewrite", "summarize", "censor"].includes(call.kind),
+    ["rewrite", "summarize", "censor", "memory_summarize"].includes(call.kind),
   );
   if (!replicateCalls.length) return { costUsd: null };
 

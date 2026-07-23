@@ -312,13 +312,20 @@ export function buildActivityPipeline(
     webSources.length > 0 ||
     events.some((e) => e.event_type.startsWith("tavily_search") || e.event_type.startsWith("web_search"));
 
+  const memorySummarize = events.find((e) => e.event_type === "memory_summarize_complete");
+  const memoryRefresh = events.find((e) => e.event_type === "memory_refresh_complete");
+  const isMemory = Boolean(events.find((e) => e.event_type === "memory_refresh_start"));
+
   const pipeline: ActivityPipeline = {
-    pipelineType,
+    pipelineType: isMemory ? "memory" : pipelineType,
     apiSpend: buildApiSpend(events, llmCalls),
     latencies: {
       rewrite_ms: typeof tech.rewrite_latency_ms === "number" ? tech.rewrite_latency_ms : null,
       retrieval_ms: typeof tech.retrieval_latency_ms === "number" ? tech.retrieval_latency_ms : null,
-      generation_ms: typeof tech.generation_latency_ms === "number" ? tech.generation_latency_ms : null,
+      generation_ms:
+        typeof tech.generation_latency_ms === "number"
+          ? tech.generation_latency_ms
+          : memorySummarize?.latency_ms ?? memoryRefresh?.latency_ms ?? null,
     },
     technicalExtras: {
       preferred_urls: tech.preferred_urls,

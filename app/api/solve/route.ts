@@ -295,8 +295,8 @@ export async function POST(request: Request) {
             const web = hasSearchProvider
               ? await tieredWebSearch(searchQuery)
               : [];
-            sources = [...rag.sources, ...web];
-            pipelineType = web.length > 0 ? "fallback_web" : (rag.sources.length > 0 ? "rag" : "knowledge_only");
+            sources = web;
+            pipelineType = web.length > 0 ? "fallback_web" : "knowledge_only";
           } else if (hasSearchProvider) {
             sendEvent("status", { text: "Searching the web..." });
             pipelineType = "fallback_web";
@@ -496,11 +496,17 @@ export async function POST(request: Request) {
         if (authedSupabase && userId && !isRetry) {
           after(async () => {
             try {
-              const bump = await bumpPlayerMemoryCount(authedSupabase!, userId);
-              if (!bump) return;
-              if (bump.hitDraft || bump.hitFull) {
-                await refreshPlayerMemory(authedSupabase!, userId, { manual: false, force: true });
-              }
+              await runWithTrace(traceId, async () => {
+                const bump = await bumpPlayerMemoryCount(authedSupabase!, userId);
+                if (!bump) return;
+                if (bump.hitDraft || bump.hitFull) {
+                  await refreshPlayerMemory(authedSupabase!, userId, {
+                    manual: false,
+                    force: true,
+                    trigger: bump.hitFull ? "solve_full_threshold" : "solve_draft_threshold",
+                  });
+                }
+              });
             } catch (memoryBumpError) {
               console.error("Player memory bump failed:", memoryBumpError);
             }

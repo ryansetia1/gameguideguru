@@ -248,7 +248,9 @@ export async function retrieveFromPreferredGuides(input: {
   });
 
   return {
-    sources: hit ? sources : sources.slice(0, 1),
+    // ponytail: on miss, don't surface a guide chunk as a cited source — web
+    // fallback (or knowledge-only) owns the answer footer's provenance label.
+    sources: hit ? sources : [],
     skipWebSearch: hit,
     hubWarning,
     indexedCount,
