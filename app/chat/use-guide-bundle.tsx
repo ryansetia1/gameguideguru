@@ -16,15 +16,16 @@ import {
   buildBundlePrefsBody,
   mergedBundlePrefs,
 } from "@/lib/guide-card-ui.js";
+import {
+  type GuideIndexState,
+  guideIndexStateFromIngest,
+} from "@/lib/guide-index-state";
 import { isActiveGamefaqsBundle, isGamefaqsBundleUrl, isUploadedGuideUrl } from "@/lib/guide-urls.js";
 import { displayNameFromMetadata } from "@/lib/profile.js";
 import { getSupabase } from "@/lib/supabase";
 import type { GuideBundleMeta } from "../guide-link-field";
 
-export type GuideIndexState = Record<
-  string,
-  "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending"
->;
+export type { GuideIndexState } from "@/lib/guide-index-state";
 
 export type UseGuideBundleOptions = {
   preferredUrls: string[];
@@ -263,7 +264,7 @@ export function useGuideBundle({
             const item = data.results.find((r) => r.url === url);
             if (!data.available) {
               next[url] = "unavailable";
-            } else if (current === "checking" || current === "failed") {
+            } else if (current === "checking" || current === "failed" || current === "blocked") {
               next[url] = item?.indexed ? "indexed" : current;
             } else {
               next[url] = item?.indexed ? "indexed" : "pending";
@@ -308,6 +309,7 @@ export function useGuideBundle({
         selectedSlugs: existing?.selectedSlugs,
         skippedSlugs: existing?.skippedSlugs ?? prefs.skippedSlugs,
         missingPages: filteredMissing?.length ? filteredMissing : undefined,
+        ...(row.isBlocked === true || existing?.isBlocked ? { isBlocked: true } : {}),
       };
     },
     [],
@@ -331,7 +333,10 @@ export function useGuideBundle({
           }),
         });
         if (!response.ok) {
-          setGuideIndexState((prev) => ({ ...prev, [url]: "failed" }));
+          setGuideIndexState((prev) => ({
+            ...prev,
+            [url]: guideIndexStateFromIngest(undefined, guideBundleMeta[url]),
+          }));
           return;
         }
         const ingestData = (await response.json()) as {
@@ -345,7 +350,7 @@ export function useGuideBundle({
           });
           setGuideIndexState((prev) => ({
             ...prev,
-            [url]: row.indexed ? "indexed" : "failed",
+            [url]: guideIndexStateFromIngest(row),
           }));
           const hint = guideIngestHintFromResponse({
             available: true,
@@ -353,12 +358,18 @@ export function useGuideBundle({
           });
           if (hint) setToast(hint);
         } else {
-          setGuideIndexState((prev) => ({ ...prev, [url]: "failed" }));
+          setGuideIndexState((prev) => ({
+            ...prev,
+            [url]: guideIndexStateFromIngest(undefined, guideBundleMeta[url]),
+          }));
         }
         setBundleStatusRev((rev) => rev + 1);
       } catch (error) {
         console.error("Bundle retry ingest failed:", error);
-        setGuideIndexState((prev) => ({ ...prev, [url]: "failed" }));
+        setGuideIndexState((prev) => ({
+          ...prev,
+          [url]: guideIndexStateFromIngest(undefined, guideBundleMeta[url]),
+        }));
       } finally {
         setRetryingBundleUrl(null);
       }
@@ -388,7 +399,7 @@ export function useGuideBundle({
     try {
       const pendingUrls = preferredUrls.filter((url) => {
         const state = guideIndexState[url];
-        return !state || state === "pending" || state === "failed" || state === "unknown";
+        return !state || state === "pending" || state === "failed" || state === "blocked" || state === "unknown";
       });
       for (const url of pendingUrls) {
         await retryBundleIngest(url);

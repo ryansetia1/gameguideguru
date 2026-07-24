@@ -19,7 +19,12 @@ import { discoverGamefaqsBundleResolved } from "@/lib/gamefaqs-discover";
 import { isGamefaqsBundleUrl } from "@/lib/guide-urls.js";
 import { getCachedBundleDiscovery, setCachedBundleDiscovery } from "@/lib/guide-bundle-cache.js";
 import { parsePositiveInt, sleep } from "@/lib/replicate-retry.js";
-import { extractGuidePage, extractGuidePages, looksLikeHub } from "@/lib/tavily";
+import {
+  extractGuidePage,
+  extractGuidePages,
+  isBlockedGuideContent,
+  looksLikeHub,
+} from "@/lib/tavily";
 import { getServerClient } from "@/lib/supabase-server";
 import { logTraceEvent } from "@/lib/trace";
 
@@ -48,6 +53,7 @@ export type IngestResult = {
   indexed: boolean;
   chunkCount: number;
   hubWarning: boolean;
+  isBlocked?: boolean;
   bundle?: boolean;
   bundleKey?: string;
   pageCount?: number;
@@ -483,6 +489,15 @@ async function ingestSingleGuidePage(
     console.error("Guide ingest skipped: could not extract guide page", { guideUrl });
     return { indexed: false, chunkCount: 0, hubWarning: looksLikeHub(guideUrl) };
   }
+  if (isBlockedGuideContent(extracted.content)) {
+    void logTraceEvent(
+      "ingest_single_page_blocked",
+      `GameFAQs anti-bot blocked single-page extract for ${guideUrl}`,
+      Date.now() - startMs,
+      { guideUrl },
+    );
+    return { indexed: false, chunkCount: 0, hubWarning: false, isBlocked: true };
+  }
 
   const text = cleanSnippet(extracted.content);
   const hubWarning = looksLikeHub(guideUrl) || text.length < MIN_GUIDE_CHARS;
@@ -542,7 +557,7 @@ async function ingestGamefaqsBundle(
   const discovery = discoveryCached;
   if (discovery.isBlocked) {
     void logTraceEvent("ingest_bundle_blocked", `GameFAQs anti-bot blocked bundle discovery for ${rawUrl}`, undefined, { bundleKey: parsed.bundleKey });
-    return { indexed: false, chunkCount: 0, hubWarning: false };
+    return { indexed: false, chunkCount: 0, hubWarning: false, isBlocked: true };
   }
   if (!discovery.bundle || !discovery.pages?.length) {
     return ingestSingleGuidePage(rawUrl, signal, ctx, parsed.bundleKey);

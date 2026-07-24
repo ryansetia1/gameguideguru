@@ -2,6 +2,7 @@ import type { User } from "@supabase/supabase-js";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { Chat } from "@/lib/supabase";
 import type { GuideBundleMeta } from "../guide-link-field";
+import type { GuideIndexState } from "@/lib/guide-index-state";
 import type { Message } from "./types";
 import type { SpoilerPrefs } from "@/lib/spoiler-prefs.js";
 
@@ -19,7 +20,7 @@ export type ChatTurnDeps = {
   loading: boolean;
   guideBundleMeta: Record<string, GuideBundleMeta>;
   bundleIndexStatus: Record<string, { pages: { slug: string }[] }>;
-  guideIndexState: Record<string, string>;
+  guideIndexState: GuideIndexState;
   spoilerPrefs: SpoilerPrefs;
   setActiveChatId: (id: string | null) => void;
   setChats: (chats: Chat[]) => void;
@@ -31,11 +32,7 @@ export type ChatTurnDeps = {
   setEditingIndex: (value: number | null) => void;
   setIndexingIsBundlePages: (value: boolean) => void;
   setIndexingGuideCount: (value: number) => void;
-  setGuideIndexState: React.Dispatch<
-    React.SetStateAction<
-      Record<string, "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending">
-    >
-  >;
+  setGuideIndexState: Dispatch<SetStateAction<GuideIndexState>>;
   setGuideBundleMeta: Dispatch<SetStateAction<Record<string, GuideBundleMeta>>>;
   setBundleStatusRev: Dispatch<SetStateAction<number>>;
   setConfirmFallbackModal: (value: {

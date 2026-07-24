@@ -15,6 +15,13 @@ export function GuideStatusChip({ state }: { state: string }) {
       </span>
     );
   }
+  if (state === "blocked") {
+    return (
+      <span className="guide-status-chip is-blocked">
+        <IconAlert size={12} /> Blocked
+      </span>
+    );
+  }
   if (state === "pending") {
     return (
       <span className="guide-status-chip is-pending">

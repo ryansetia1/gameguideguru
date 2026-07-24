@@ -20,10 +20,7 @@ import { CoverThumb, displayPlatform } from "./cover-thumb";
 import { GuideStatusChip } from "./guide-status-chip";
 import { SpoilerToggle } from "./spoiler-toggle";
 
-type GuideIndexState = Record<
-  string,
-  "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending"
->;
+import type { GuideIndexState } from "@/lib/guide-index-state";
 
 export type ActiveGameCardProps = {
   topRef: RefObject<HTMLElement | null>;
@@ -117,7 +114,9 @@ export function ActiveGameCard({
   onReindexAllPending,
   onGameSpoilerChange,
 }: ActiveGameCardProps) {
-  const hasBlocked = preferredUrls.some((url) => guideBundleMeta[url]?.isBlocked);
+  const hasBlocked = preferredUrls.some(
+    (url) => guideIndexState[url] === "blocked" || guideBundleMeta[url]?.isBlocked,
+  );
   const hasFailed = preferredUrls.some((url) => guideIndexState[url] === "failed");
   const isCollapsible = preferredUrls.length > 2;
 
@@ -236,7 +235,7 @@ export function ActiveGameCard({
                   <GuideStatusChip state={row.state} />
                 </span>
               )}
-              {(!row.state || row.state === "pending" || row.state === "failed" || row.state === "unknown") && (
+              {(!row.state || row.state === "pending" || row.state === "failed" || row.state === "blocked" || row.state === "unknown") && (
                 <button
                   type="button"
                   onClick={(event) => {
@@ -260,14 +259,6 @@ export function ActiveGameCard({
                 >
                   <IconRefresh size={14} className={retryingBundleUrl === url ? "spin" : ""} />
                 </button>
-              )}
-              {row.isBlocked && (
-                <span
-                  className="guide-status-chip"
-                  style={{ color: "var(--danger)", borderColor: "var(--danger)", flexShrink: 0 }}
-                >
-                  <IconAlert size={12} /> Blocked
-                </span>
               )}
               <span style={{ flexShrink: 0, width: "20px", display: "flex" }} />
             </span>
@@ -299,7 +290,7 @@ export function ActiveGameCard({
                   <GuideStatusChip state={row.state} />
                 </span>
               )}
-              {(!row.state || row.state === "pending" || row.state === "failed" || row.state === "unknown") && (
+              {(!row.state || row.state === "pending" || row.state === "failed" || row.state === "blocked" || row.state === "unknown") && (
                 <button
                   type="button"
                   onClick={(event) => {
@@ -323,14 +314,6 @@ export function ActiveGameCard({
                 >
                   <IconRefresh size={14} className={retryingBundleUrl === url ? "spin" : ""} />
                 </button>
-              )}
-              {row.isBlocked && (
-                <span
-                  className="guide-status-chip"
-                  style={{ color: "var(--danger)", borderColor: "var(--danger)", flexShrink: 0 }}
-                >
-                  <IconAlert size={12} /> Blocked
-                </span>
               )}
               {row.bundle && row.panelLoading ? (
                 <span
@@ -452,7 +435,7 @@ export function ActiveGameCard({
             <span className="game-card-guides-summary-label">Guides ({preferredUrls.length})</span>
             {preferredUrls.some((url) => {
               const st = guideIndexState[url];
-              return !st || st === "pending" || st === "failed" || st === "unknown";
+              return !st || st === "pending" || st === "failed" || st === "blocked" || st === "unknown";
             }) && (
               <button
                 type="button"
@@ -479,10 +462,7 @@ export function ActiveGameCard({
               </button>
             )}
             {hasBlocked && (
-              <span
-                className="guide-status-chip"
-                style={{ color: "var(--danger)", borderColor: "var(--danger)" }}
-              >
+              <span className="guide-status-chip is-blocked">
                 <IconAlert size={12} /> Blocked
               </span>
             )}

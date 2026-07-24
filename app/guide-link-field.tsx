@@ -17,8 +17,11 @@ import {
 } from "@/lib/guide-urls.js";
 import { parseGamefaqsFaqUrl } from "@/lib/gamefaqs-bundle.js";
 import { setBundlePrefs } from "@/lib/bundle-prefs.js";
-import { IconCheck, IconClock, IconAlert, IconX, IconClipboard } from "./icons";
+import type { GuideIndexState } from "@/lib/guide-index-state";
+import { resolveGuideDisplayState } from "@/lib/guide-index-state";
+import { IconX, IconClipboard } from "./icons";
 import { ClearButton } from "./clear-button";
+import { GuideStatusChip } from "./chat/guide-status-chip";
 
 type GuideHit = { title: string; url: string; snippet: string };
 
@@ -50,7 +53,7 @@ type Props = {
   onBundleMetaChange?: (meta: Record<string, GuideBundleMeta>) => void;
   onGuideCheckChange?: (checking: boolean) => void;
   onPendingChange?: (pending: boolean) => void;
-  guideIndexState?: Record<string, "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending">;
+  guideIndexState?: GuideIndexState;
   onDone?: () => void;
   onRequestConfirm?: (opts: {
     message: string;
@@ -65,45 +68,6 @@ function hostLabel(url: string) {
   } catch {
     return url;
   }
-}
-
-function renderStatusChip(state: string) {
-  if (state === "indexed") {
-    return (
-      <span className="guide-status-chip is-indexed">
-        <IconCheck size={12} /> Indexed
-      </span>
-    );
-  }
-  if (state === "failed") {
-    return (
-      <span className="guide-status-chip is-failed">
-        <IconX size={10} /> Failed
-      </span>
-    );
-  }
-  if (state === "pending") {
-    return (
-      <span className="guide-status-chip is-pending">
-        <IconClock size={12} /> Pending
-      </span>
-    );
-  }
-  if (state === "checking") {
-    return (
-      <span className="guide-status-chip is-checking">
-        <IconClock size={12} /> Checking…
-      </span>
-    );
-  }
-  if (state === "unavailable") {
-    return (
-      <span className="guide-status-chip is-unavailable">
-        <IconAlert size={12} /> N/A
-      </span>
-    );
-  }
-  return null;
 }
 
 export function GuideLinkField({
@@ -574,12 +538,10 @@ export function GuideLinkField({
                         {bundle ? "GameFAQs bundle" : hostLabel(url)}
                       </a>
                     )}
-                    {guideIndexState[url] && guideIndexState[url] !== "unknown" && renderStatusChip(guideIndexState[url])}
-                    {meta?.isBlocked && (
-                      <span className="guide-status-chip" style={{ color: "var(--danger)", borderColor: "var(--danger)", flexShrink: 0 }}>
-                        <IconAlert size={12} /> Blocked
-                      </span>
-                    )}
+                    {(() => {
+                      const chipState = resolveGuideDisplayState(guideIndexState[url], meta);
+                      return chipState !== "unknown" ? <GuideStatusChip state={chipState} /> : null;
+                    })()}
                   </div>
                   <span className="guide-url-path">
                     {uploaded

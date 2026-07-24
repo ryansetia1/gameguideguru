@@ -5,6 +5,7 @@ import {
   mergedBundlePrefs,
 } from "@/lib/guide-card-ui.js";
 import { guideIngestHint, guideIngestHintFromResponse } from "@/lib/guide-hints.js";
+import { guideIndexStateFromIngest } from "@/lib/guide-index-state";
 import { isActiveGamefaqsBundle, normalizeGuideUrlList } from "@/lib/guide-urls.js";
 import type { GuideBundleMeta } from "../guide-link-field";
 import type { ChatTurnDeps } from "./chat-turn-deps";
@@ -112,13 +113,13 @@ export async function runGuideIngestForTurn({
         }
         deps.setGuideIndexState((prev) => ({
           ...prev,
-          [url]: row.indexed ? "indexed" : "failed",
+          [url]: guideIndexStateFromIngest(row, updated ?? bundleMetaForRun[url]),
         }));
       } else if (!signal.aborted) {
         ingestResults.push({ indexed: false });
         deps.setGuideIndexState((prev) => ({
           ...prev,
-          [url]: "failed",
+          [url]: guideIndexStateFromIngest(undefined, deps.guideBundleMeta[url]),
         }));
       }
     }
@@ -148,7 +149,9 @@ export async function runGuideIngestForTurn({
       deps.setGuideIndexState((prev) => {
         const next = { ...prev };
         for (const url of urlsNeedingIngest) {
-          if (next[url] === "checking") next[url] = "failed";
+          if (next[url] === "checking") {
+            next[url] = guideIndexStateFromIngest(undefined, deps.guideBundleMeta[url]);
+          }
         }
         return next;
       });

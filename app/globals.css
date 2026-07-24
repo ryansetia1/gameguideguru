@@ -3673,7 +3673,8 @@ details.sources small {
   color: var(--signal-dark);
 }
 
-.game-card-link.is-failed {
+.game-card-link.is-failed,
+.game-card-link.is-blocked {
   color: var(--danger);
 }
 
@@ -3710,7 +3711,8 @@ details.sources small {
   border-color: color-mix(in srgb, var(--signal) 40%, transparent);
 }
 
-.guide-status-chip.is-failed {
+.guide-status-chip.is-failed,
+.guide-status-chip.is-blocked {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, transparent);
   border-color: color-mix(in srgb, var(--danger) 30%, transparent);
@@ -3863,7 +3865,12 @@ details.sources small {
 }
 
 .setup-done {
-  align-items: flex-start;
+  align-items: stretch;
+}
+
+.setup-done .nav-button {
+  width: 100%;
+  justify-content: center;
 }
 
 /* Preferred guide: paste link or search the web */

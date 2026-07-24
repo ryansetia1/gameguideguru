@@ -10,10 +10,7 @@ import { CoverThumb, displayPlatform } from "./cover-thumb";
 import { RotatingHeadline, RotatingWord, SteamIcon } from "./hero-marketing";
 import { SpoilerToggle } from "./spoiler-toggle";
 
-type GuideIndexState = Record<
-  string,
-  "unknown" | "checking" | "indexed" | "failed" | "unavailable" | "pending"
->;
+import type { GuideIndexState } from "@/lib/guide-index-state";
 
 export type HomeSetupProps = {
   showHero: boolean;
