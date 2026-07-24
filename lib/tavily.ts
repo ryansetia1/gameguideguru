@@ -1,5 +1,9 @@
 import { cleanSnippet } from "@/lib/clean";
-import { buildGuideDiscoveryQuery } from "@/lib/guide-search.js";
+import {
+  buildGuideDiscoveryQuery,
+  filterGuideDiscoveryResults,
+  guideDiscoveryMatchesGame,
+} from "@/lib/guide-search.js";
 import { selectSources } from "@/lib/rank";
 import { logTraceEvent } from "@/lib/trace";
 
@@ -81,6 +85,32 @@ const TIERS: string[][] = [
   [],
 ];
 
+// Guide picker only: GameFAQs is mixed with other text guides (often blocked or
+// missing for newer games). Do not stop until enough title-relevant hits.
+const DISCOVER_TIERS: string[][] = [
+  [
+    "gamefaqs.gamespot.com",
+    "ign.com",
+    "gamespot.com",
+    "game8.co",
+    "powerpyx.com",
+    "fextralife.com",
+    "polygon.com",
+    "gamesradar.com",
+    "neoseeker.com",
+    "primagames.com",
+    "gameskinny.com",
+    "gamerant.com",
+    "gamespew.com",
+  ],
+  ["reddit.com", "steamcommunity.com"],
+  [],
+];
+
+// Hard cap on Tavily Search calls per guide-picker request (one call per tier).
+// ponytail: never add loops/retries above this; worst case = 3 basic searches.
+const DISCOVER_MAX_TAVILY_CALLS = DISCOVER_TIERS.length;
+
 // Enough collected results to stop querying further tiers; final relevance
 // gating/trimming happens in selectSources.
 const MIN_RESULTS = 3;
@@ -94,9 +124,15 @@ async function runSearch(
   includeDomains: string[],
   signal?: AbortSignal,
   maxResults = 5,
+  searchDepth: "basic" | "advanced" = "advanced",
 ): Promise<SearchResult[]> {
   const start = Date.now();
-  void logTraceEvent("tavily_search_start", `Tavily Search: ${query}`, undefined, { query, includeDomains, maxResults });
+  void logTraceEvent("tavily_search_start", `Tavily Search: ${query}`, undefined, {
+    query,
+    includeDomains,
+    maxResults,
+    searchDepth,
+  });
 
   const response = await fetch(TAVILY_URL, {
     method: "POST",
@@ -106,9 +142,7 @@ async function runSearch(
     },
     body: JSON.stringify({
       query,
-      // "advanced" extracts more relevant page chunks and re-ranks better than
-      // "basic" (which let an unrelated game outrank the correct guides).
-      search_depth: "advanced",
+      search_depth: searchDepth,
       max_results: maxResults,
       include_answer: false,
       exclude_domains: EXCLUDE_DOMAINS,
@@ -480,6 +514,68 @@ async function tieredSearch(
   return collected;
 }
 
+function mergeSearchTier(
+  collected: SearchResult[],
+  seen: Set<string>,
+  tier: SearchResult[],
+): void {
+  for (const result of tier) {
+    const urlKey = `u:${result.url.replace(/\/+$/, "").toLowerCase()}`;
+    const titleKey = `t:${result.title.toLowerCase()}`;
+    if (seen.has(urlKey) || seen.has(titleKey)) continue;
+    seen.add(urlKey);
+    seen.add(titleKey);
+    collected.push(result);
+  }
+}
+
+/** Guide-picker tiered search: mixed domains, relevance-aware early stop. */
+async function tieredDiscoverySearch(
+  apiKey: string,
+  query: string,
+  game: string,
+  signal?: AbortSignal,
+): Promise<SearchResult[]> {
+  const seen = new Set<string>();
+  const collected: SearchResult[] = [];
+  let tavilyCalls = 0;
+  let failures = 0;
+
+  for (const includeDomains of DISCOVER_TIERS) {
+    if (tavilyCalls >= DISCOVER_MAX_TAVILY_CALLS) break;
+
+    let tier: SearchResult[] = [];
+    tavilyCalls += 1;
+    try {
+      // Picker only needs URLs + snippets; basic is cheaper than advanced.
+      tier = await runSearch(apiKey, query, includeDomains, signal, 5, "basic");
+    } catch (error) {
+      failures += 1;
+      if (!isAbortError(error)) {
+        logTavily("search", "discovery tier request failed", {
+          tier: includeDomains.length ? includeDomains.join(", ") : "open web",
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      continue;
+    }
+
+    mergeSearchTier(collected, seen, tier);
+
+    const relevant = collected.filter((row) => guideDiscoveryMatchesGame(game, row.title));
+    if (relevant.length >= MIN_RESULTS) break;
+  }
+
+  if (tavilyCalls > 0 && failures === tavilyCalls) {
+    logTavily("search", `all ${tavilyCalls} discovery tier(s) failed`, {
+      query: query.slice(0, 120),
+    });
+    throw new Error("All Tavily searches failed");
+  }
+
+  return filterGuideDiscoveryResults(game, collected);
+}
+
 const SERPER_URL = "https://google.serper.dev/search";
 
 // Map Serper "organic" results into our SearchResult shape (snippet-only; Serper
@@ -603,7 +699,7 @@ export async function discoverGuideLinks(
 
   if (tavilyKey) {
     try {
-      return (await tieredSearch(tavilyKey, searchQuery))
+      return (await tieredDiscoverySearch(tavilyKey, searchQuery, game))
         .sort((a, b) => b.score - a.score)
         .slice(0, DISCOVER_MAX);
     } catch (error) {
@@ -615,7 +711,10 @@ export async function discoverGuideLinks(
     }
   }
 
-  return (await searchSerper(serperKey as string, searchQuery)).slice(0, DISCOVER_MAX);
+  return filterGuideDiscoveryResults(
+    game,
+    await searchSerper(serperKey as string, searchQuery),
+  ).slice(0, DISCOVER_MAX);
 }
 
 /**

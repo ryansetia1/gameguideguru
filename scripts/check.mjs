@@ -30,7 +30,11 @@ import {
   voiceLangFromUserMetadata,
 } from "../lib/voice.js";
 import { warmUpMicrophone } from "../lib/voice-meter.js";
-import { buildGuideDiscoveryQuery } from "../lib/guide-search.js";
+import {
+  buildGuideDiscoveryQuery,
+  filterGuideDiscoveryResults,
+  guideDiscoveryMatchesGame,
+} from "../lib/guide-search.js";
 import { extractSnippetsFromSummarizePrompt } from "../lib/admin-pipeline.ts";
 import {
   buildApiSpend,
@@ -325,7 +329,21 @@ assert.equal(
   buildGuideDiscoveryQuery("Suikoden", "PlayStation", ""),
   "Suikoden PlayStation walkthrough guide",
 );
+assert.equal(
+  buildGuideDiscoveryQuery("The Exit 8", "PC", ""),
+  '"The Exit 8" PC walkthrough guide',
+);
 assert.equal(buildGuideDiscoveryQuery("", "", "boss guide"), "boss guide");
+assert.equal(guideDiscoveryMatchesGame("The Exit 8", "The Exit 8 walkthrough"), true);
+assert.equal(guideDiscoveryMatchesGame("The Exit 8", "Wizardry 8 - Guide"), false);
+assert.equal(guideDiscoveryMatchesGame("The Exit 8", "Exit - Guide and Walkthrough"), false);
+assert.equal(
+  filterGuideDiscoveryResults("The Exit 8", [
+    { title: "The Exit 8 walkthrough" },
+    { title: "Wizardry 8" },
+  ]).length,
+  1,
+);
 
 assert.equal(
   steamIdFromClaimedId("https://steamcommunity.com/openid/id/76561198000000000"),
