@@ -3508,11 +3508,12 @@ details.sources small {
 .home-tip {
   /* Sticky to the screen bottom so it balances on any mobile height (stays
      visible instead of being pushed below the fold on short screens). quick-home
-     grows above it (flex:1) to fill the gap. */
+     grows above it (flex:1) to fill the gap. Centered so it reads as an ambient
+     footer note, not a left-aligned list item. */
   position: sticky;
   bottom: max(10px, env(safe-area-inset-bottom));
   max-width: 36rem;
-  margin: auto 2px 0;
+  margin: auto auto 0;
   padding: 16px 10px 10px;
   color: var(--muted);
   font-size: 0.82rem;

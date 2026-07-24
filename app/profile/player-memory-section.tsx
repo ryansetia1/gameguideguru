@@ -30,6 +30,7 @@ import type { PlayerStyleUserPins } from "@/lib/player-memory-pins.js";
 import { getSupabase } from "@/lib/supabase";
 
 type PlayerStyleShape = ReturnType<typeof coercePlayerStyle>;
+type StyleFieldKey = "answerLength" | "tone" | "language" | "detailLevel";
 
 type MemoryState = {
   message_count: number;
@@ -51,7 +52,7 @@ type Props = {
   onToast?: (message: string) => void;
 };
 
-const STYLE_FIELD_LABELS: Record<(typeof STYLE_FIELD_KEYS)[number], string> = {
+const STYLE_FIELD_LABELS: Record<StyleFieldKey, string> = {
   answerLength: "Answer length",
   tone: "Tone",
   language: "Language",
@@ -283,13 +284,13 @@ export function PlayerMemorySection({ session, onToast }: Props) {
   }
 
   async function saveStyleField(
-    field: (typeof STYLE_FIELD_KEYS)[number],
+    field: StyleFieldKey,
     value: string,
     style: PlayerStyleShape,
     userPins: PlayerStyleUserPins,
   ) {
     const nextStyle = { ...style };
-    if (value) nextStyle[field] = value as PlayerStyleShape[typeof field];
+    if (value) nextStyle[field] = value;
     else delete nextStyle[field];
     const fields = new Set(userPins.fields ?? []);
     fields.add(field);
@@ -563,7 +564,7 @@ export function PlayerMemorySection({ session, onToast }: Props) {
                 Set these yourself or let Update now refresh from chats. Your edits stay put.
               </p>
               <div className="player-memory-prefs-grid">
-                {STYLE_FIELD_KEYS.map((field) => (
+                {(STYLE_FIELD_KEYS as readonly StyleFieldKey[]).map((field) => (
                   <label key={field} className="player-memory-pref-field">
                     <span className="player-memory-pref-label">
                       {STYLE_FIELD_LABELS[field]}
